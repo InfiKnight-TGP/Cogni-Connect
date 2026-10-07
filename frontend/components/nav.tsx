@@ -15,6 +15,7 @@ export default function Nav() {
         </Link>
         <div className="flex items-center space-x-6 text-lg font-medium">
           <Link href="/dashboard">Dashboard</Link>
+          <Link href="/games">Brain Games</Link>
           <Link href="/explore">Memory Explorer</Link>
           <Link href="/upload">Upload</Link>
           <Link href="/faces">Faces</Link>

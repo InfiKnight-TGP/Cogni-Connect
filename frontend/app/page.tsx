@@ -21,6 +21,11 @@ export default function Home() {
             <Link href="/dashboard">
               <Button size="lg">Dashboard</Button>
             </Link>
+            <Link href="/games">
+              <Button size="lg" variant="secondary">
+                Brain Games
+              </Button>
+            </Link>
             <Link href="/explore">
               <Button size="lg" variant="secondary">
                 Memory Explorer
