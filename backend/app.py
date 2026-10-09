@@ -827,14 +827,24 @@ def save_routine():
 
 @api.route('/daily-plan', methods=['GET'])
 def daily_plan():
-    """Game ids per level from games.json. The plan is the same every day for now."""
+    """Today's games for ?date=yyyy-MM-dd, the same all day (seeded by the date):
+    level 1 = Daily Recall + 1 random easy game, levels 2 and 3 = 2 random games each."""
+    import random
+    from datetime import date as _date
+    date_str = request.args.get('date') or _date.today().isoformat()
     try:
         with open('games.json', 'r', encoding='utf-8') as f:
             games = json.load(f)["games"]
     except Exception as e:
         print(f"Daily plan error: {e}")
         return jsonify({"error": str(e)}), 500
-    return jsonify({f"level{lvl}": [g["id"] for g in games if lvl in g["levels"] and g.get("status") == "ready"] for lvl in (1, 2, 3)})
+    rng = random.Random(date_str)
+    plan = {}
+    for lvl, count in ((1, 1), (2, 2), (3, 2)):
+        pool = [g["id"] for g in games if lvl in g["levels"] and g.get("status") == "ready" and g["id"] != "daily_recall"]
+        plan[f"level{lvl}"] = rng.sample(pool, min(count, len(pool)))
+    plan["level1"].insert(0, "daily_recall")
+    return jsonify(plan)
 
 
 @api.route('/performance', methods=['POST'])

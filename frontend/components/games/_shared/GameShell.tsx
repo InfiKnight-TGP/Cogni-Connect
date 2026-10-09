@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { saveScore } from "./saveScore";
 import { Button } from "@/components/ui/button";
 import { Award, Play, RotateCcw } from "lucide-react";
+import { useCaregiver } from "@/lib/mode";
 
 export interface GameShellProps {
   gameId: string;
@@ -31,6 +32,7 @@ export default function GameShell({
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
   const [score, setScore] = useState<number | null>(null);
+  const [caregiver] = useCaregiver(); // patients never see level or skill names
 
   const handleFinish = async (finalScore: number) => {
     const clampedScore = Math.max(0, Math.min(100, Math.round(finalScore)));
@@ -68,14 +70,14 @@ export default function GameShell({
             {instructions}
           </p>
         </div>
-        <div className="flex flex-col items-end gap-1">
+        {caregiver && <div className="flex flex-col items-end gap-1">
           <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
             Level {level}
           </span>
           <span className="text-xs text-muted-foreground capitalize">
             {skill}
           </span>
-        </div>
+        </div>}
       </div>
 
       {/* Screen 1: Start Screen */}
@@ -87,7 +89,7 @@ export default function GameShell({
           <div className="max-w-md space-y-2">
             <h2 className="text-xl font-semibold">Ready to begin?</h2>
             <p className="text-sm text-muted-foreground">
-              Click Start to launch {title}.{level === 1 && " No timers apply in Level 1."}
+              Click Start to launch {title}.{caregiver && level === 1 && " No timers apply in Level 1."}
             </p>
           </div>
           <Button
