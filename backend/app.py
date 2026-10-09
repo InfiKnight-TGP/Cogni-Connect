@@ -207,6 +207,7 @@ def search():
     chunks_root_abs = os.path.abspath(VIDEO_CHUNKS_ROOT)
     
     try:
+        people = _load_people()
         # Scan all chunk folders
         for folder_name in os.listdir(chunks_root_abs):
             folder_path = os.path.join(chunks_root_abs, folder_name)
@@ -236,7 +237,7 @@ def search():
                         # Extract names from face data (handle different JSON structures)
                         for path, names in face_info.items():
                             if names and isinstance(names, list):
-                                face_data[video_path] = names
+                                face_data[video_path] = [display_name(n, people, relation=True) for n in names]
                                 break  # Only need one entry per file
         
         # If no transcripts found, return all available videos
@@ -540,11 +541,27 @@ def _load_people():
             if allowed_image_file(filename):
                 # Keep the old file name as the id so earlier face detections still map to this person
                 stem = os.path.splitext(filename)[0]
-                people.append({"id": stem, "name": stem.replace('_', ' '), "relation": "", "phone": "", "photo": filename})
+                people.append({"id": stem, "name": _title(stem.replace('_', ' ')), "relation": "", "phone": "", "photo": filename})
         _save_people(people)
         return people
     with open(PEOPLE_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
+
+
+def _title(name):
+    """"jawed karim" -> "Jawed Karim"; leaves the rest of each word alone ("McDonald")."""
+    return ' '.join(w[:1].upper() + w[1:] for w in name.split())
+
+
+def display_name(face_id, people, relation=False):
+    """Face recognition reports a photo's id (with "_" sometimes shown as " ").
+    Return that person's name, optionally with the relation: "Dinesh (son)"."""
+    key = face_id.strip().lower()
+    for p in people:
+        if key in (p['id'].lower(), p['id'].replace('_', ' ').lower()):
+            name = _title(p['name'])
+            return f"{name} ({p['relation'].lower()})" if relation and p.get('relation') else name
+    return _title(face_id.replace('_', ' '))
 
 
 def _save_people(people):
@@ -578,13 +595,13 @@ def _save_photo(file, person_id, old_photo=None):
 
 @api.route('/people', methods=['GET'])
 def list_people():
-    return jsonify(_load_people())
+    return jsonify([{**p, "name": _title(p['name'])} for p in _load_people()])
 
 
 @api.route('/people', methods=['POST'])
 def add_person():
     """multipart form: name (required), relation, phone, photo (required)."""
-    name = request.form.get('name', '').strip()
+    name = _title(request.form.get('name', ''))
     if not name:
         return jsonify({"error": "Name is required"}), 400
     import uuid
@@ -613,7 +630,7 @@ def update_person(person_id):
     if not person:
         return jsonify({"error": "Person not found"}), 404
     if 'name' in request.form:
-        name = request.form['name'].strip()
+        name = _title(request.form['name'])
         if not name:
             return jsonify({"error": "Name is required"}), 400
         person['name'] = name
@@ -646,7 +663,7 @@ def delete_person(person_id):
 @api.route('/known-faces', methods=['GET'])
 def list_known_faces():
     """People with a photo, in the shape the quiz expects."""
-    faces = [{"path": p['photo'], "name": p['name'], "relation": p.get('relation', '')}
+    faces = [{"path": p['photo'], "name": _title(p['name']), "relation": p.get('relation', '')}
              for p in _load_people() if p.get('photo')]
     return jsonify({"faces": faces}), 200
 
@@ -711,11 +728,7 @@ def faces_for_date():
     date_str = request.args.get('date', '')
     detected = []
     try:
-        # Recognition reports the photo file name (person id, "_" shown as " "); map it to the person's name
-        names_by_id = {}
-        for p in _load_people():
-            names_by_id[p['id'].lower()] = p['name']
-            names_by_id[p['id'].replace('_', ' ').lower()] = p['name']
+        people = _load_people()
         for name, _ in _videos_for_date(date_str):
             folder = os.path.join(VIDEO_CHUNKS_ROOT, _chunks_folder(name))
             if not os.path.isdir(folder):
@@ -725,7 +738,7 @@ def faces_for_date():
                     with open(os.path.join(folder, file), 'r', encoding='utf-8') as f:
                         for names in json.load(f).values():
                             for n in names:
-                                n = names_by_id.get(n.lower(), n)
+                                n = display_name(n, people)
                                 if n not in detected:
                                     detected.append(n)
     except Exception as e:
@@ -901,6 +914,7 @@ def generate_questions():
         # Get all processed videos
         video_chunks_root = os.path.abspath(VIDEO_CHUNKS_ROOT)
         questions = []
+        people = _load_people()
         
         if not os.path.exists(video_chunks_root):
             return jsonify({"error": "No videos processed yet"}), 404
@@ -961,7 +975,7 @@ def generate_questions():
                 faces = []
                 for path, names in faces_data.items():
                     if chunk_name in path:
-                        faces = names
+                        faces = [display_name(n, people, relation=True) for n in names]
                         break
                 
                 video_data.append({

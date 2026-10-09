@@ -125,14 +125,6 @@ function Bubble({
   isCorrect: boolean;
   onClick: () => void;
 }) {
-  const formatName = (name: string) => {
-    return name
-      .toLowerCase()
-      .split(" ")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-  };
-
   let stateClasses = "";
   if (isCorrect) {
     stateClasses = "bg-green-500/80 border-2 border-green-600";
@@ -147,7 +139,7 @@ function Bubble({
       data-bubble={data}
     >
       <span className="pointer-events-none flex h-full select-none items-center justify-center px-4 text-center text-xl font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] break-words leading-tight">
-        {formatName(name)}
+        {name}
       </span>
     </div>
   );
