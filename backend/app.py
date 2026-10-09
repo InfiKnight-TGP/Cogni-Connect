@@ -529,109 +529,136 @@ def get_journals():
         return jsonify({"error": str(e)}), 500
 
 
-@api.route('/upload-face', methods=['POST'])
-def upload_face():
-    """Handle face photo uploads for recognition."""
+PEOPLE_FILE = 'people.json'
+
+
+def _load_people():
+    """people.json; on first run, import the photos already in known_faces/."""
+    if not os.path.exists(PEOPLE_FILE):
+        people = []
+        for filename in sorted(os.listdir(KNOWN_FACES_FOLDER)):
+            if allowed_image_file(filename):
+                # Keep the old file name as the id so earlier face detections still map to this person
+                stem = os.path.splitext(filename)[0]
+                people.append({"id": stem, "name": stem.replace('_', ' '), "relation": "", "phone": "", "photo": filename})
+        _save_people(people)
+        return people
+    with open(PEOPLE_FILE, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def _save_people(people):
+    with open(PEOPLE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(people, f, indent=2, ensure_ascii=False)
+
+
+def _save_photo(file, person_id, old_photo=None):
+    """Save an uploaded photo as known_faces/<id>.<ext>. Returns (filename, error)."""
+    if not file or file.filename == '':
+        return None, "Please choose a photo"
+    if not allowed_image_file(file.filename):
+        return None, f"Photo must be one of: {', '.join(sorted(ALLOWED_IMAGE_EXTENSIONS))}"
+    from process_video import has_face
+    tmp_path = os.path.join(KNOWN_FACES_FOLDER, f"{person_id}.tmp")
+    file.save(tmp_path)
     try:
-        # Check if file is in request
-        if 'face' not in request.files:
-            return jsonify({"error": "No image file provided"}), 400
-        
-        file = request.files['face']
-        person_name = request.form.get('name', '').strip()
-        
-        # Check if name is provided
-        if not person_name:
-            return jsonify({"error": "Person's name is required"}), 400
-        
-        # Check if file is selected
-        if file.filename == '':
-            return jsonify({"error": "No file selected"}), 400
-        
-        # Validate file type
-        if not allowed_image_file(file.filename):
-            return jsonify({"error": f"Invalid file type. Allowed types: {', '.join(ALLOWED_IMAGE_EXTENSIONS)}"}), 400
-        
-        # Create filename from person's name
-        safe_name = person_name.lower().replace(' ', '_')
-        extension = file.filename.rsplit('.', 1)[1].lower()
-        filename = f"{safe_name}.{extension}"
-        filepath = os.path.join(api.config['KNOWN_FACES_FOLDER'], filename)
-        
-        # Check if this person already exists
-        counter = 1
-        base_filename = filename
-        while os.path.exists(filepath):
-            filename = f"{safe_name}_{counter}.{extension}"
-            filepath = os.path.join(api.config['KNOWN_FACES_FOLDER'], filename)
-            counter += 1
-        
-        # Save the file
-        file.save(filepath)
-        
-        return jsonify({
-            "success": True,
-            "message": f"Face for {person_name} added successfully",
-            "filename": filename,
-            "name": person_name
-        }), 200
-        
-    except Exception as e:
-        print(f"Face upload error: {e}")
-        return jsonify({"error": f"Upload failed: {str(e)}"}), 500
+        if not has_face(tmp_path):
+            return None, "We could not find a face in this photo. Please use a clear photo of the face."
+        filename = f"{person_id}.{file.filename.rsplit('.', 1)[1].lower()}"
+        os.replace(tmp_path, os.path.join(KNOWN_FACES_FOLDER, filename))
+        if old_photo and old_photo != filename:
+            old_path = os.path.join(KNOWN_FACES_FOLDER, old_photo)
+            if os.path.exists(old_path):
+                os.remove(old_path)
+        return filename, None
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+@api.route('/people', methods=['GET'])
+def list_people():
+    return jsonify(_load_people())
+
+
+@api.route('/people', methods=['POST'])
+def add_person():
+    """multipart form: name (required), relation, phone, photo (required)."""
+    name = request.form.get('name', '').strip()
+    if not name:
+        return jsonify({"error": "Name is required"}), 400
+    import uuid
+    person_id = uuid.uuid4().hex[:8]
+    photo, error = _save_photo(request.files.get('photo'), person_id)
+    if error:
+        return jsonify({"error": error}), 400
+    person = {
+        "id": person_id,
+        "name": name,
+        "relation": request.form.get('relation', '').strip(),
+        "phone": request.form.get('phone', '').strip(),
+        "photo": photo,
+    }
+    people = _load_people()
+    people.append(person)
+    _save_people(people)
+    return jsonify(person), 201
+
+
+@api.route('/people/<person_id>', methods=['PUT'])
+def update_person(person_id):
+    """multipart form; any of name, relation, phone, photo."""
+    people = _load_people()
+    person = next((p for p in people if p['id'] == person_id), None)
+    if not person:
+        return jsonify({"error": "Person not found"}), 404
+    if 'name' in request.form:
+        name = request.form['name'].strip()
+        if not name:
+            return jsonify({"error": "Name is required"}), 400
+        person['name'] = name
+    for field in ('relation', 'phone'):
+        if field in request.form:
+            person[field] = request.form[field].strip()
+    if request.files.get('photo'):
+        photo, error = _save_photo(request.files['photo'], person_id, person.get('photo'))
+        if error:
+            return jsonify({"error": error}), 400
+        person['photo'] = photo
+    _save_people(people)
+    return jsonify(person)
+
+
+@api.route('/people/<person_id>', methods=['DELETE'])
+def delete_person(person_id):
+    people = _load_people()
+    person = next((p for p in people if p['id'] == person_id), None)
+    if not person:
+        return jsonify({"error": "Person not found"}), 404
+    if person.get('photo'):
+        photo_path = os.path.join(KNOWN_FACES_FOLDER, person['photo'])
+        if os.path.exists(photo_path):
+            os.remove(photo_path)
+    _save_people([p for p in people if p['id'] != person_id])
+    return jsonify({"success": True})
 
 
 @api.route('/known-faces', methods=['GET'])
 def list_known_faces():
-    """List all known faces."""
-    try:
-        faces = []
-        if os.path.exists(api.config['KNOWN_FACES_FOLDER']):
-            for filename in os.listdir(api.config['KNOWN_FACES_FOLDER']):
-                if allowed_image_file(filename):
-                    filepath = os.path.join(api.config['KNOWN_FACES_FOLDER'], filename)
-                    file_stat = os.stat(filepath)
-                    
-                    # Extract name from filename (replace underscores with spaces)
-                    name = filename.rsplit('.', 1)[0].replace('_', ' ')
-                    
-                    faces.append({
-                        "path": filename,  # Changed from "filename" to "path" to match frontend
-                        "name": name,
-                        "uploaded": file_stat.st_mtime
-                    })
-        return jsonify({"faces": faces}), 200  # Wrapped in object with "faces" key
-    except Exception as e:
-        print(f"List faces error: {e}")
-        return jsonify({"error": str(e)}), 500
+    """People with a photo, in the shape the quiz expects."""
+    faces = [{"path": p['photo'], "name": p['name'], "relation": p.get('relation', '')}
+             for p in _load_people() if p.get('photo')]
+    return jsonify({"faces": faces}), 200
 
 
 @api.route('/known-faces/<filename>', methods=['GET'])
 def serve_face_image(filename):
     """Serve a known face image."""
     try:
-        print(f"Attempting to serve face image: {filename}")
-        print(f"Known faces folder: {api.config['KNOWN_FACES_FOLDER']}")
-        print(f"Full path: {os.path.join(api.config['KNOWN_FACES_FOLDER'], filename)}")
         return send_from_directory(api.config['KNOWN_FACES_FOLDER'], filename)
     except Exception as e:
         print(f"Serve image error: {e}")
         return jsonify({"error": str(e)}), 404
-
-
-@api.route('/delete-face/<filename>', methods=['DELETE'])
-def delete_face(filename):
-    """Delete a known face."""
-    try:
-        filepath = os.path.join(api.config['KNOWN_FACES_FOLDER'], filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
-            return jsonify({"success": True, "message": "Face deleted successfully"}), 200
-        else:
-            return jsonify({"error": "Face not found"}), 404
-    except Exception as e:
-        print(f"Delete face error: {e}")
-        return jsonify({"error": str(e)}), 500
 
 
 @api.route('/video_chunks/<path:filepath>', methods=['GET'])
@@ -684,6 +711,11 @@ def faces_for_date():
     date_str = request.args.get('date', '')
     detected = []
     try:
+        # Recognition reports the photo file name (person id, "_" shown as " "); map it to the person's name
+        names_by_id = {}
+        for p in _load_people():
+            names_by_id[p['id'].lower()] = p['name']
+            names_by_id[p['id'].replace('_', ' ').lower()] = p['name']
         for name, _ in _videos_for_date(date_str):
             folder = os.path.join(VIDEO_CHUNKS_ROOT, _chunks_folder(name))
             if not os.path.isdir(folder):
@@ -692,7 +724,10 @@ def faces_for_date():
                 if file.endswith('_faces.json'):
                     with open(os.path.join(folder, file), 'r', encoding='utf-8') as f:
                         for names in json.load(f).values():
-                            detected.extend(n for n in names if n not in detected)
+                            for n in names:
+                                n = names_by_id.get(n.lower(), n)
+                                if n not in detected:
+                                    detected.append(n)
     except Exception as e:
         print(f"Faces for date error: {e}")
         return jsonify({"date": date_str, "detected": [], "error": str(e)}), 500

@@ -90,11 +90,11 @@ export default function Home() {
               </div>
             </DashboardCard>
 
-            <DashboardCard link="contacts" navigate={navigate}>
+            <DashboardCard link="people" navigate={navigate}>
               <Users2 className="absolute -bottom-6 -right-6 -z-10 h-36 w-36 text-primary opacity-30 dark:opacity-40" />
 
               <div className="flex items-center text-lg font-medium">
-                Contacts
+                People
                 <ArrowRight className="ml-2 h-4 w-4" />
               </div>
             </DashboardCard>

@@ -10,6 +10,7 @@ import { API_URL } from "@/lib/api";
 interface KnownFace {
   name: string;
   path: string;
+  relation?: string;
 }
 
 export default function Bubbles({
@@ -69,6 +70,11 @@ export default function Bubbles({
             </div>
           )}
         </Card>
+        {solved && (
+          <p className="mt-3 text-2xl font-semibold text-green-600">
+            {[target.name, target.relation].filter(Boolean).join(" · ")}
+          </p>
+        )}
       </div>
 
       {/* Bubbles Area */}

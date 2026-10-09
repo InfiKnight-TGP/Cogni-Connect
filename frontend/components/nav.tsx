@@ -18,7 +18,7 @@ export default function Nav() {
           <Link href="/explore">Memory Explorer</Link>
           <Link href="/games">Games</Link>
           <Link href="/upload">Upload</Link>
-          <Link href="/faces">Faces</Link>
+          <Link href="/people">People</Link>
           <ThemeToggle />
         </div>
       </nav>

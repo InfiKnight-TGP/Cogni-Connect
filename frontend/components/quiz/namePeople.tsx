@@ -12,6 +12,7 @@ import { API_URL } from "@/lib/api";
 interface KnownFace {
   name: string;
   path: string;
+  relation?: string;
 }
 
 export default function NamePeople({

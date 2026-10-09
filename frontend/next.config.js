@@ -16,6 +16,12 @@ const nextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      { source: '/faces', destination: '/people', permanent: false },
+      { source: '/contacts', destination: '/people', permanent: false },
+    ]
+  },
   async rewrites() {
     return [
       {

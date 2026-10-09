@@ -31,9 +31,9 @@ export default function Home() {
                 Upload Videos
               </Button>
             </Link>
-            <Link href="/faces">
+            <Link href="/people">
               <Button size="lg" variant="outline">
-                Manage Faces
+                My People
               </Button>
             </Link>
           </div>

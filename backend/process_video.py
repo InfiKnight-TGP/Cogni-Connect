@@ -22,6 +22,17 @@ except ImportError:
     print("Warning: face_recognition library not installed. Falling back to OpenCV face detection.")
 
 
+def has_face(image_path):
+    """True if the photo has a detectable face, using the same detector as perform_face_recognition."""
+    if HAVE_FACE_RECOGNITION:
+        return bool(face_recognition.face_locations(face_recognition.load_image_file(image_path)))
+    img = cv2.imread(image_path)
+    if img is None:
+        return False
+    cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    return len(cascade.detectMultiScale(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), 1.1, 4)) > 0
+
+
 # Detect MoviePy version
 MOVIEPY_VERSION = tuple(map(int, moviepy.__version__.split('.')[:2]))
 

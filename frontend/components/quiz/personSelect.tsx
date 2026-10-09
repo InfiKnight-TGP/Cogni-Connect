@@ -20,6 +20,7 @@ import { API_URL } from "@/lib/api";
 interface KnownFace {
   name: string;
   path: string;
+  relation?: string;
 }
 
 export default function PersonSelect({
@@ -315,7 +316,7 @@ function PersonCard({
         nullify();
         click();
       }}
-      className={`mb-4 mr-4 h-52 w-52 overflow-hidden rounded-md border-2 transition-all ${
+      className={`relative mb-4 mr-4 h-52 w-52 overflow-hidden rounded-md border-2 transition-all ${
         reveal.isRevealed
           ? `${
               reveal.correct
@@ -349,6 +350,11 @@ function PersonCard({
           <div className="text-sm font-medium px-2 text-center">
             {person.name}
           </div>
+        </div>
+      )}
+      {reveal.isRevealed && reveal.correct && person.path && (
+        <div className="absolute inset-x-0 bottom-0 bg-black/70 px-2 py-1 text-center text-lg font-semibold text-white">
+          {[person.name, person.relation].filter(Boolean).join(" · ")}
         </div>
       )}
     </button>
