@@ -39,7 +39,7 @@ export default function PeoplePage() {
   const [people, setPeople] = useState<Person[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [version, setVersion] = useState(0); // busts the photo cache after an edit
-  const [caregiver, setCaregiver] = useCaregiver();
+  const [caregiver] = useCaregiver();
 
   const load = useCallback(async () => {
     try {
@@ -106,13 +106,6 @@ export default function PeoplePage() {
             </div>
           )}
 
-          {/* ponytail: unprotected switch until Phase 4 moves it into the nav behind a PIN */}
-          <button
-            className="text-sm text-muted-foreground underline"
-            onClick={() => setCaregiver(!caregiver)}
-          >
-            {caregiver ? "Back to patient view" : "Caregiver: manage people"}
-          </button>
         </div>
       </main>
     </>

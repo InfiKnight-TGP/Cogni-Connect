@@ -116,9 +116,9 @@ export default function Page() {
       />
       <div className="absolute bottom-8 w-full max-w-screen-sm rounded-xl border border-border bg-background p-4 transition-all">
         <div className="flex w-full justify-between">
-          <Link href="/dashboard">
+          <Link href="/">
             <Button variant="secondary">
-              <BrainCircuit className="mr-3 h-5 w-5" /> Back to Dashboard
+              <BrainCircuit className="mr-3 h-5 w-5" /> Back to Today
             </Button>
           </Link>
           <Button

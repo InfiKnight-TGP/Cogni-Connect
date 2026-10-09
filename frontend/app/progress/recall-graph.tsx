@@ -50,7 +50,7 @@ interface ChartPoint {
   };
 }
 
-export default function Graph() {
+export default function RecallGraph() {
   const router = useRouter();
   const [scores, setScores] = useState<ScoreEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,7 +77,7 @@ export default function Graph() {
   if (loading) {
     return (
       <div className="flex h-full w-full items-center justify-center py-12">
-        <p className="animate-pulse text-sm text-muted-foreground">Loading memory trends...</p>
+        <p className="animate-pulse text-sm text-muted-foreground">Loading Daily Recall scores...</p>
       </div>
     );
   }
@@ -89,9 +89,9 @@ export default function Graph() {
           <Brain className="h-6 w-6" />
         </div>
         <div>
-          <h4 className="text-base font-medium">No Quiz History Yet</h4>
+          <h4 className="text-base font-medium">No Daily Recall scores yet</h4>
           <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-            Complete your daily memory quiz to start tracking performance trends over time.
+            Scores appear here after the patient finishes My Day.
           </p>
         </div>
         <Button size="sm" onClick={() => router.push("/quiz")} className="mt-1">
@@ -114,7 +114,9 @@ export default function Graph() {
         if (d) {
           const parsed = new Date(d);
           if (!isNaN(parsed.getTime())) {
-            return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            // Older points get their year so "Nov 8" from last year doesn't read as this year
+            const year = parsed.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined;
+            return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year });
           }
         }
         return `Quiz ${idx + 1}`;
@@ -130,7 +132,7 @@ export default function Graph() {
         labels,
         datasets: [
           {
-            label: "Memory Score",
+            label: "Daily Recall score",
             data: dataPoints,
             borderColor: "rgb(37, 99, 235)",
             backgroundColor: "rgba(37, 99, 235, 0.12)",
@@ -176,7 +178,7 @@ export default function Graph() {
         labels,
         datasets: [
           {
-            label: "Weekly Avg Memory Score",
+            label: "Daily Recall weekly average",
             data: dataPoints,
             borderColor: "rgb(37, 99, 235)",
             backgroundColor: "rgba(37, 99, 235, 0.12)",
@@ -234,7 +236,7 @@ export default function Graph() {
                   label: function (context: any) {
                     const rawPoint = context.raw as ChartPoint;
                     const score = context.parsed.y;
-                    const result: string[] = [`Overall Score: ${score}%`];
+                    const result: string[] = [`Daily Recall: ${score}%`];
                     if (rawPoint && rawPoint.breakdown) {
                       const bd = rawPoint.breakdown;
                       if (bd.activity1_faceRecognition != null) {

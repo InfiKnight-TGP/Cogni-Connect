@@ -49,6 +49,7 @@ for _path, _default in {
     'performance_data.json': {"scores": [], "game_scores": []},
     'video_journals.json': {},
     'routines.json': {"steps": []},
+    'settings.json': {"pin": "1234", "patient_name": ""},
 }.items():
     if not os.path.exists(_path):
         with open(_path, 'w', encoding='utf-8') as _f:
@@ -800,6 +801,44 @@ def day_frames():
 def serve_frame(filepath):
     """Serve frames extracted by the video pipeline."""
     return send_from_directory(os.path.abspath(FRAMES_ROOT), filepath)
+
+
+SETTINGS_PATH = 'settings.json'
+
+
+def _load_settings():
+    with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
+        return {"pin": "1234", "patient_name": "", **json.load(f)}
+
+
+@api.route('/caregiver/unlock', methods=['POST'])
+def caregiver_unlock():
+    """{"pin": "1234"} -> 200 if it matches settings.json, else 403.
+    ponytail: a soft lock that keeps the patient out of caregiver screens; it does not secure the API."""
+    import hmac
+    pin = str((request.get_json(silent=True) or {}).get('pin', ''))
+    if hmac.compare_digest(pin, str(_load_settings()['pin'])):
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "Wrong PIN"}), 403
+
+
+@api.route('/settings', methods=['GET'])
+def get_settings():
+    """Settings the app may show (never the PIN)."""
+    return jsonify({"patient_name": _load_settings()['patient_name']})
+
+
+@api.route('/settings', methods=['POST'])
+def save_settings():
+    """{"patient_name": "..."}; the PIN is changed by editing settings.json."""
+    name = (request.get_json(silent=True) or {}).get('patient_name')
+    if not isinstance(name, str) or len(name.strip()) > 60:
+        return jsonify({"error": "patient_name must be text, up to 60 characters"}), 400
+    settings = _load_settings()
+    settings['patient_name'] = name.strip()
+    with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
+        json.dump(settings, f, indent=2, ensure_ascii=False)
+    return jsonify({"patient_name": settings['patient_name']})
 
 
 ROUTINES_PATH = 'routines.json'

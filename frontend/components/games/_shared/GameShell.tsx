@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { createContext, useContext, useState } from "react";
 import { saveScore } from "./saveScore";
 import { Button } from "@/components/ui/button";
 import { Award, Play, RotateCcw } from "lucide-react";
 import { useCaregiver } from "@/lib/mode";
+
+/** True on the caregiver's All Games page: games can be tried without saving a score. */
+export const PreviewContext = createContext(false);
 
 export interface GameShellProps {
   gameId: string;
@@ -33,6 +36,7 @@ export default function GameShell({
   const [finished, setFinished] = useState(false);
   const [score, setScore] = useState<number | null>(null);
   const [caregiver] = useCaregiver(); // patients never see level or skill names
+  const preview = useContext(PreviewContext);
 
   const handleFinish = async (finalScore: number) => {
     const clampedScore = Math.max(0, Math.min(100, Math.round(finalScore)));
@@ -40,8 +44,8 @@ export default function GameShell({
     setFinished(true);
     setStarted(false);
 
-    // Call saveScore
-    await saveScore({
+    // Previews from All Games must not count as the patient's scores
+    if (!preview) await saveScore({
       date,
       game_id: gameId,
       level,
@@ -128,6 +132,7 @@ export default function GameShell({
             <p className="text-lg text-foreground font-medium">
               You scored <span className="font-extrabold text-primary">{score}</span> / 100
             </p>
+            {preview && <p className="text-sm text-muted-foreground">Preview: this score was not saved.</p>}
           </div>
           <Button
             variant="outline"

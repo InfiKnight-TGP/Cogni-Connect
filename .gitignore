@@ -31,3 +31,4 @@ backend/performance_data.json
 backend/video_journals.json
 backend/daily_plans.json
 backend/routines.json
+backend/settings.json

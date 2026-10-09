@@ -13,3 +13,4 @@ To reset a file, copy the empty example over it, e.g. `copy sample_data\routines
 | `video_journals.json` | Journal entry and date for each uploaded video |
 | `qas.json` | Quiz questions generated from the videos |
 | `routines.json` | The caregiver's routine steps for Plan the Day |
+| `settings.json` | Caregiver PIN (default `1234`) and the patient's name for the report |

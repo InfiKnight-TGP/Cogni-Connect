@@ -8,6 +8,7 @@ import { Upload, CheckCircle, AlertCircle, Video, Loader2, Calendar } from "luci
 import { useState, useRef, useEffect } from "react";
 import { DatePickerWithPresets } from "@/components/quiz/datePicker";
 import { API_URL } from "@/lib/api";
+import { CaregiverOnly } from "@/components/caregiver";
 
 interface UploadedVideo {
   filename: string;
@@ -24,7 +25,7 @@ interface ProcessingStatus {
   progress: number;
 }
 
-export default function UploadPage() {
+function UploadVideos() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
@@ -171,7 +172,6 @@ export default function UploadPage() {
 
   return (
     <>
-      <Nav />
       <main className="flex min-h-screen w-screen items-start justify-center pt-24">
         <div className="w-full max-w-screen-lg space-y-8 px-4 py-8">
           {/* Header */}
@@ -371,6 +371,17 @@ export default function UploadPage() {
           </Card>
         </div>
       </main>
+    </>
+  );
+}
+
+export default function UploadPage() {
+  return (
+    <>
+      <Nav />
+      <CaregiverOnly>
+        <UploadVideos />
+      </CaregiverOnly>
     </>
   );
 }
