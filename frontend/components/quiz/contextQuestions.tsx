@@ -11,6 +11,7 @@ import { Textarea } from "../ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import VideoModal from "../videoModal";
 import { format } from "date-fns";
+import { API_URL } from "@/lib/api";
 
 export default function ContextQuestions({
   setProgress,
@@ -45,7 +46,7 @@ export default function ContextQuestions({
   useEffect(() => {
     const fetchQuestions = async () => {
       try {
-        const response = await fetch("http://localhost:5000/questions");
+        const response = await fetch(`${API_URL}/questions`);
         if (response.ok) {
           const result = await response.json();
           const questions = result.questions || [];
@@ -103,7 +104,7 @@ export default function ContextQuestions({
         const combinedScore = Math.round(validScores.reduce((sum, score) => sum + score, 0) / validScores.length);
         
         // Save combined performance to backend
-        fetch("http://localhost:5000/performance", {
+        fetch(`${API_URL}/performance`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -111,6 +112,9 @@ export default function ContextQuestions({
           body: JSON.stringify({
             score: combinedScore,
             date: format(date, "yyyy-MM-dd"),
+            game_id: "daily_recall",
+            level: 1,
+            skill: "personal memory",
             breakdown: {
               activity1_faceRecognition: activityScores?.activity1,
               activity2_namePeople: activityScores?.activity2,

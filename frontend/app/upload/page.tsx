@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Upload, CheckCircle, AlertCircle, Video, Loader2, Calendar } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { DatePickerWithPresets } from "@/components/quiz/datePicker";
+import { API_URL } from "@/lib/api";
 
 interface UploadedVideo {
   filename: string;
@@ -46,7 +47,7 @@ export default function UploadPage() {
     if (currentProcessingFile) {
       const interval = setInterval(async () => {
         try {
-          const response = await fetch(`http://localhost:5000/processing-status/${currentProcessingFile}`);
+          const response = await fetch(`${API_URL}/processing-status/${currentProcessingFile}`);
           if (response.ok) {
             const status = await response.json();
             setProcessingStatus(status);
@@ -70,7 +71,7 @@ export default function UploadPage() {
 
   const fetchVideos = async () => {
     try {
-      const response = await fetch("http://localhost:5000/videos");
+      const response = await fetch(`${API_URL}/videos`);
       if (response.ok) {
         const data = await response.json();
         setVideos(data);
@@ -121,7 +122,7 @@ export default function UploadPage() {
     formData.append("date", videoDate.toISOString());
 
     try {
-      const response = await fetch("http://localhost:5000/upload", {
+      const response = await fetch(`${API_URL}/upload`, {
         method: "POST",
         body: formData,
       });

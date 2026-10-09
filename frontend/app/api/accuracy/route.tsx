@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/api";
 export async function POST(request: Request) {
   try {
     const req = await request.json();
@@ -13,7 +14,7 @@ export async function POST(request: Request) {
     });
 
     const res = await fetch(
-      `http://127.0.0.1:5000/accuracy?${params.toString()}`,
+      `${API_URL}/accuracy?${params.toString()}`,
       {
         headers: {
           "Content-Type": "application/json",

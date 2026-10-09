@@ -5,6 +5,7 @@ import "./index.css";
 import Water from "./water.jpg";
 import { Card } from "@/components/ui/card";
 import { useState } from "react";
+import { API_URL } from "@/lib/api";
 
 interface KnownFace {
   name: string;
@@ -56,7 +57,7 @@ export default function Bubbles({
         <Card className="h-48 w-48 overflow-hidden border-2 border-primary/20 shadow-md">
           {target.path ? (
             <Image
-              src={`http://localhost:5000/known-faces/${target.path}`}
+              src={`${API_URL}/known-faces/${target.path}`}
               alt={target.name}
               className="h-full w-full object-cover"
               width={192}

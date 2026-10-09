@@ -10,6 +10,7 @@ import Nav from "@/components/nav";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
+import { API_URL } from "@/lib/api";
 
 export default function Page() {
   const [progress, setProgress] = useState(-1);
@@ -39,7 +40,7 @@ export default function Page() {
   const generateQuestions = async () => {
     setGeneratingQuestions(true);
     try {
-      const response = await fetch("http://localhost:5000/generate-questions", {
+      const response = await fetch(`${API_URL}/generate-questions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

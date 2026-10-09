@@ -37,7 +37,7 @@ export default function StartQuiz({
       </div>
 
       <div className="mb-2 mt-8">
-        Select which date you'd like to be tested on:
+        Select which date you&apos;d like to be tested on:
       </div>
       <DatePickerWithPresets date={date} setDate={setDate} />
 

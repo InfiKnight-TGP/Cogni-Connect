@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Graph from "./graph";
 import Nav from "@/components/nav";
+import { API_URL } from "@/lib/api";
 
 export default function Home() {
   const router = useRouter();
@@ -34,7 +35,7 @@ export default function Home() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch("http://localhost:5000/performance");
+        const response = await fetch(`${API_URL}/performance`);
         const data = await response.json();
         
         if (data.scores && data.scores.length > 0) {

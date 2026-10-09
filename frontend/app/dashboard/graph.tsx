@@ -16,6 +16,7 @@ import { Line } from "react-chartjs-2";
 import { Button } from "@/components/ui/button";
 import { Brain } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { API_URL } from "@/lib/api";
 
 ChartJS.register(
   CategoryScale,
@@ -58,7 +59,7 @@ export default function Graph() {
   useEffect(() => {
     const fetchPerformanceData = async () => {
       try {
-        const response = await fetch("http://localhost:5000/performance");
+        const response = await fetch(`${API_URL}/performance`);
         const data = await response.json();
         if (data.scores && Array.isArray(data.scores)) {
           setScores(data.scores);

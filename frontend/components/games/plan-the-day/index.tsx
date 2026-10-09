@@ -10,7 +10,7 @@ import StepRound, { StepCard } from "./StepRound";
 import ErrandRound from "./ErrandRound";
 import { shuffle } from "./useSlots";
 
-const API = "http://localhost:5000";
+import { API_URL as API } from "@/lib/api";
 
 type Round =
   | { kind: "steps"; title: string; prompt: string; cards: StepCard[] }

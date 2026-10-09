@@ -806,7 +806,7 @@ def save_performance():
             performance_data = {"scores": []}
 
         from datetime import datetime
-        if data.get('game_id'):
+        if data.get('game_id') and data['game_id'] != 'daily_recall':
             # Game scores are kept apart so the quiz dashboard chart is unaffected
             performance_data.setdefault("game_scores", []).append({
                 "game_id": data['game_id'],
@@ -822,7 +822,10 @@ def save_performance():
                 "score": score,
                 "date": date or datetime.now().isoformat(),
                 "timestamp": datetime.now().isoformat(),
-                "breakdown": breakdown  # Store individual activity scores
+                "breakdown": breakdown,  # Store individual activity scores
+                "game_id": data.get('game_id'),
+                "level": data.get('level'),
+                "skill": data.get('skill'),
             })
         
         # Save updated data

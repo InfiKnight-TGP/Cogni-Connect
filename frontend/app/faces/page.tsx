@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Upload, CheckCircle, AlertCircle, User, Trash2, X } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
+import { API_URL } from "@/lib/api";
 
 interface KnownFace {
   name: string;
@@ -32,7 +33,7 @@ export default function FacesPage() {
 
   const fetchFaces = async () => {
     try {
-      const response = await fetch("http://localhost:5000/known-faces");
+      const response = await fetch(`${API_URL}/known-faces`);
       if (response.ok) {
         const data = await response.json();
         // Backend returns {faces: [...]} format
@@ -90,7 +91,7 @@ export default function FacesPage() {
     formData.append("name", personName.trim());
 
     try {
-      const response = await fetch("http://localhost:5000/upload-face", {
+      const response = await fetch(`${API_URL}/upload-face`, {
         method: "POST",
         body: formData,
       });
@@ -123,7 +124,7 @@ export default function FacesPage() {
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/delete-face/${filename}`, {
+      const response = await fetch(`${API_URL}/delete-face/${filename}`, {
         method: "DELETE",
       });
 
@@ -179,7 +180,7 @@ export default function FacesPage() {
             <CardHeader>
               <CardTitle>Add New Face</CardTitle>
               <CardDescription>
-                Upload a clear photo of a person's face (JPG or PNG, max 10MB)
+                Upload a clear photo of a person&apos;s face (JPG or PNG, max 10MB)
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -232,7 +233,7 @@ export default function FacesPage() {
                 <div className="flex flex-col justify-center space-y-4">
                   <div className="space-y-2">
                     <label htmlFor="personName" className="text-sm font-medium">
-                      Person's Name *
+                      Person&apos;s Name *
                     </label>
                     <Input
                       id="personName"
@@ -312,7 +313,7 @@ export default function FacesPage() {
                     >
                       <div className="aspect-square bg-muted">
                         <img
-                          src={`http://localhost:5000/known-faces/${face.path}`}
+                          src={`${API_URL}/known-faces/${face.path}`}
                           alt={face.name}
                           className="h-full w-full object-cover"
                         />

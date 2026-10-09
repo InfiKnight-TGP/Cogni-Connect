@@ -7,6 +7,7 @@ import { GAME_REGISTRY, getGameById, GameRegistryEntry } from "@/components/game
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Brain, Calendar, Gamepad2, Sparkles, Trophy } from "lucide-react";
 import { format } from "date-fns";
+import { API_URL } from "@/lib/api";
 
 interface DailyPlanResponse {
   level1: string[];
@@ -32,7 +33,7 @@ export default function GamesPage() {
   const fetchDailyPlan = async (dateStr: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:5000/daily-plan?date=${dateStr}`);
+      const res = await fetch(`${API_URL}/daily-plan?date=${dateStr}`);
       if (res.ok) {
         const data = await res.json();
         setDailyPlan(data);
