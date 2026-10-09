@@ -19,18 +19,81 @@ try:
     HAVE_FACE_RECOGNITION = True
 except ImportError:
     HAVE_FACE_RECOGNITION = False
-    print("Warning: face_recognition library not installed. Falling back to OpenCV face detection.")
+    print("face_recognition not installed; using OpenCV YuNet + SFace.")
+
+
+MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')  # see download_models.py
+YUNET_MODEL = os.path.join(MODELS_DIR, 'face_detection_yunet_2023mar.onnx')
+SFACE_MODEL = os.path.join(MODELS_DIR, 'face_recognition_sface_2021dec.onnx')
+FACE_SCORE = 0.8          # YuNet confidence needed to count as a face
+MATCH_THRESHOLD = 0.363   # SFace cosine similarity; below this the face is "Unknown"
+MAX_DETECT_WIDTH = 640    # big photos are shrunk for detection, then boxes are scaled back
+
+
+def _model(path):
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Face model missing: {path}. Run: python download_models.py")
+    return path
+
+
+def detect_faces(img):
+    """YuNet faces in a BGR image, most confident first.
+    Each row: x, y, w, h, 5 landmark (x, y) pairs, score - in the original image's pixels."""
+    scale = min(1.0, MAX_DETECT_WIDTH / img.shape[1])
+    small = cv2.resize(img, None, fx=scale, fy=scale) if scale < 1 else img
+    # A detector per call keeps this safe across the upload threads
+    detector = cv2.FaceDetectorYN.create(_model(YUNET_MODEL), "", (small.shape[1], small.shape[0]), FACE_SCORE)
+    _, faces = detector.detect(small)
+    if faces is None:
+        return []
+    faces[:, :14] /= scale
+    return sorted(faces, key=lambda f: -f[14])
 
 
 def has_face(image_path):
-    """True if the photo has a detectable face, using the same detector as perform_face_recognition."""
+    """True if the photo has a clear face (best YuNet confidence >= FACE_SCORE)."""
     if HAVE_FACE_RECOGNITION:
         return bool(face_recognition.face_locations(face_recognition.load_image_file(image_path)))
     img = cv2.imread(image_path)
     if img is None:
         return False
-    cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    return len(cascade.detectMultiScale(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), 1.1, 4)) > 0
+    faces = detect_faces(img)
+    return bool(faces) and faces[0][14] >= FACE_SCORE
+
+
+def known_photos(known_faces_dir="known_faces"):
+    """(person id, photo path) from people.json. Recognition reports the id; app.display_name shows the name."""
+    if os.path.exists('people.json'):
+        with open('people.json', 'r', encoding='utf-8') as f:
+            return [(p['id'], os.path.join(known_faces_dir, p['photo'])) for p in json.load(f) if p.get('photo')]
+    # Before the app's first run there is no people.json yet; the photo file names are the ids
+    return [(os.path.splitext(f)[0], os.path.join(known_faces_dir, f))
+            for f in sorted(os.listdir(known_faces_dir)) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+
+
+def load_known_features(recognizer):
+    """SFace feature of the best face in each person's photo, computed once per run."""
+    ids, features = [], []
+    for person_id, path in known_photos():
+        img = cv2.imread(path)
+        faces = detect_faces(img) if img is not None else []
+        if not faces:
+            print(f"  Warning: no face found in {path}, skipping")
+            continue
+        ids.append(person_id)
+        features.append(recognizer.feature(recognizer.alignCrop(img, faces[0])))
+    return ids, features
+
+
+def recognize_faces(frame, recognizer, known_ids, known_features):
+    """Person id for each face in the frame, or "Unknown" if no known face is similar enough."""
+    names = []
+    for face in detect_faces(frame):
+        feature = recognizer.feature(recognizer.alignCrop(frame, face))
+        scores = [recognizer.match(feature, k, cv2.FaceRecognizerSF_FR_COSINE) for k in known_features]
+        best = int(np.argmax(scores)) if scores else -1
+        names.append(known_ids[best] if best >= 0 and scores[best] >= MATCH_THRESHOLD else "Unknown")
+    return names
 
 
 # Detect MoviePy version
@@ -181,126 +244,74 @@ def extract_unique_frames(chunks_folder):
 def perform_face_recognition(chunks_folder):
     """Perform face recognition on video chunks."""
     print(f"Performing face recognition in: {chunks_folder}")
-    
-    known_faces_dir = "known_faces"
-    known_faces_names = []
-    
+
     if HAVE_FACE_RECOGNITION:
-        known_faces_encodings = []
-        if os.path.exists(known_faces_dir) and os.listdir(known_faces_dir):
-            for file in os.listdir(known_faces_dir):
-                if file.endswith(('.jpg', '.jpeg', '.png')):
-                    file_path = os.path.join(known_faces_dir, file)
-                    image = face_recognition.load_image_file(file_path)
-                    encodings = face_recognition.face_encodings(image)
-                    if encodings:
-                        encoding = encodings[0]
-                        known_faces_encodings.append(encoding)
-                        known_faces_names.append(os.path.splitext(file)[0].replace('_', ' '))
-            print(f"  Loaded {len(known_faces_names)} known faces: {known_faces_names}")
-        else:
-            print("  Warning: No known faces found")
+        known_ids, known_faces_encodings = [], []
+        for person_id, path in known_photos():
+            encodings = face_recognition.face_encodings(face_recognition.load_image_file(path))
+            if encodings:
+                known_ids.append(person_id)
+                known_faces_encodings.append(encodings[0])
     else:
-        # OpenCV Cascade fallback setup
-        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        known_face_hists = {}
-        if os.path.exists(known_faces_dir) and os.listdir(known_faces_dir):
-            for file in os.listdir(known_faces_dir):
-                if file.endswith(('.jpg', '.jpeg', '.png')):
-                    file_path = os.path.join(known_faces_dir, file)
-                    img = cv2.imread(file_path)
-                    if img is not None:
-                        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
-                        name = os.path.splitext(file)[0].replace('_', ' ')
-                        known_faces_names.append(name)
-                        if len(faces) > 0:
-                            x, y, w, h = faces[0]
-                            roi = gray[y:y+h, x:x+w]
-                            hist = cv2.calcHist([roi], [0], None, [256], [0, 256])
-                            cv2.normalize(hist, hist, 0, 1, cv2.NORM_MINMAX)
-                            known_face_hists[name] = hist
-        print(f"  OpenCV Fallback: Loaded {len(known_faces_names)} known faces: {known_faces_names}")
+        recognizer = cv2.FaceRecognizerSF.create(_model(SFACE_MODEL), "")
+        known_ids, known_features = load_known_features(recognizer)
+    print(f"  Loaded {len(known_ids)} known faces: {known_ids}")
 
     # Process video chunks
     for filename in os.listdir(chunks_folder):
         if filename.endswith((".mp4", ".mov")):
             video_path = os.path.join(chunks_folder, filename)
             video_name, _ = os.path.splitext(filename)
-            
+
             print(f"  Processing: {filename}")
             appearance_records = {}
             video_capture = cv2.VideoCapture(video_path)
             frame_number = 0
-            
+
             while video_capture.isOpened():
                 ret, frame = video_capture.read()
                 if not ret:
                     break
-                
+
                 # Process every 5th frame for efficiency
                 if frame_number % 5 == 0:
-                    frame_resized = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-                    
                     if HAVE_FACE_RECOGNITION:
+                        frame_resized = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
                         face_locations = face_recognition.face_locations(frame_resized)
                         face_encodings = face_recognition.face_encodings(frame_resized, face_locations)
-                        
+                        names = []
                         for face_encoding in face_encodings:
+                            name = "Unknown"
                             if known_faces_encodings:
                                 matches = face_recognition.compare_faces(known_faces_encodings, face_encoding, tolerance=0.6)
-                                name = "Unknown"
                                 face_distances = face_recognition.face_distance(known_faces_encodings, face_encoding)
                                 best_match_index = np.argmin(face_distances)
                                 if matches[best_match_index]:
-                                    name = known_faces_names[best_match_index]
-                                
-                                if name not in appearance_records:
-                                    appearance_records[name] = []
-                                appearance_records[name].append(frame_number)
+                                    name = known_ids[best_match_index]
+                            names.append(name)
                     else:
-                        # OpenCV Cascade fallback detection
-                        gray_resized = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2GRAY)
-                        faces = face_cascade.detectMultiScale(gray_resized, scaleFactor=1.2, minNeighbors=4, minSize=(20, 20))
-                        for (x, y, w, h) in faces:
-                            face_roi = gray_resized[y:y+h, x:x+w]
-                            hist = cv2.calcHist([face_roi], [0], None, [256], [0, 256])
-                            cv2.normalize(hist, hist, 0, 1, cv2.NORM_MINMAX)
-                            
-                            name = "Unknown"
-                            best_score = 0.3
-                            for k_name, k_hist in known_face_hists.items():
-                                score = cv2.compareHist(hist, k_hist, cv2.HISTCMP_CORREL)
-                                if score > best_score:
-                                    best_score = score
-                                    name = k_name
-                            
-                            # If we have known faces but histogram correlation threshold didn't match,
-                            # assign to known faces if faces were detected
-                            if name == "Unknown" and known_faces_names:
-                                name = known_faces_names[0]
+                        names = recognize_faces(frame, recognizer, known_ids, known_features)
 
-                            if name not in appearance_records:
-                                appearance_records[name] = []
-                            appearance_records[name].append(frame_number)
-                
+                    for name in names:
+                        if name != "Unknown":
+                            appearance_records.setdefault(name, []).append(frame_number)
+
                 frame_number += 1
-            
+
             video_capture.release()
-            
-            # Create summary
-            appearance_summary = {name: len(frames) for name, frames in appearance_records.items() if name != "Unknown"}
-            names = [name for name in appearance_summary if name != "Unknown"]
-            
+
+            # Unmatched faces are never recorded, so only known people end up in *_faces.json
+            names = list(appearance_records)
+
             video_appearance_summary = {video_path: names}
-            
+
             # Save JSON
             json_path = os.path.join(chunks_folder, f'{video_name}_faces.json')
             with open(json_path, 'w') as json_file:
                 json.dump(video_appearance_summary, json_file, indent=4)
-            
+
             print(f"  ✓ Found faces: {names if names else 'No known faces detected'}")
-    
+
     print(f"✓ Face recognition completed")
 
 

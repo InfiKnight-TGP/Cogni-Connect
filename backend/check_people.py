@@ -11,6 +11,10 @@ shutil.copytree(os.path.join(here, 'known_faces'), os.path.join(tmp, 'known_face
 os.chdir(tmp)
 sys.path.insert(0, tmp)
 import app
+import process_video as pv
+pv.YUNET_MODEL = os.path.join(here, 'models', os.path.basename(pv.YUNET_MODEL))  # models stay in backend/models
+pv.SFACE_MODEL = os.path.join(here, 'models', os.path.basename(pv.SFACE_MODEL))
+assert not pv.has_face(os.path.join(here, '..', 'frontend', 'app', 'brain.jpeg'))  # no face, Haar used to accept it
 c = app.api.test_client()
 r = c.get('/people'); people = r.get_json()
 print('import:', [(p['id'], p['name'], p['photo']) for p in people])

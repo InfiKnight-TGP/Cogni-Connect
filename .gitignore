@@ -25,3 +25,4 @@ __pycache__/
 Thumbs.db
 scratch-verify/
 backend/people.json
+backend/models/*.onnx
