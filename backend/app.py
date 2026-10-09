@@ -9,6 +9,10 @@ import re
 import cv2
 from werkzeug.utils import secure_filename
 import threading
+import sys
+
+# process_video prints "✓"; under `npm run dev` stdout is a pipe, which Windows encodes as cp1252
+sys.stdout.reconfigure(encoding="utf-8")
 
 # Load environment variables from .env file
 load_dotenv()
