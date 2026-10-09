@@ -42,6 +42,18 @@ client = OpenAI(
 
 QAS_PATH = "qas.json"  
 
+# Runtime data is not in git; start each file empty if it's missing (examples in sample_data/).
+# people.json is created by _load_people(), which imports known_faces/ on first run.
+for _path, _default in {
+    QAS_PATH: [],
+    'performance_data.json': {"scores": [], "game_scores": []},
+    'video_journals.json': {},
+    'routines.json': {"steps": []},
+}.items():
+    if not os.path.exists(_path):
+        with open(_path, 'w', encoding='utf-8') as _f:
+            json.dump(_default, _f, indent=2)
+
 
 VIDEO_CHUNKS_ROOT = "video_chunks"  
 SUMMARY_ROOT = "summary"

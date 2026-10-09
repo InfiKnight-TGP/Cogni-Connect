@@ -109,6 +109,10 @@ export default function TodayPage() {
         ) : plan === null ? (
           <p className="text-2xl">Loading…</p>
         ) : (
+          <>
+          <p className="text-2xl text-muted-foreground">
+            {plan.filter((a) => best[a.id] !== undefined).length} of {plan.length} done today
+          </p>
           <ol className="space-y-4">
             {plan.map((activity, i) => {
               const recall = activity.id === "daily_recall";
@@ -155,6 +159,7 @@ export default function TodayPage() {
               );
             })}
           </ol>
+          </>
         )}
 
         <div className="grid gap-4 sm:grid-cols-2">

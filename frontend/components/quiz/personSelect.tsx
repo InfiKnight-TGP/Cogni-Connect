@@ -26,10 +26,12 @@ interface KnownFace {
 export default function PersonSelect({
   setProgress,
   date,
+  myDay = false,
   setActivityScore,
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
+  myDay?: boolean; // "My Day" from the Today page: no date, "Part X of 3"
   setActivityScore?: (score: number) => void;
 }) {
   const [selected, setSelected] = useState<number[]>([]);
@@ -157,10 +159,10 @@ export default function PersonSelect({
           <ArrowLeft className="mr-2 h-4 w-4" /> Back
         </Button>
         <div className="text-lg font-medium">
-          Memory Quiz —{" "}
-          <span className="text-blue-600">{date.toDateString()}</span>
+          {myDay ? "My Day" : <>Memory Quiz —{" "}
+          <span className="text-blue-600">{date.toDateString()}</span></>}
         </div>
-        <Badge className="ml-4 h-8 px-4">Activity 1 of 3</Badge>
+        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 1 of 3" : "Activity 1 of 3"}</Badge>
       </div>
 
       <div className="mt-12 text-xl font-medium">
@@ -181,7 +183,7 @@ export default function PersonSelect({
             onClick={() => setProgress((prev) => prev + 1)}
             className="text-lg font-medium transition-all"
           >
-            Continue to Activity 2 <ArrowRight className="ml-3 h-4 w-4" />
+            {myDay ? "Continue to Part 2" : "Continue to Activity 2"} <ArrowRight className="ml-3 h-4 w-4" />
           </Button>
         </div>
       ) : (
@@ -260,7 +262,7 @@ export default function PersonSelect({
             onClick={() => setProgress((prev) => prev + 1)}
             className="text-lg font-medium transition-all"
           >
-            Continue to Activity 2 <ArrowRight className="ml-3 h-4 w-4" />
+            {myDay ? "Continue to Part 2" : "Continue to Activity 2"} <ArrowRight className="ml-3 h-4 w-4" />
           </Button>
         </>
       )}

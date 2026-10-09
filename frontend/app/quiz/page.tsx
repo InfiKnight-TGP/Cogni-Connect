@@ -106,19 +106,22 @@ export default function Page() {
               onRegenerateQuestions={generateQuestions}
             />
           ) : progress === 0 ? (
-            <PersonSelect 
+            <PersonSelect
+              myDay={myDay}
               setProgress={setProgress} 
               date={date} 
               setActivityScore={(score) => setActivityScores(prev => ({ ...prev, activity1: score }))}
             />
           ) : progress === 1 ? (
-            <NamePeople 
+            <NamePeople
+              myDay={myDay}
               setProgress={setProgress} 
               date={date}
               setActivityScore={(score) => setActivityScores(prev => ({ ...prev, activity2: score }))}
             />
           ) : progress === 2 ? (
-            <ContextQuestions 
+            <ContextQuestions
+              myDay={myDay}
               setProgress={setProgress} 
               date={date}
               activityScores={activityScores}

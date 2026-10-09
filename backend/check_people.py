@@ -17,6 +17,11 @@ pv.SFACE_MODEL = os.path.join(here, 'models', os.path.basename(pv.SFACE_MODEL))
 assert os.path.exists(os.path.join(here, 'test_images', 'no_face.jpeg'))
 assert not pv.has_face(os.path.join(here, 'test_images', 'no_face.jpeg'))  # no face, Haar used to accept it
 c = app.api.test_client()
+# runtime data files are created empty when missing
+for f, default in {'qas.json': [], 'performance_data.json': {'scores': [], 'game_scores': []},
+                   'video_journals.json': {}, 'routines.json': {'steps': []}}.items():
+    assert json.load(open(f, encoding='utf-8')) == default, f
+assert c.get('/questions').get_json() == {'questions': []}
 r = c.get('/people'); people = r.get_json()
 print('import:', [(p['id'], p['name'], p['photo']) for p in people])
 assert {p['photo'] for p in people} == set(os.listdir('known_faces'))
