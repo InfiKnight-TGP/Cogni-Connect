@@ -5,17 +5,22 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { saveGameScore } from "@/lib/game-scores";
 import type { GameId } from "@/lib/games";
+import Link from "next/link";
 
 export default function GameResult({
   gameId,
   score,
   breakdown,
   onPlayAgain,
+  startedAt,
+  difficultyLevel,
 }: {
   gameId: GameId;
   score: number;
   breakdown: Record<string, number | string>;
   onPlayAgain: () => void;
+  startedAt?: string;
+  difficultyLevel?: string | number;
 }) {
   const saved = useRef(false);
   const [saveStatus, setSaveStatus] = useState<
@@ -25,10 +30,14 @@ export default function GameResult({
   useEffect(() => {
     if (saved.current) return;
     saved.current = true;
-    saveGameScore(gameId, score, breakdown).then((success) => {
+    saveGameScore(gameId, score, breakdown, {
+      startedAt,
+      difficultyLevel,
+      recordId: typeof crypto !== "undefined" ? crypto.randomUUID() : `${gameId}-${Date.now()}`,
+    }).then((success) => {
       setSaveStatus(success ? "saved" : "unavailable");
     });
-  }, [breakdown, gameId, score]);
+  }, [breakdown, difficultyLevel, gameId, score, startedAt]);
 
   return (
     <Card className="mx-auto max-w-xl border-primary/40 bg-primary/5 p-6 text-center sm:p-8">
@@ -47,9 +56,10 @@ export default function GameResult({
         {saveStatus === "unavailable" &&
           "Your score is shown here. Start the memory backend to add it to dashboard history."}
       </p>
-      <Button className="mt-6" onClick={onPlayAgain}>
-        Play again
-      </Button>
+      <div className="mt-6 flex flex-wrap justify-center gap-3">
+        <Link href="/reports"><Button variant="outline">View session report</Button></Link>
+        <Button onClick={onPlayAgain}>Play again</Button>
+      </div>
     </Card>
   );
 }

@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import type { ActivityResult } from "@/lib/game-scores";
 
 import { Separator } from "../ui/separator";
 import Bubbles from "./bubbles";
@@ -22,16 +23,25 @@ export default function NamePeople({
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
-  setActivityScore?: (score: number) => void;
+  setActivityScore?: (result: ActivityResult) => void;
 }) {
   const [clicked, setClicked] = useState(false);
+  const [wrongSelections, setWrongSelections] = useState(0);
   const [knownFaces, setKnownFaces] = useState<KnownFace[]>([]);
   const [loading, setLoading] = useState(true);
 
   const allowContinue = () => {
+    if (clicked) return;
     setClicked(true);
-    // Activity 2: Simple binary score - 100 if correct, 0 if wrong
-    if (setActivityScore) setActivityScore(100);
+    const attempts = wrongSelections + 1;
+    if (setActivityScore) setActivityScore({
+      score: Math.round(100 / attempts),
+      metrics: { accuracy: 1 / attempts, correct_answers: 1, total_questions: 1, attempts, false_selections: wrongSelections },
+    });
+  };
+
+  const recordWrongSelection = () => {
+    if (!clicked) setWrongSelections((value) => value + 1);
   };
 
   // Fetch all known faces (not filtered by date)
@@ -85,8 +95,9 @@ export default function NamePeople({
         </div>
       ) : (
         <>
-          <Bubbles 
-            allowContinue={allowContinue} 
+          <Bubbles
+            allowContinue={allowContinue}
+            onWrongAttempt={recordWrongSelection}
             knownFaces={knownFaces}
           />
 

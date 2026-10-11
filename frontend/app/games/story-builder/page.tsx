@@ -7,6 +7,7 @@ import GameResult from "@/components/games/GameResult";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { stories, storyBuilderLevel } from "./data";
+import { getOrStartSession } from "@/lib/sessions";
 
 function hideWord(sentence: string, answer: string) {
   const start = sentence.toLowerCase().indexOf(answer.toLowerCase());
@@ -20,6 +21,7 @@ export default function StoryBuilderPage() {
   const [correct, setCorrect] = useState(0);
   const [pickedCorrect, setPickedCorrect] = useState<boolean | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  const [startedAt, setStartedAt] = useState<string>();
   const story = stories[storyIndex];
   const score = Math.round((correct / storyBuilderLevel.blanks) * 100);
 
@@ -37,6 +39,7 @@ export default function StoryBuilderPage() {
     setCorrect(0);
     setPickedCorrect(null);
     setSelectedAnswer(null);
+    setStartedAt(undefined);
   };
 
   const choose = (answer: string) => {
@@ -56,10 +59,16 @@ export default function StoryBuilderPage() {
     }
   };
 
+  const beginRecall = () => {
+    getOrStartSession();
+    setStartedAt(new Date().toISOString());
+    setPhase("recall");
+  };
+
   return (
     <GameFrame title="Story Builder" description="Read a short story, then remember a few details." instructions="Read the story at your own pace. Then choose the missing word from three options. There is no timer." level={1} totalLevels={1} score={score}>
       {phase === "result" ? (
-        <GameResult gameId="story-builder" score={score} breakdown={{ skill: "Verbal Memory", correctAnswers: correct, totalBlanks: storyBuilderLevel.blanks }} onPlayAgain={reset} />
+        <GameResult gameId="story-builder" score={score} breakdown={{ skill: "Verbal Memory", correctAnswers: correct, totalBlanks: storyBuilderLevel.blanks }} startedAt={startedAt} difficultyLevel="1" onPlayAgain={reset} />
       ) : phase === "read" ? (
         <section className="mx-auto max-w-2xl" aria-labelledby="story-title">
           <p className="text-sm font-medium text-primary">Level 1 · Verbal Memory</p>
@@ -67,7 +76,7 @@ export default function StoryBuilderPage() {
           <ol className="mt-5 space-y-3">
             {story.sentences.map((sentence, index) => <li key={index} className="rounded-lg border bg-background p-4 text-lg leading-relaxed">{sentence}</li>)}
           </ol>
-          <Button className="mt-6 min-h-12" onClick={() => setPhase("recall")}><Eye className="mr-2 h-4 w-4" />I’m ready to remember</Button>
+          <Button className="mt-6 min-h-12" onClick={beginRecall}><Eye className="mr-2 h-4 w-4" />I’m ready to remember</Button>
         </section>
       ) : (
         <section className="mx-auto max-w-2xl" aria-live="polite">

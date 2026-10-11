@@ -10,21 +10,27 @@ import { Badge } from "../ui/badge";
 import { Textarea } from "../ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import VideoModal from "../videoModal";
+import type { ActivityResult } from "@/lib/game-scores";
+import { savePerformanceResult } from "@/lib/game-scores";
 
 export default function ContextQuestions({
   setProgress,
   date,
-  activityScores,
+  activityResults,
+  activityStartedAt,
   setActivityScore,
+  startedAt,
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
-  activityScores?: {
-    activity1: number | null;
-    activity2: number | null;
-    activity3: number | null;
+  activityResults?: {
+    activity1: ActivityResult | null;
+    activity2: ActivityResult | null;
+    activity3: ActivityResult | null;
   };
-  setActivityScore?: (score: number) => void;
+  activityStartedAt?: Record<number, string>;
+  setActivityScore?: (result: ActivityResult) => void;
+  startedAt?: string;
 }) {
   const [tab, setTab] = useState("1");
   const [feedback, setFeedback] = useState<{submitted: boolean; feedback: number}[]>([]);
@@ -84,43 +90,43 @@ export default function ContextQuestions({
       
       // Calculate average score for Activity 3 (Context Questions)
       const totalScore = feedback.slice(0, data.length).reduce((sum, f) => sum + f.feedback, 0);
-      const activity3Score = (totalScore / data.length) * 10; // Convert to percentage
-      
-      // Report Activity 3 score
-      if (setActivityScore) {
-        setActivityScore(Math.round(activity3Score));
-      }
-      
-      // Calculate combined score from all 3 activities
-      const scores = [
-        activityScores?.activity1,
-        activityScores?.activity2,
-        Math.round(activity3Score)
-      ].filter(score => score !== null && score !== undefined) as number[];
-      
-      // If we have all 3 activity scores, calculate average and save
-      if (scores.length === 3) {
-        const combinedScore = Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
-        
-        // Save combined performance to backend
-        fetch("http://localhost:5000/performance", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            score: combinedScore,
-            date: date.toISOString(),
-            breakdown: {
-              activity1_faceRecognition: activityScores?.activity1,
-              activity2_namePeople: activityScores?.activity2,
-              activity3_contextQuestions: Math.round(activity3Score),
-            }
-          }),
-        }).catch(err => console.error("Error saving performance:", err));
-      }
+      const activity3Result: ActivityResult = {
+        score: Math.round((totalScore / data.length) * 10),
+        metrics: {
+          accuracy: totalScore / (data.length * 10),
+          total_questions: data.length,
+          attempts: data.length,
+          question_scores: feedback.slice(0, data.length).map((item) => item.feedback),
+          memory_date: date.toISOString(),
+        },
+      };
+      setActivityScore?.(activity3Result);
+
+      const submissions = [];
+      if (activityResults?.activity1) submissions.push(savePerformanceResult({
+        game_id: "face-recognition",
+        score: activityResults.activity1.score,
+        metrics: activityResults.activity1.metrics,
+        started_at: activityStartedAt?.[0],
+        difficulty_level: "personalized",
+      }));
+      if (activityResults?.activity2) submissions.push(savePerformanceResult({
+        game_id: "name-recognition",
+        score: activityResults.activity2.score,
+        metrics: activityResults.activity2.metrics,
+        started_at: activityStartedAt?.[1],
+        difficulty_level: "personalized",
+      }));
+      submissions.push(savePerformanceResult({
+        game_id: "context-recall",
+        score: activity3Result.score,
+        metrics: activity3Result.metrics,
+        started_at: startedAt,
+        difficulty_level: "personalized",
+      }));
+      void Promise.all(submissions);
     }
-  }, [feedback, quizCompleted, date, data.length, activityScores, setActivityScore]);
+  }, [feedback, quizCompleted, date, data.length, activityResults, activityStartedAt, setActivityScore, startedAt]);
 
   // Commented out the API fetch since we're using dummy data
   /*

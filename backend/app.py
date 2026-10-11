@@ -8,6 +8,14 @@ import base64
 import cv2
 from werkzeug.utils import secure_filename
 import threading
+from cognitive_reports import (
+    GAME_REGISTRY,
+    build_session_report,
+    get_session_records,
+    load_store,
+    save_record as save_cognitive_record,
+    validate_session_id,
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -739,38 +747,16 @@ def serve_video_chunk_file(filepath):
 
 @api.route('/performance', methods=['POST'])
 def save_performance():
-    """Save quiz performance score."""
+    """Save a completed game result or a legacy score using one JSON store."""
     try:
-        data = request.get_json()
-        score = data.get('score')
-        date = data.get('date')
-        breakdown = data.get('breakdown', {})
-        
-        if score is None:
-            return jsonify({"error": "Score is required"}), 400
-        
-        # Load existing performance data
-        performance_file = 'performance_data.json'
-        if os.path.exists(performance_file):
-            with open(performance_file, 'r') as f:
-                performance_data = json.load(f)
-        else:
-            performance_data = {"scores": []}
-        
-        # Add new score with timestamp and breakdown
-        from datetime import datetime
-        performance_data["scores"].append({
-            "score": score,
-            "date": date or datetime.now().isoformat(),
-            "timestamp": datetime.now().isoformat(),
-            "breakdown": breakdown  # Store individual activity scores
-        })
-        
-        # Save updated data
-        with open(performance_file, 'w') as f:
-            json.dump(performance_data, f, indent=2)
-        
-        return jsonify({"success": True, "message": "Performance saved"}), 200
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        performance_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'performance_data.json')
+        record, created = save_cognitive_record(performance_file, data)
+        return jsonify({"success": True, "created": created, "record_id": record.get("record_id")}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         print(f"Save performance error: {e}")
         return jsonify({"error": str(e)}), 500
@@ -780,17 +766,45 @@ def save_performance():
 def get_performance():
     """Get performance history."""
     try:
-        performance_file = 'performance_data.json'
-        if os.path.exists(performance_file):
-            with open(performance_file, 'r') as f:
-                performance_data = json.load(f)
-            return jsonify(performance_data), 200
-        else:
-            # Return empty data if file doesn't exist
-            return jsonify({"scores": []}), 200
+        performance_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'performance_data.json')
+        return jsonify(load_store(performance_file)), 200
     except Exception as e:
         print(f"Get performance error: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@api.route('/performance/session/<session_id>', methods=['GET'])
+def get_session_performance(session_id):
+    try:
+        session_id = validate_session_id(session_id)
+        performance_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'performance_data.json')
+        records = get_session_records(performance_file, session_id)
+        return jsonify({"session_id": session_id, "scores": records}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        print(f"Get session performance error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api.route('/reports/session/<session_id>', methods=['GET'])
+def get_session_report(session_id):
+    try:
+        session_id = validate_session_id(session_id)
+        performance_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'performance_data.json')
+        performance_data = load_store(performance_file)
+        report = build_session_report(performance_data["scores"], session_id)
+        return jsonify(report), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        print(f"Get session report error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api.route('/reports/registry', methods=['GET'])
+def get_cognitive_game_registry():
+    return jsonify({"domains": ["Memory", "Attention", "Executive Function", "Recognition and Orientation"], "games": GAME_REGISTRY}), 200
 
 
 @api.route('/generate-questions', methods=['POST'])

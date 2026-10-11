@@ -12,12 +12,14 @@ export default function StartQuiz({
   date,
   setDate,
   onRegenerateQuestions,
+  onStartActivity,
 }: {
   progress: number;
   setProgress: (progress: number) => void;
   date: Date;
   setDate: React.Dispatch<React.SetStateAction<Date>>;
   onRegenerateQuestions?: () => void;
+  onStartActivity?: (activityIndex: number) => void;
 }) {
   return (
     <>
@@ -47,7 +49,7 @@ export default function StartQuiz({
       <div className="grid w-full grid-cols-3 gap-4">
         <Card
           onClick={() => {
-            setProgress(0);
+            onStartActivity ? onStartActivity(0) : setProgress(0);
           }}
           className="relative z-0 w-full cursor-pointer overflow-hidden border-primary bg-gradient-to-br from-background via-background to-primary/25 p-6 transition-all hover:shadow-lg"
         >
@@ -62,7 +64,7 @@ export default function StartQuiz({
         </Card>
         <Card
           onClick={() => {
-            setProgress(1);
+            onStartActivity ? onStartActivity(1) : setProgress(1);
           }}
           className="relative z-0 w-full cursor-pointer overflow-hidden border-primary bg-gradient-to-br from-background via-background to-primary/25 p-6 transition-all hover:shadow-lg"
         >
@@ -77,7 +79,7 @@ export default function StartQuiz({
         </Card>
         <Card
           onClick={() => {
-            setProgress(2);
+            onStartActivity ? onStartActivity(2) : setProgress(2);
           }}
           className="relative z-0 w-full cursor-pointer overflow-hidden border-primary bg-gradient-to-br from-background via-background to-primary/25 p-6 transition-all hover:shadow-lg"
         >

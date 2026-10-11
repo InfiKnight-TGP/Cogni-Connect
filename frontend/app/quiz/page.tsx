@@ -9,6 +9,8 @@ import ContextQuestions from "@/components/quiz/contextQuestions";
 import Nav from "@/components/nav";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw } from "lucide-react";
+import { getOrStartSession } from "@/lib/sessions";
+import type { ActivityResult } from "@/lib/game-scores";
 
 export default function Page() {
   const [progress, setProgress] = useState(-1);
@@ -17,11 +19,18 @@ export default function Page() {
   const [questionsGenerated, setQuestionsGenerated] = useState(false);
   
   // Track scores from all activities
-  const [activityScores, setActivityScores] = useState({
-    activity1: null as number | null, // Face Recognition (0-100)
-    activity2: null as number | null, // Name People (0-100)
-    activity3: null as number | null, // Context Questions (0-100)
+  const [activityResults, setActivityResults] = useState({
+    activity1: null as ActivityResult | null,
+    activity2: null as ActivityResult | null,
+    activity3: null as ActivityResult | null,
   });
+  const [activityStartedAt, setActivityStartedAt] = useState<Record<number, string>>({});
+
+  const beginActivity = (activityIndex: number) => {
+    getOrStartSession();
+    setActivityStartedAt((current) => ({ ...current, [activityIndex]: new Date().toISOString() }));
+    setProgress(activityIndex);
+  };
 
   // Auto-generate questions on mount
   useEffect(() => {
@@ -84,25 +93,28 @@ export default function Page() {
               date={date}
               setDate={setDate}
               onRegenerateQuestions={generateQuestions}
+              onStartActivity={beginActivity}
             />
           ) : progress === 0 ? (
             <PersonSelect 
               setProgress={setProgress} 
               date={date} 
-              setActivityScore={(score) => setActivityScores(prev => ({ ...prev, activity1: score }))}
+              setActivityScore={(result) => setActivityResults(prev => ({ ...prev, activity1: result }))}
             />
           ) : progress === 1 ? (
             <NamePeople 
               setProgress={setProgress} 
               date={date}
-              setActivityScore={(score) => setActivityScores(prev => ({ ...prev, activity2: score }))}
+              setActivityScore={(result) => setActivityResults(prev => ({ ...prev, activity2: result }))}
             />
           ) : progress === 2 ? (
             <ContextQuestions 
               setProgress={setProgress} 
               date={date}
-              activityScores={activityScores}
-              setActivityScore={(score) => setActivityScores(prev => ({ ...prev, activity3: score }))}
+              activityResults={activityResults}
+              activityStartedAt={activityStartedAt}
+              startedAt={activityStartedAt[2]}
+              setActivityScore={(result) => setActivityResults(prev => ({ ...prev, activity3: result }))}
             />
           ) : null}
         </div>

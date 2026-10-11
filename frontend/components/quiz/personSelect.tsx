@@ -11,14 +11,14 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import type { ActivityResult } from "@/lib/game-scores";
 
 import { Separator } from "../ui/separator";
 import { Badge } from "../ui/badge";
 
-<<<<<<< HEAD
 // Import static distractor images
 import Bharath from "./data/Bharath.jpg";
-import Dinesh from "./data/Dinesh.png";
+import DineshPng from "./data/Dinesh.png";
 import Kaleesh from "./data/Kaleesh.jpg";
 import Monish from "./data/Monish.jpg";
 import Narmatha from "./data/Narmatha.jpg";
@@ -27,10 +27,8 @@ import Shawn from "./data/Shawn.png";
 import Vaibhavi from "./data/Vaibhavi.jpg";
 import Yasash from "./data/Yasash.jpg";
 import Asad from "./data/Asad.jpg";
-=======
 import Akash from "./data/Akash.jpeg";
-import Dinesh from "./data/Dinesh.jpeg";
->>>>>>> d13a9c5 (Baseline commit)
+import DineshJpeg from "./data/Dinesh.jpeg";
 
 interface KnownFace {
   name: string;
@@ -39,11 +37,10 @@ interface KnownFace {
   staticImage?: any; // For imported static images
 }
 
-<<<<<<< HEAD
 // Static distractor faces with real images
 const STATIC_DISTRACTORS: KnownFace[] = [
   { name: "Bharath", path: "", isDistractor: true, staticImage: Bharath },
-  { name: "Dinesh", path: "", isDistractor: true, staticImage: Dinesh },
+  { name: "Dinesh Legacy", path: "", isDistractor: true, staticImage: DineshPng },
   { name: "Kaleesh", path: "", isDistractor: true, staticImage: Kaleesh },
   { name: "Monish", path: "", isDistractor: true, staticImage: Monish },
   { name: "Narmatha", path: "", isDistractor: true, staticImage: Narmatha },
@@ -52,21 +49,8 @@ const STATIC_DISTRACTORS: KnownFace[] = [
   { name: "Vaibhavi", path: "", isDistractor: true, staticImage: Vaibhavi },
   { name: "Yasash", path: "", isDistractor: true, staticImage: Yasash },
   { name: "Asad", path: "", isDistractor: true, staticImage: Asad },
-=======
-// Static distractor faces
-const STATIC_DISTRACTORS: KnownFace[] = [
   { name: "Akash", path: "", isDistractor: true, staticImage: Akash },
-  { name: "Dinesh", path: "", isDistractor: true, staticImage: Dinesh },
-  { name: "Bharath", path: "", isDistractor: true },
-  { name: "Kaleesh", path: "", isDistractor: true },
-  { name: "Monish", path: "", isDistractor: true },
-  { name: "Narmatha", path: "", isDistractor: true },
-  { name: "Sachein", path: "", isDistractor: true },
-  { name: "Shawn", path: "", isDistractor: true },
-  { name: "Vaibhavi", path: "", isDistractor: true },
-  { name: "Yasash", path: "", isDistractor: true },
-  { name: "Asad", path: "", isDistractor: true },
->>>>>>> d13a9c5 (Baseline commit)
+  { name: "Dinesh", path: "", isDistractor: true, staticImage: DineshJpeg },
 ];
 
 export default function PersonSelect({
@@ -76,7 +60,7 @@ export default function PersonSelect({
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
-  setActivityScore?: (score: number) => void;
+  setActivityScore?: (result: ActivityResult) => void;
 }) {
   const [selected, setSelected] = useState<number[]>([]);
   const [knownFaces, setKnownFaces] = useState<KnownFace[]>([]);
@@ -208,12 +192,13 @@ export default function PersonSelect({
     .filter(index => index !== -1);
 
   const onSubmit = () => {
+    const totalQuestions = correctIndices.length;
     if (selected.length === 0) {
       setSubmitted({ correct: false });
-      if (setActivityScore) setActivityScore(0);
+      if (setActivityScore) setActivityScore({ score: 0, metrics: { accuracy: 0, correct_answers: 0, total_questions: totalQuestions, attempts: 0, missed_targets: totalQuestions, false_selections: 0 } });
     } else {
       const res =
-        JSON.stringify(selected.sort()) === JSON.stringify(correctIndices.sort());
+        JSON.stringify([...selected].sort()) === JSON.stringify([...correctIndices].sort());
       if (res) setRevealed(true);
       setSubmitted({ correct: res });
       
@@ -224,11 +209,18 @@ export default function PersonSelect({
       
       // Score = (correct selections - incorrect selections) / total faces in video
       // Ensure score is between 0 and 100
-      const totalFaces = facesInVideo.length || 1;
+      const totalFaces = totalQuestions || 1;
       const rawScore = ((correctCount - incorrectCount) / totalFaces) * 100;
       const finalScore = Math.max(0, Math.min(100, rawScore));
       
-      if (setActivityScore) setActivityScore(Math.round(finalScore));
+      if (setActivityScore) setActivityScore({ score: Math.round(finalScore), metrics: {
+        accuracy: totalQuestions ? correctCount / totalQuestions : 0,
+        correct_answers: correctCount,
+        total_questions: totalQuestions,
+        attempts: selected.length,
+        missed_targets: missedCount,
+        false_selections: incorrectCount,
+      } });
     }
   };
 
@@ -263,9 +255,9 @@ export default function PersonSelect({
         <div className="mt-8 text-center text-muted-foreground">
           Loading faces...
         </div>
-      ) : allFacesForQuiz.length === 0 ? (
+      ) : facesInVideo.length === 0 ? (
         <div className="mt-8 text-center text-muted-foreground">
-          No faces available for this date. Please upload faces or select a different date.
+          No faces were detected in a video from this date. This activity is not scored; choose another date.
         </div>
       ) : (
         <>

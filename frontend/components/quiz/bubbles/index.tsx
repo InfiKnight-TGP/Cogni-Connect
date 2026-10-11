@@ -11,9 +11,11 @@ interface KnownFace {
 
 export default function Bubbles({
   allowContinue,
+  onWrongAttempt,
   knownFaces,
 }: {
   allowContinue: () => void;
+  onWrongAttempt?: () => void;
   knownFaces: KnownFace[];
 }) {
   // Randomly select a target person from all known faces
@@ -103,6 +105,7 @@ export default function Bubbles({
               data={index + 1}
               name={name}
               allowContinue={name === gameState.target.name ? allowContinue : undefined}
+              onWrongAttempt={name === gameState.target.name ? undefined : onWrongAttempt}
               target={name === gameState.target.name}
             />
           ))}
@@ -117,26 +120,30 @@ function Bubble({
   data,
   name,
   allowContinue,
+  onWrongAttempt,
   target,
 }: {
   className: string;
   data: number;
   name: string;
   allowContinue?: () => void;
+  onWrongAttempt?: () => void;
   target?: boolean;
 }) {
   const [active, setActive] = useState(false);
 
   useEffect(() => {
-    if (active) {
-      if (target && allowContinue) {
-        allowContinue();
-      }
-      setTimeout(() => {
-        setActive(false);
-      }, 500);
-    }
-  }, [active, target, allowContinue]);
+    if (!active) return;
+    const timer = window.setTimeout(() => setActive(false), 500);
+    return () => window.clearTimeout(timer);
+  }, [active]);
+
+  const select = () => {
+    if (active) return;
+    setActive(true);
+    if (target) allowContinue?.();
+    else onWrongAttempt?.();
+  };
 
   // Convert name to title case
   const formatName = (name: string) => {
@@ -149,7 +156,16 @@ function Bubble({
 
   return (
     <div
-      onClick={() => setActive(true)}
+      role="button"
+      tabIndex={0}
+      aria-label={`Select ${name}`}
+      onClick={select}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          select();
+        }
+      }}
       className={`bubble ${
         active ? (target ? "bg-green-300" : "bg-red-300") : ""
       } backdrop-blur-sm transition-all ${className}`}

@@ -1,13 +1,11 @@
 {
-<<<<<<< HEAD
+  "schema_version": 2,
   "scores": [
     {
       "score": 56,
       "date": "2025-11-07T18:30:00.000Z",
-      "timestamp": "2025-11-09T17:37:23.489895"
+      "timestamp": "2025-11-09T17:37:23.489895",
+      "breakdown": {}
     }
   ]
-=======
-  "scores": []
->>>>>>> d13a9c5 (Baseline commit)
 }

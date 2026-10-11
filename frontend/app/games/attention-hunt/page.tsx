@@ -7,6 +7,7 @@ import GameResult from "@/components/games/GameResult";
 import { Button } from "@/components/ui/button";
 import { shuffle } from "@/lib/games";
 import { attentionRounds, makeBoard, objectSets, type BoardItem } from "./data";
+import { getOrStartSession } from "@/lib/sessions";
 
 function newSession() {
   const configOrder = shuffle(objectSets.map((_, index) => index)).slice(0, attentionRounds.length);
@@ -41,6 +42,7 @@ export default function AttentionHuntPage() {
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
   const [finalScore, setFinalScore] = useState(0);
+  const [startedAt, setStartedAt] = useState<string>();
   const board = boards[roundIndex];
   const config = attentionRounds[roundIndex];
   const target = board.find((item) => item.isTarget)!;
@@ -68,7 +70,13 @@ export default function AttentionHuntPage() {
 
   const reset = () => {
     const nextBoards = newSession();
-    setBoards(nextBoards); setRoundIndex(0); setFoundIds([]); setWrongIds([]); setFoundTotal(0); setWrongTaps(0); setFeedback(""); setTimeLeft(60); setStarted(false); setFinished(false); setFinalScore(0);
+    setBoards(nextBoards); setRoundIndex(0); setFoundIds([]); setWrongIds([]); setFoundTotal(0); setWrongTaps(0); setFeedback(""); setTimeLeft(60); setStarted(false); setFinished(false); setFinalScore(0); setStartedAt(undefined);
+  };
+
+  const startHunt = () => {
+    getOrStartSession();
+    setStartedAt(new Date().toISOString());
+    setStarted(true);
   };
 
   const select = (item: BoardItem) => {
@@ -94,7 +102,7 @@ export default function AttentionHuntPage() {
   };
 
   return <GameFrame title="Attention Hunt" description="Find every copy of the target while ignoring similar objects." instructions="Find all copies of the object shown above the board. Tap each target once, and leave the similar objects alone. You have 60 seconds for all five rounds." level={roundIndex + 1} totalLevels={attentionRounds.length} score={finished ? finalScore : scoreSession(foundTotal, totalTargets, wrongTaps, totalTiles)}>
-    {finished ? <GameResult gameId="attention-hunt" score={finalScore} breakdown={{ skill: "Selective Attention", correctTargets: foundTotal, totalTargets, wrongTaps, timeLeft }} onPlayAgain={reset} /> : <>
+    {finished ? <GameResult gameId="attention-hunt" score={finalScore} breakdown={{ skill: "Selective Attention", correctTargets: foundTotal, totalTargets, wrongTaps, timeLeft }} startedAt={startedAt} difficultyLevel="3" onPlayAgain={reset} /> : <>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
         <div><p className="text-sm font-medium text-primary">Round {roundIndex + 1} of {attentionRounds.length} · Level 3</p><h2 className="mt-1 text-2xl font-semibold">Find all the {pluralize(target.label)}</h2><p className="mt-1 text-sm text-muted-foreground">{config.rows} × {config.columns} board</p></div>
         <div className="flex items-center gap-4">
@@ -111,7 +119,7 @@ export default function AttentionHuntPage() {
         })}
       </div>
       <div className="mt-5 flex min-h-12 flex-wrap items-center justify-between gap-3">
-        {!started ? <Button className="min-h-12" onClick={() => setStarted(true)}><Check className="mr-2 h-4 w-4" />Start hunt</Button> : null}
+        {!started ? <Button className="min-h-12" onClick={startHunt}><Check className="mr-2 h-4 w-4" />Start hunt</Button> : null}
         {foundInRound === targetCount && roundIndex < attentionRounds.length - 1 && <Button className="min-h-12" onClick={nextRound}>Next round<Check className="ml-2 h-4 w-4" /></Button>}
         <p className="text-sm text-muted-foreground">Session progress: {foundTotal} / {totalTargets} objects found</p>
         <Button variant="ghost" onClick={reset}><RotateCcw className="mr-2 h-4 w-4" />Start over</Button>
