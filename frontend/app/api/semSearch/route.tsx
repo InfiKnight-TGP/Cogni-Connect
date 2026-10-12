@@ -1,10 +1,11 @@
+import { API_URL } from "@/lib/api";
 export async function POST(request: Request) {
   try {
     const req = await request.json();
 
     const query = req.query;
 
-    const res = await fetch(`http://127.0.0.1:5000/search?query=${encodeURIComponent(query)}`, {
+    const res = await fetch(`${API_URL}/search?query=${encodeURIComponent(query)}`, {
       headers: {
         "Content-Type": "application/json",
       },

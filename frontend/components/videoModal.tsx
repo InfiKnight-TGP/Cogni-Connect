@@ -2,6 +2,7 @@
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useEffect, useState } from "react";
+import { API_URL } from "@/lib/api";
 
 export default function VideoModal({
   path,
@@ -16,7 +17,7 @@ export default function VideoModal({
   
   // Construct the full backend URL for the video
   const videoUrl = path.startsWith('/video_chunks') 
-    ? `http://localhost:5000${path}`
+    ? `${API_URL}${path}`
     : path;
 
   useEffect(() => {

@@ -1,3 +1,5 @@
+import { API_URL } from "@/lib/api";
+
 export interface SaveScoreParams {
   date: string;
   game_id: string;
@@ -8,7 +10,7 @@ export interface SaveScoreParams {
 
 export async function saveScore(params: SaveScoreParams): Promise<boolean> {
   try {
-    const response = await fetch("http://localhost:5000/performance", {
+    const response = await fetch(`${API_URL}/performance`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

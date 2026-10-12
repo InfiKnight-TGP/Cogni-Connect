@@ -1,274 +1,341 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/nav";
-import { GAME_REGISTRY, getGameById, GameRegistryEntry } from "@/components/games/registry";
+import { CaregiverOnly } from "@/components/caregiver";
+import { getGameById, GameRegistryEntry } from "@/components/games/registry";
+import { PreviewContext } from "@/components/games/_shared/GameShell";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Brain, Calendar, Gamepad2, Sparkles, Trophy } from "lucide-react";
-import { format } from "date-fns";
+import { LEVEL_NAMES, Level } from "@/lib/progress";
+import { ArrowLeft } from "lucide-react";
 
-interface DailyPlanResponse {
-  level1: string[];
-  level2: string[];
-  level3: string[];
+export default function AllGamesPage() {
+  return (
+    <>
+      <Nav />
+      <CaregiverOnly>
+        <AllGames />
+      </CaregiverOnly>
+    </>
+  );
 }
 
-export default function GamesPage() {
-  const [selectedDate, setSelectedDate] = useState<string>(
-    format(new Date(), "yyyy-MM-dd")
-  );
-  const [dailyPlan, setDailyPlan] = useState<DailyPlanResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [activeGame, setActiveGame] = useState<{
-    id: string;
-    level: 1 | 2 | 3;
-  } | null>(null);
+function AllGames() {
+  const [active, setActive] = useState<{ game: GameRegistryEntry; level: Level } | null>(null);
+  const Game = active?.game.component;
 
-  useEffect(() => {
-    fetchDailyPlan(selectedDate);
-  }, [selectedDate]);
-
-  const fetchDailyPlan = async (dateStr: string) => {
-    setLoading(true);
-    try {
-      const res = await fetch(`http://localhost:5000/daily-plan?date=${dateStr}`);
-      if (res.ok) {
-        const data = await res.json();
-        setDailyPlan(data);
-      } else {
-        console.error("Failed to load daily plan");
-      }
-    } catch (err) {
-      console.error("Error fetching daily plan:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const renderGameCard = (gameId: string, level: 1 | 2 | 3) => {
-    if (gameId === "daily_recall") {
-      return (
-        <div
-          key="daily_recall"
-          className="relative group border border-border bg-card hover:border-primary/50 transition-all rounded-2xl p-6 flex flex-col justify-between shadow-sm hover:shadow-md"
-        >
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-4xl">🧠</span>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
-                Level 1
-              </span>
-            </div>
-            <h3 className="text-xl font-bold mb-1">Daily Recall</h3>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-              Personal Memory
-            </p>
-            <p className="text-sm text-muted-foreground mb-6">
-              Recall personal journal events, faces, and daily context questions.
-            </p>
-          </div>
-          <Link href="/quiz">
-            <Button className="w-full font-semibold">Start Daily Recall</Button>
-          </Link>
-        </div>
-      );
-    }
-
-    const game = getGameById(gameId);
-    if (!game) return null;
-
+  if (active && Game) {
     return (
-      <div
-        key={`${game.id}-l${level}`}
-        className="relative group border border-border bg-card hover:border-primary/50 transition-all rounded-2xl p-6 flex flex-col justify-between shadow-sm hover:shadow-md"
-      >
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-4xl">{game.emoji}</span>
-            <div className="flex gap-2">
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
-                Level {level}
-              </span>
-              {game.comingSoon && (
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                  Coming Soon
-                </span>
-              )}
-            </div>
-          </div>
-          <h3 className="text-xl font-bold mb-1">{game.name}</h3>
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-            {game.skill}
-          </p>
-          <p className="text-sm text-muted-foreground mb-6">
-            {game.description}
-          </p>
-        </div>
-        {game.href ? (
-          <Link href={game.href}>
-            <Button className="w-full font-semibold">Play Game</Button>
-          </Link>
-        ) : (
-          <Button
-            variant={game.comingSoon ? "secondary" : "default"}
-            className="w-full font-semibold"
-            onClick={() => setActiveGame({ id: game.id, level })}
-          >
-            {game.comingSoon ? "Preview Game" : "Play Game"}
-          </Button>
-        )}
-      </div>
+      <main className="mx-auto max-w-screen-lg space-y-6 px-4 pb-16 pt-24">
+        <Button variant="outline" onClick={() => setActive(null)}>
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to all games
+        </Button>
+        <PreviewContext.Provider value={true}>
+          <Game level={active.level} />
+        </PreviewContext.Provider>
+      </main>
     );
-  };
+  }
 
-  const activeGameEntry = activeGame ? getGameById(activeGame.id) : null;
-  const ActiveComponent = activeGameEntry?.component;
+  // Games in their respective areas
+  const storyBuilder = getGameById("story-builder")!;
+  const wordAssociation = getGameById("word-association")!;
+  const molePath = getGameById("mole-path")!;
+
+  const oddOneOut = getGameById("odd-one-out")!;
+  const whackAMole = getGameById("whack-a-mole")!;
+  const attentionHunt = getGameById("attention-hunt")!;
+
+  const planTheDay = getGameById("plan-the-day")!;
+  const sortingStation = getGameById("sorting-station")!;
+  const pillBoxPlanner = getGameById("pill-box-planner")!;
+
+  const mapNavigator = getGameById("map-navigator")!;
+
+  // Count built vs coming soon
+  // 9 Built: storyBuilder, molePath, Personal Memory (bonus), attentionHunt, planTheDay, sortingStation, Face Recognition, Name Recall, mapNavigator
+  // 4 Coming soon: wordAssociation, oddOneOut, whackAMole, pillBoxPlanner
+  const builtCount = 9;
+  const comingSoonCount = 4;
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
-      <Nav />
-      <main className="flex-1 max-w-screen-lg w-full mx-auto px-4 pt-24 pb-16">
-        {/* Active Game Player View (for in-place games like Plan the Day) */}
-        {activeGame && activeGameEntry && ActiveComponent ? (
-          <div className="space-y-6">
+    <main className="mx-auto max-w-screen-lg space-y-10 px-4 pb-16 pt-24">
+      <div>
+        <h1 className="text-3xl font-bold">All Games</h1>
+        <p className="mt-1 text-muted-foreground">
+          Every activity organized by cognitive area. Previews here are not saved as the patient&apos;s scores.
+        </p>
+        <p className="mt-3 text-sm font-semibold text-primary">
+          Built: {builtCount} · Coming soon: {comingSoonCount}
+        </p>
+      </div>
+
+      {/* 1. Memory */}
+      <section className="space-y-4">
+        <h2 className="text-2xl font-bold text-foreground">Memory</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <GameCard
+            emoji={storyBuilder.emoji}
+            name={storyBuilder.name}
+            trains={storyBuilder.trains}
+            level={storyBuilder.levels[0]}
+            comingSoon={storyBuilder.comingSoon}
+          >
             <Button
               variant="outline"
-              onClick={() => setActiveGame(null)}
-              className="mb-4"
+              className="w-full"
+              onClick={() => setActive({ game: storyBuilder, level: storyBuilder.levels[0] })}
             >
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Daily Plan
+              Preview
             </Button>
-            <ActiveComponent
-              level={activeGame.level}
-              date={selectedDate}
-              onFinish={(score) => {
-                console.log(`Finished ${activeGame.id} with score ${score}`);
-              }}
-            />
-          </div>
-        ) : (
-          /* Main Games Dashboard View */
-          <div className="space-y-10">
-            {/* Header Section */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-6">
-              <div>
-                <h1 className="text-3xl font-extrabold tracking-tight flex items-center gap-3">
-                  <Gamepad2 className="h-8 w-8 text-primary" /> Daily Brain Training
-                </h1>
-                <p className="text-muted-foreground mt-1">
-                  Structured cognitive exercises designed to strengthen memory and focus.
-                </p>
-              </div>
-              <div className="flex items-center gap-3 bg-card border border-border px-4 py-2 rounded-xl">
-                <Calendar className="h-5 w-5 text-muted-foreground" />
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-transparent text-sm font-medium focus:outline-none"
-                />
-              </div>
-            </div>
+          </GameCard>
 
-            {loading ? (
-              <div className="flex flex-col items-center justify-center py-16 space-y-4">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
-                <p className="text-muted-foreground text-sm">Loading your daily plan...</p>
-              </div>
-            ) : (
-              <>
-                {/* Level 1 Section */}
-                <section className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Brain className="h-6 w-6 text-primary" />
-                    <h2 className="text-2xl font-bold tracking-tight">Level 1 — Foundations</h2>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {dailyPlan?.level1?.map((gid) => renderGameCard(gid, 1))}
-                  </div>
-                </section>
+          <GameCard
+            emoji={wordAssociation.emoji}
+            name={wordAssociation.name}
+            trains={wordAssociation.trains}
+            level={wordAssociation.levels[0]}
+            comingSoon={wordAssociation.comingSoon}
+          />
 
-                {/* Level 2 Section */}
-                <section className="space-y-4 pt-4">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-6 w-6 text-primary" />
-                    <h2 className="text-2xl font-bold tracking-tight">Level 2 — Intermediate Skills</h2>
-                  </div>
-                  {dailyPlan?.level2 && dailyPlan.level2.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {dailyPlan.level2.map((gid) => renderGameCard(gid, 2))}
-                    </div>
-                  ) : (
-                    <div className="border border-dashed border-border rounded-xl p-6 text-center text-muted-foreground">
-                      No Level 2 games available in active plan for today.
-                    </div>
-                  )}
-                </section>
+          <GameCard
+            emoji={molePath.emoji}
+            name={molePath.name}
+            trains={molePath.trains}
+            level={molePath.levels[0]}
+            comingSoon={molePath.comingSoon}
+          >
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setActive({ game: molePath, level: molePath.levels[0] })}
+            >
+              Preview
+            </Button>
+          </GameCard>
 
-                {/* Level 3 Section */}
-                <section className="space-y-4 pt-4">
-                  <div className="flex items-center gap-2">
-                    <Trophy className="h-6 w-6 text-primary" />
-                    <h2 className="text-2xl font-bold tracking-tight">Level 3 — Advanced Challenge</h2>
-                  </div>
-                  {dailyPlan?.level3 && dailyPlan.level3.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {dailyPlan.level3.map((gid) => renderGameCard(gid, 3))}
-                    </div>
-                  ) : (
-                    <div className="border border-dashed border-border rounded-xl p-6 text-center text-muted-foreground">
-                      No Level 3 games available in active plan for today.
-                    </div>
-                  )}
-                </section>
+          {/* Bonus card under Memory */}
+          <GameCard
+            emoji="💭"
+            name="Personal Memory Questions"
+            trains="Recall details from personal video memories in open responses (Daily Recall part 3)"
+            level={1}
+            comingSoon={false}
+            isBonus
+            bonusLabel="Bonus"
+          >
+            <Link href="/quiz">
+              <Button variant="outline" className="w-full">
+                Open in quiz
+              </Button>
+            </Link>
+          </GameCard>
+        </div>
+      </section>
 
-                {/* Registry Overview Section */}
-                <section className="space-y-4 pt-8 border-t border-border">
-                  <h2 className="text-xl font-bold tracking-tight text-muted-foreground">
-                    All Cognitive Games Directory
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {GAME_REGISTRY.map((game) => (
-                      <div
-                        key={game.id}
-                        className="border border-border bg-card/60 p-4 rounded-xl flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="text-3xl">{game.emoji}</span>
-                          <div>
-                            <p className="font-semibold text-sm">{game.name}</p>
-                            <p className="text-xs text-muted-foreground capitalize">
-                              {game.skill} • L{game.levels.join(", L")}
-                            </p>
-                          </div>
-                        </div>
-                        {game.href ? (
-                          <Link href={game.href}>
-                            <Button variant="outline" size="sm">
-                              Play
-                            </Button>
-                          </Link>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              setActiveGame({ id: game.id, level: game.levels[0] })
-                            }
-                          >
-                            {game.comingSoon ? "Preview" : "Play"}
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              </>
+      {/* 2. Attention */}
+      <section className="space-y-4">
+        <h2 className="text-2xl font-bold text-foreground">Attention</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <GameCard
+            emoji={oddOneOut.emoji}
+            name={oddOneOut.name}
+            trains={oddOneOut.trains}
+            level={oddOneOut.levels[0]}
+            comingSoon={oddOneOut.comingSoon}
+          />
+
+          <GameCard
+            emoji={whackAMole.emoji}
+            name={whackAMole.name}
+            trains={whackAMole.trains}
+            level={whackAMole.levels[0]}
+            comingSoon={whackAMole.comingSoon}
+          />
+
+          <GameCard
+            emoji={attentionHunt.emoji}
+            name={attentionHunt.name}
+            trains={attentionHunt.trains}
+            level={attentionHunt.levels[0]}
+            comingSoon={attentionHunt.comingSoon}
+          >
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setActive({ game: attentionHunt, level: attentionHunt.levels[0] })}
+            >
+              Preview
+            </Button>
+          </GameCard>
+        </div>
+      </section>
+
+      {/* 3. Executive Function */}
+      <section className="space-y-4">
+        <h2 className="text-2xl font-bold text-foreground">Executive Function</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <GameCard
+            emoji={planTheDay.emoji}
+            name={planTheDay.name}
+            trains={planTheDay.trains}
+            level={planTheDay.levels[0]}
+            comingSoon={planTheDay.comingSoon}
+          >
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setActive({ game: planTheDay, level: planTheDay.levels[0] })}
+            >
+              Preview
+            </Button>
+          </GameCard>
+
+          <GameCard
+            emoji={sortingStation.emoji}
+            name={sortingStation.name}
+            trains={sortingStation.trains}
+            level={sortingStation.levels[0]}
+            comingSoon={sortingStation.comingSoon}
+          >
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setActive({ game: sortingStation, level: sortingStation.levels[0] })}
+            >
+              Preview
+            </Button>
+          </GameCard>
+
+          <GameCard
+            emoji={pillBoxPlanner.emoji}
+            name={pillBoxPlanner.name}
+            trains={pillBoxPlanner.trains}
+            level={pillBoxPlanner.levels[0]}
+            comingSoon={pillBoxPlanner.comingSoon}
+          />
+        </div>
+      </section>
+
+      {/* 4. Recognition & Orientation */}
+      <section className="space-y-4">
+        <h2 className="text-2xl font-bold text-foreground">Recognition &amp; Orientation</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <GameCard
+            emoji="👤"
+            name="Face Recognition"
+            trains="Select familiar faces seen in a personal video (Daily Recall part 1)"
+            level={1}
+            comingSoon={false}
+          >
+            <Link href="/quiz">
+              <Button variant="outline" className="w-full">
+                Open in quiz
+              </Button>
+            </Link>
+          </GameCard>
+
+          <GameCard
+            emoji="🏷️"
+            name="Name Recall"
+            trains="Match a familiar name to the pictured person (Daily Recall part 2)"
+            level={1}
+            comingSoon={false}
+          >
+            <Link href="/quiz">
+              <Button variant="outline" className="w-full">
+                Open in quiz
+              </Button>
+            </Link>
+          </GameCard>
+
+          <GameCard
+            emoji={mapNavigator.emoji}
+            name={mapNavigator.name}
+            trains={mapNavigator.trains}
+            level={mapNavigator.levels[0]}
+            comingSoon={mapNavigator.comingSoon}
+          >
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setActive({ game: mapNavigator, level: mapNavigator.levels[0] })}
+            >
+              Preview
+            </Button>
+          </GameCard>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function GameCard({
+  emoji,
+  name,
+  trains,
+  level,
+  comingSoon,
+  isBonus,
+  bonusLabel,
+  children,
+}: {
+  emoji: string;
+  name: string;
+  trains: string;
+  level?: Level;
+  comingSoon?: boolean;
+  isBonus?: boolean;
+  bonusLabel?: string;
+  children?: React.ReactNode;
+}) {
+  const levelName = level ? LEVEL_NAMES[level] : "Easy";
+  return (
+    <div
+      className={`flex flex-col justify-between gap-4 rounded-2xl border bg-card p-5 shadow-sm transition-all ${
+        isBonus ? "border-dashed border-primary/50 bg-primary/5" : ""
+      }`}
+    >
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-4xl" aria-hidden>{emoji}</span>
+          <div className="flex items-center gap-2">
+            {isBonus && (
+              <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-0.5 text-xs font-semibold text-blue-700 dark:text-blue-400">
+                {bonusLabel ?? "Bonus"}
+              </span>
             )}
+            {level && (
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  level === 1
+                    ? "border border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400"
+                    : level === 2
+                    ? "border border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-400"
+                    : "border border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                }`}
+              >
+                {levelName}
+              </span>
+            )}
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                comingSoon
+                  ? "border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                  : "border border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-400"
+              }`}
+            >
+              {comingSoon ? "Coming soon" : "Built"}
+            </span>
           </div>
-        )}
-      </main>
+        </div>
+        <h3 className="text-lg font-bold text-foreground">{name}</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          <strong className="text-foreground">Trains:</strong> {trains}
+        </p>
+      </div>
+      {children && <div className="space-y-1 pt-2">{children}</div>}
     </div>
   );
 }

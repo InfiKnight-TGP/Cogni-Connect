@@ -22,22 +22,22 @@ export default function StartQuiz({
   return (
     <>
       <div className="flex items-center justify-between">
-        <div className="text-2xl font-medium">Start A Memory Quiz</div>
+        <div className="text-2xl font-medium">Daily Recall</div>
         {onRegenerateQuestions && (
           <Button
             onClick={onRegenerateQuestions}
             variant="outline"
             size="sm"
-            className="ml-4"
+            className="ml-4 min-h-[48px] px-4 text-base"
           >
             <RefreshCw className="mr-2 h-4 w-4" />
-            Regenerate Questions
+            Refresh
           </Button>
         )}
       </div>
 
-      <div className="mb-2 mt-8">
-        Select which date you'd like to be tested on:
+      <div className="mb-2 mt-8 text-lg font-medium">
+        Select a day:
       </div>
       <DatePickerWithPresets date={date} setDate={setDate} />
 
@@ -53,10 +53,10 @@ export default function StartQuiz({
         >
           <User2 className="absolute -bottom-6 -right-6 -z-10 h-36 w-36 text-primary opacity-30 dark:opacity-40" />
           <div className="text-xl font-medium">
-            Activity 1: <br />
+            Part 1: <br />
             Facial Recognition
           </div>
-          <Button className="mt-24">
+          <Button className="mt-24 min-h-[48px] px-6 text-lg font-medium">
             Start <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </Card>
@@ -68,10 +68,10 @@ export default function StartQuiz({
         >
           <Speech className="absolute -bottom-6 -right-6 -z-10 h-36 w-36 -scale-x-100 text-primary opacity-30 dark:opacity-40" />
           <div className="text-xl font-medium">
-            Activity 2: <br />
+            Part 2: <br />
             Name Recall
           </div>
-          <Button className="mt-24">
+          <Button className="mt-24 min-h-[48px] px-6 text-lg font-medium">
             Start <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </Card>
@@ -83,10 +83,10 @@ export default function StartQuiz({
         >
           <Brain className="absolute -bottom-6 -right-6 -z-10 h-36 w-36 text-primary opacity-30 dark:opacity-40" />
           <div className="text-xl font-medium">
-            Activity 3: <br />
+            Part 3: <br />
             Relive Memories
           </div>
-          <Button className="mt-24">
+          <Button className="mt-24 min-h-[48px] px-6 text-lg font-medium">
             Start <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </Card>

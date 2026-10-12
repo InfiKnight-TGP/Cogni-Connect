@@ -11,15 +11,18 @@ import { Textarea } from "../ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import VideoModal from "../videoModal";
 import { format } from "date-fns";
+import { API_URL } from "@/lib/api";
 
 export default function ContextQuestions({
   setProgress,
   date,
+  myDay = false,
   activityScores,
   setActivityScore,
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
+  myDay?: boolean; // "My Day" from the Today page: no date, "Part X of 3"
   activityScores?: {
     activity1: number | null;
     activity2: number | null;
@@ -45,7 +48,7 @@ export default function ContextQuestions({
   useEffect(() => {
     const fetchQuestions = async () => {
       try {
-        const response = await fetch("http://localhost:5000/questions");
+        const response = await fetch(`${API_URL}/questions`);
         if (response.ok) {
           const result = await response.json();
           const questions = result.questions || [];
@@ -103,7 +106,7 @@ export default function ContextQuestions({
         const combinedScore = Math.round(validScores.reduce((sum, score) => sum + score, 0) / validScores.length);
         
         // Save combined performance to backend
-        fetch("http://localhost:5000/performance", {
+        fetch(`${API_URL}/performance`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -111,6 +114,9 @@ export default function ContextQuestions({
           body: JSON.stringify({
             score: combinedScore,
             date: format(date, "yyyy-MM-dd"),
+            game_id: "daily_recall",
+            level: 1,
+            skill: "personal memory",
             breakdown: {
               activity1_faceRecognition: activityScores?.activity1,
               activity2_namePeople: activityScores?.activity2,
@@ -153,15 +159,23 @@ export default function ContextQuestions({
         <Button
           variant="secondary"
           onClick={() => setProgress(-1)}
-          className="mr-6"
+          className="mr-6 min-h-[48px] px-5 text-lg"
         >
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back
+          <ArrowLeft className="mr-2 h-5 w-5" /> Back
         </Button>
-        <div className="text-lg font-medium">
-          Memory Quiz —{" "}
-          <span className="text-blue-600">{date.toDateString()}</span>
+        <div className="text-xl font-medium">
+          {myDay ? (
+            "My Day"
+          ) : (
+            <>
+              Daily Recall —{" "}
+              <span className="text-blue-600 dark:text-blue-400">
+                {format(date, "EEE d MMM yyyy")}
+              </span>
+            </>
+          )}
         </div>
-        <Badge className="ml-4 h-8 px-4">Memory Quiz</Badge>
+        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 3 of 3" : "Part 3"}</Badge>
       </div>
 
       {loading ? (
@@ -230,9 +244,9 @@ export default function ContextQuestions({
               <Button
                 onClick={() => setProgress(-1)}
                 size="lg"
-                className="text-lg font-medium"
+                className="min-h-[48px] px-6 text-lg font-medium"
               >
-                Finish Quiz <ArrowRight className="ml-3 h-5 w-5" />
+                Finish <ArrowRight className="ml-3 h-5 w-5" />
               </Button>
             </div>
           )}

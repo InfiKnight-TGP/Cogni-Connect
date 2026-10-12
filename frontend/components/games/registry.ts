@@ -9,16 +9,19 @@ import WhackAMole from "./whack-a-mole";
 import AttentionHunt from "./attention-hunt";
 import MapNavigator from "./map-navigator";
 import { GameProps } from "./_shared/types";
+import { Area } from "@/lib/progress";
 
 export interface GameRegistryEntry {
   id: string;
   name: string;
   skill: string;
+  area: Area;
   levels: (1 | 2 | 3)[];
   component?: React.ComponentType<GameProps>;
   comingSoon: boolean;
   emoji: string;
   description: string;
+  trains: string;
   href?: string;
 }
 
@@ -27,91 +30,120 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     id: "story-builder",
     name: "Story Builder",
     skill: "verbal memory",
+    area: "Memory",
     levels: [1],
     component: StoryBuilder,
     comingSoon: false,
     emoji: "📖",
     description: "Read a short everyday story, then recall missing details.",
+    trains: "Verbal memory: recall words from a short story",
   },
   {
     id: "plan-the-day",
     name: "Plan the Day",
     skill: "sequencing",
+    area: "Executive Function",
     levels: [1],
     component: PlanTheDay,
     comingSoon: false,
     emoji: "📅",
     description: "Organize daily tasks in correct logical order.",
+    trains: "Planning and sequencing everyday errands",
   },
   {
     id: "word-association",
     name: "Word Association",
     skill: "semantic memory",
+    area: "Memory",
     levels: [1],
     component: WordAssociation,
     comingSoon: true,
     emoji: "🔗",
     description: "Connect related words and concepts together.",
+    trains: "Semantic memory: link related things",
   },
   {
     id: "odd-one-out",
     name: "Odd One Out",
     skill: "attention",
+    area: "Attention",
     levels: [1],
     component: OddOneOut,
     comingSoon: true,
     emoji: "🔍",
     description: "Find the item that doesn't belong in the group.",
+    trains: "Selective attention and categorising",
   },
   {
     id: "mole-path",
     name: "Mole Path",
     skill: "working memory",
+    area: "Memory",
     levels: [2],
     component: MolePath,
     comingSoon: false,
     emoji: "🐹",
     description: "Watch the circles fill, then tap the path in the same order.",
+    trains: "Visual working memory: repeat a growing path",
   },
   {
     id: "sorting-station",
     name: "Sorting Station",
     skill: "flexibility",
+    area: "Executive Function",
     levels: [2],
     component: SortingStation,
     comingSoon: false,
     emoji: "📦",
     description: "Adapt to changing rules to sort items correctly.",
+    trains: "Cognitive flexibility: switching rules",
+  },
+  {
+    id: "pill-box-planner",
+    name: "Pill Box Planner",
+    skill: "rule switching",
+    area: "Executive Function",
+    levels: [2],
+    comingSoon: true,
+    emoji: "💊",
+    description: "Follow a weekly medication schedule with multiple rules.",
+    trains: "Following several rules at once (a weekly medication schedule)",
   },
   {
     id: "whack-a-mole",
     name: "Whack-a-Mole",
     skill: "inhibition",
+    area: "Attention",
     levels: [2],
     component: WhackAMole,
     comingSoon: true,
     emoji: "🔨",
     description: "Tap target moles while suppressing impulses for distractors.",
+    trains: "Impulse control: tap targets, ignore distractors",
   },
   {
     id: "attention-hunt",
     name: "Attention Hunt",
     skill: "selective attention",
+    area: "Attention",
     levels: [3],
     component: AttentionHunt,
     comingSoon: false,
     emoji: "🎯",
     description: "Find every copy of the target while ignoring distractors.",
+    trains: "Visual search among similar items",
   },
   {
     id: "map-navigator",
     name: "Map Navigator",
     skill: "spatial",
+    area: "Recognition & Orientation",
     levels: [3],
     component: MapNavigator,
     comingSoon: false,
     emoji: "🗺️",
     description: "Navigate routes and spatial directions accurately.",
+    trains: "Spatial orientation: route finding",
   },
 ];
 

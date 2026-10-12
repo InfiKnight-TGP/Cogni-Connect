@@ -1,6 +1,7 @@
+import { API_URL } from "@/lib/api";
 export async function GET() {
   try {
-    const res = await fetch("http://127.0.0.1:5000/questions", {
+    const res = await fetch(`${API_URL}/questions`, {
       headers: {
         "Content-Type": "application/json",
       },

@@ -2,7 +2,7 @@
   "name": "cogni-connect",
   "private": true,
   "scripts": {
-    "setup": "npm install && npm --prefix frontend install && cd backend && python -m venv .venv && .venv\\Scripts\\pip install -r requirements.txt",
+    "setup": "npm install && npm --prefix frontend install && cd backend && python -m venv .venv && .venv\\Scripts\\pip install -r requirements.txt && .venv\\Scripts\\python download_models.py",
     "dev": "concurrently -k -n api,web -c yellow,cyan \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "cd backend && .venv\\Scripts\\python app.py",
     "dev:web": "npm --prefix frontend run dev"

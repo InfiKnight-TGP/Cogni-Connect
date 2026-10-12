@@ -15,19 +15,23 @@ import { format } from "date-fns";
 
 import { Separator } from "../ui/separator";
 import { Badge } from "../ui/badge";
+import { API_URL } from "@/lib/api";
 
 interface KnownFace {
   name: string;
   path: string;
+  relation?: string;
 }
 
 export default function PersonSelect({
   setProgress,
   date,
+  myDay = false,
   setActivityScore,
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
+  myDay?: boolean; // "My Day" from the Today page: no date, "Part X of 3"
   setActivityScore?: (score: number) => void;
 }) {
   const [selected, setSelected] = useState<number[]>([]);
@@ -52,7 +56,7 @@ export default function PersonSelect({
         const formattedDate = format(date, "yyyy-MM-dd");
 
         // Get known faces
-        const facesResponse = await fetch("http://localhost:5000/known-faces");
+        const facesResponse = await fetch(`${API_URL}/known-faces`);
         let kFaces: KnownFace[] = [];
         if (facesResponse.ok) {
           const facesData = await facesResponse.json();
@@ -62,7 +66,7 @@ export default function PersonSelect({
 
         // Get faces detected in videos from the selected date
         const facesForDateRes = await fetch(
-          `http://localhost:5000/faces-for-date?date=${formattedDate}`
+          `${API_URL}/faces-for-date?date=${formattedDate}`
         );
         let dNames: string[] = [];
         if (facesForDateRes.ok) {
@@ -150,15 +154,23 @@ export default function PersonSelect({
         <Button
           variant="secondary"
           onClick={() => setProgress(-1)}
-          className="mr-6"
+          className="mr-6 min-h-[48px] px-5 text-lg"
         >
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back
+          <ArrowLeft className="mr-2 h-5 w-5" /> Back
         </Button>
-        <div className="text-lg font-medium">
-          Memory Quiz —{" "}
-          <span className="text-blue-600">{date.toDateString()}</span>
+        <div className="text-xl font-medium">
+          {myDay ? (
+            "My Day"
+          ) : (
+            <>
+              Daily Recall —{" "}
+              <span className="text-blue-600 dark:text-blue-400">
+                {format(date, "EEE d MMM yyyy")}
+              </span>
+            </>
+          )}
         </div>
-        <Badge className="ml-4 h-8 px-4">Activity 1 of 3</Badge>
+        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 1 of 3" : "Part 1"}</Badge>
       </div>
 
       <div className="mt-12 text-xl font-medium">
@@ -177,9 +189,9 @@ export default function PersonSelect({
           <Button
             size="lg"
             onClick={() => setProgress((prev) => prev + 1)}
-            className="text-lg font-medium transition-all"
+            className="min-h-[48px] text-lg font-medium transition-all"
           >
-            Continue to Activity 2 <ArrowRight className="ml-3 h-4 w-4" />
+            Continue to Part 2 <ArrowRight className="ml-3 h-4 w-4" />
           </Button>
         </div>
       ) : (
@@ -211,7 +223,7 @@ export default function PersonSelect({
               disabled={revealed || submitted?.correct}
               size="lg"
               onClick={onSubmit}
-              className="text-lg font-medium transition-all"
+              className="min-h-[48px] text-lg font-medium transition-all"
             >
               Check My Response <FileCheck className="ml-3 h-5 w-5" />
             </Button>
@@ -220,7 +232,7 @@ export default function PersonSelect({
               disabled={revealed || submitted?.correct}
               variant="secondary"
               size="lg"
-              className="text-lg font-medium transition-all"
+              className="min-h-[48px] text-lg font-medium transition-all"
             >
               See Correct Answer <BookOpenCheck className="ml-3 h-5 w-5" />
             </Button>
@@ -256,9 +268,9 @@ export default function PersonSelect({
             disabled={!revealed && (!submitted || !submitted.correct)}
             size="lg"
             onClick={() => setProgress((prev) => prev + 1)}
-            className="text-lg font-medium transition-all"
+            className="min-h-[48px] text-lg font-medium transition-all"
           >
-            Continue to Activity 2 <ArrowRight className="ml-3 h-4 w-4" />
+            Continue to Part 2 <ArrowRight className="ml-3 h-4 w-4" />
           </Button>
         </>
       )}
@@ -314,7 +326,7 @@ function PersonCard({
         nullify();
         click();
       }}
-      className={`mb-4 mr-4 h-52 w-52 overflow-hidden rounded-md border-2 transition-all ${
+      className={`relative mb-4 mr-4 h-52 w-52 overflow-hidden rounded-md border-2 transition-all ${
         reveal.isRevealed
           ? `${
               reveal.correct
@@ -330,7 +342,7 @@ function PersonCard({
     >
       {person.path ? (
         <Image
-          src={`http://localhost:5000/known-faces/${person.path}`}
+          src={`${API_URL}/known-faces/${person.path}`}
           alt={person.name}
           className="h-full w-full rounded-md object-cover"
           width={208}
@@ -348,6 +360,11 @@ function PersonCard({
           <div className="text-sm font-medium px-2 text-center">
             {person.name}
           </div>
+        </div>
+      )}
+      {reveal.isRevealed && reveal.correct && person.path && (
+        <div className="absolute inset-x-0 bottom-0 bg-black/70 px-2 py-1 text-center text-lg font-semibold text-white">
+          {[person.name, person.relation].filter(Boolean).join(" · ")}
         </div>
       )}
     </button>

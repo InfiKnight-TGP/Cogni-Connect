@@ -1,14 +1,15 @@
 {
   "games": [
-    { "id": "daily_recall", "levels": [1], "status": "ready" },
-    { "id": "story-builder", "levels": [1], "status": "ready" },
-    { "id": "plan-the-day", "levels": [1], "status": "ready" },
-    { "id": "word-association", "levels": [1], "status": "coming_soon" },
-    { "id": "odd-one-out", "levels": [1], "status": "coming_soon" },
-    { "id": "mole-path", "levels": [2], "status": "ready" },
-    { "id": "sorting-station", "levels": [2], "status": "ready" },
-    { "id": "whack-a-mole", "levels": [2], "status": "coming_soon" },
-    { "id": "attention-hunt", "levels": [3], "status": "ready" },
-    { "id": "map-navigator", "levels": [3], "status": "ready" }
+    { "id": "daily_recall", "levels": [1], "status": "ready", "area": "Recognition & Orientation / Memory" },
+    { "id": "story-builder", "levels": [1], "status": "ready", "area": "Memory" },
+    { "id": "plan-the-day", "levels": [1], "status": "ready", "area": "Executive Function" },
+    { "id": "word-association", "levels": [1], "status": "coming_soon", "area": "Memory" },
+    { "id": "odd-one-out", "levels": [1], "status": "coming_soon", "area": "Attention" },
+    { "id": "mole-path", "levels": [2], "status": "ready", "area": "Memory" },
+    { "id": "sorting-station", "levels": [2], "status": "ready", "area": "Executive Function" },
+    { "id": "pill-box-planner", "levels": [2], "status": "coming_soon", "area": "Executive Function" },
+    { "id": "whack-a-mole", "levels": [2], "status": "coming_soon", "area": "Attention" },
+    { "id": "attention-hunt", "levels": [3], "status": "ready", "area": "Attention" },
+    { "id": "map-navigator", "levels": [3], "status": "ready", "area": "Recognition & Orientation" }
   ]
 }
