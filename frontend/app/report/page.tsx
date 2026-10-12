@@ -399,47 +399,60 @@ function Report() {
         </div>
 
         {/* Completed Activity Details Table */}
-        {dayReport?.games && dayReport.games.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="font-bold text-slate-900">Completed activity details</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm border-collapse min-w-[620px]">
-                <thead>
-                  <tr className="border-b border-slate-300">
-                    <th className="py-2 pr-3 font-semibold">Activity</th>
-                    <th className="py-2 pr-3 font-semibold">Primary domain</th>
-                    <th className="py-2 pr-3 font-semibold">Score</th>
-                    <th className="py-2 pr-3 font-semibold">Accuracy</th>
-                    <th className="py-2 pr-3 font-semibold">Attempts / errors</th>
-                    <th className="py-2 pr-3 font-semibold">Response time</th>
-                    <th className="py-2 font-semibold">Difficulty</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dayReport.games.map((g, idx) => (
-                    <tr key={`${g.game_id}-${idx}`} className="border-b border-slate-200 last:border-0">
-                      <th scope="row" className="py-2 pr-3 font-medium">
-                        {g.game_name}
-                      </th>
-                      <td className="py-2 pr-3">{g.primary_domain}</td>
-                      <td className="py-2 pr-3">{g.score}/100</td>
-                      <td className="py-2 pr-3">{formatPercent(g.accuracy)}</td>
-                      <td className="py-2 pr-3">
-                        {g.attempts == null && g.incorrect_answers == null && g.false_selections == null
-                          ? "Not measured"
-                          : `${g.attempts ?? "—"} / ${g.incorrect_answers ?? g.false_selections ?? 0}`}
-                      </td>
-                      <td className="py-2 pr-3">
-                        {g.reaction_time_ms == null ? "Not measured" : `${g.reaction_time_ms} ms`}
-                      </td>
-                      <td className="py-2">{g.difficulty_level ?? "Not recorded"}</td>
+        {dayReport?.games && dayReport.games.length > 0 && (() => {
+          const hasAccuracy = dayReport.games.some((g) => g.accuracy != null);
+          const hasAttemptsOrErrors = dayReport.games.some(
+            (g) => g.attempts != null || g.incorrect_answers != null || g.false_selections != null
+          );
+          const hasResponseTime = dayReport.games.some((g) => g.reaction_time_ms != null);
+          const hasDifficulty = dayReport.games.some((g) => g.difficulty_level != null);
+
+          return (
+            <div className="space-y-2">
+              <h3 className="font-bold text-slate-900">Completed activity details</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm border-collapse min-w-[500px]">
+                  <thead>
+                    <tr className="border-b border-slate-300">
+                      <th className="py-2 pr-3 font-semibold">Activity</th>
+                      <th className="py-2 pr-3 font-semibold">Primary domain</th>
+                      <th className="py-2 pr-3 font-semibold">Score</th>
+                      {hasAccuracy && <th className="py-2 pr-3 font-semibold">Accuracy</th>}
+                      {hasAttemptsOrErrors && <th className="py-2 pr-3 font-semibold">Attempts / errors</th>}
+                      {hasResponseTime && <th className="py-2 pr-3 font-semibold">Response time</th>}
+                      {hasDifficulty && <th className="py-2 font-semibold">Difficulty</th>}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {dayReport.games.map((g, idx) => (
+                      <tr key={`${g.game_id}-${idx}`} className="border-b border-slate-200 last:border-0">
+                        <th scope="row" className="py-2 pr-3 font-medium">
+                          {g.game_name}
+                        </th>
+                        <td className="py-2 pr-3">{g.primary_domain}</td>
+                        <td className="py-2 pr-3">{g.score}/100</td>
+                        {hasAccuracy && <td className="py-2 pr-3">{formatPercent(g.accuracy)}</td>}
+                        {hasAttemptsOrErrors && (
+                          <td className="py-2 pr-3">
+                            {g.attempts == null && g.incorrect_answers == null && g.false_selections == null
+                              ? "Not measured"
+                              : `${g.attempts ?? "—"} / ${g.incorrect_answers ?? g.false_selections ?? 0}`}
+                          </td>
+                        )}
+                        {hasResponseTime && (
+                          <td className="py-2 pr-3">
+                            {g.reaction_time_ms == null ? "Not measured" : `${g.reaction_time_ms} ms`}
+                          </td>
+                        )}
+                        {hasDifficulty && <td className="py-2">{g.difficulty_level ?? "Not recorded"}</td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Important Note */}
         <div className="rounded-md border border-slate-300 bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">

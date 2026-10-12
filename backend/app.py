@@ -880,22 +880,16 @@ def save_routine():
 def daily_plan():
     """Today's games for ?date=yyyy-MM-dd, the same all day (seeded by the date):
     level 1 = Daily Recall + 1 random easy game, levels 2 and 3 = 2 random games each."""
-    import random
     from datetime import date as _date
     date_str = request.args.get('date') or _date.today().isoformat()
     try:
-        with open('games.json', 'r', encoding='utf-8') as f:
-            games = json.load(f)["games"]
+        from cognitive_reports import build_daily_plan
+        games_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'games.json')
+        plans_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'daily_plans.json')
+        return jsonify(build_daily_plan(date_str, games_file=games_file, plans_file=plans_file))
     except Exception as e:
         print(f"Daily plan error: {e}")
         return jsonify({"error": str(e)}), 500
-    rng = random.Random(date_str)
-    plan = {}
-    for lvl, count in ((1, 1), (2, 2), (3, 2)):
-        pool = [g["id"] for g in games if lvl in g["levels"] and g.get("status") == "ready" and g["id"] != "daily_recall"]
-        plan[f"level{lvl}"] = rng.sample(pool, min(count, len(pool)))
-    plan["level1"].insert(0, "daily_recall")
-    return jsonify(plan)
 
 
 @api.route('/performance', methods=['POST'])
@@ -991,8 +985,9 @@ def get_report_for_day():
         from cognitive_reports import build_day_report, load_store
         perf_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'performance_data.json')
         games_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'games.json')
+        plans_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'daily_plans.json')
         store = load_store(perf_file)
-        report = build_day_report(store, date_str, games_file=games_file)
+        report = build_day_report(store, date_str, games_file=games_file, plans_file=plans_file)
         return jsonify(report), 200
     except Exception as e:
         print(f"Get report for day error: {e}")

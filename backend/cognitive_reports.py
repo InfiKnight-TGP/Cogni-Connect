@@ -142,35 +142,6 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
         "playable": True,
         "domain_weights": {"Recognition & Orientation": 0.5, "Memory": 0.5},
     },
-    "my-day-recall": {
-        "name": "My Day Recall",
-        "description": "Planned personalized recall and recognition activity.",
-        "primary_domain": "Memory",
-        "secondary_domains": ["Recognition & Orientation"],
-        "playable": False,
-        "domain_weights": {},
-        "task_domain_weights": {
-            "free_recall": {"Memory": 1.0},
-            "familiar_choice": {"Recognition & Orientation": 1.0},
-            "mixed_recall_and_recognition": {"Memory": 0.5, "Recognition & Orientation": 0.5},
-        },
-    },
-    "sequence-memory": {
-        "name": "Sequence Memory",
-        "description": "Planned sequence recall activity.",
-        "primary_domain": "Memory",
-        "secondary_domains": [],
-        "playable": False,
-        "domain_weights": {},
-    },
-    "pattern-switch": {
-        "name": "Pattern Switch",
-        "description": "Planned rule-switching and cognitive-flexibility activity.",
-        "primary_domain": "Executive Function",
-        "secondary_domains": [],
-        "playable": False,
-        "domain_weights": {},
-    },
 }
 
 LEVEL_NAMES: dict[int, str] = {1: "Easy", 2: "Medium", 3: "Hard"}
@@ -237,8 +208,24 @@ def get_active_days(performance_file: str | Path) -> list[str]:
     return sorted(days, reverse=True)
 
 
-def get_daily_plan(date_str: str, games_file: str | Path = "games.json") -> dict[str, list[str]]:
-    """Determine planned games for date_str from games.json, matching /daily-plan."""
+def build_daily_plan(
+    date_str: str,
+    games_file: str | Path = "games.json",
+    plans_file: str | Path = "daily_plans.json",
+) -> dict[str, list[str]]:
+    """Determine planned games for date_str from saved plan or games.json, matching /daily-plan."""
+    plans_path = Path(plans_file)
+    if plans_path.exists():
+        try:
+            with plans_path.open("r", encoding="utf-8") as f:
+                saved_plans = json.load(f)
+                if isinstance(saved_plans, dict) and date_str in saved_plans:
+                    saved = saved_plans[date_str]
+                    if isinstance(saved, dict) and "level1" in saved:
+                        return saved
+        except Exception:
+            pass
+
     games_path = Path(games_file)
     games_list: list[dict[str, Any]] = []
     if games_path.exists():
@@ -258,7 +245,24 @@ def get_daily_plan(date_str: str, games_file: str | Path = "games.json") -> dict
         ]
         plan[f"level{lvl}"] = rng.sample(pool, min(count, len(pool)))
     plan["level1"].insert(0, "daily_recall")
+
+    try:
+        saved_plans = {}
+        if plans_path.exists():
+            with plans_path.open("r", encoding="utf-8") as f:
+                saved_plans = json.load(f)
+                if not isinstance(saved_plans, dict):
+                    saved_plans = {}
+        saved_plans[date_str] = plan
+        with plans_path.open("w", encoding="utf-8") as f:
+            json.dump(saved_plans, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
     return plan
+
+
+get_daily_plan = build_daily_plan
 
 
 def _extract_breakdown_value(breakdown: dict[str, Any] | None, *keys: str) -> float | None:
@@ -275,6 +279,7 @@ def build_day_report(
     performance_data: dict[str, Any],
     date_str: str,
     games_file: str | Path = "games.json",
+    plans_file: str | Path = "daily_plans.json",
 ) -> dict[str, Any]:
     """Build a daily cognitive report for date_str from performance store data."""
     all_scores: list[dict[str, Any]] = performance_data.get("scores", [])
@@ -445,7 +450,7 @@ def build_day_report(
     completed_rows = list(latest_by_game.values())
 
     # 4. Determine missing_games = activities in that day's /daily-plan that were NOT completed
-    daily_plan = get_daily_plan(date_str, games_file)
+    daily_plan = build_daily_plan(date_str, games_file=games_file, plans_file=plans_file)
     planned_game_ids: list[str] = []
     for lvl in ("level1", "level2", "level3"):
         for gid in daily_plan.get(lvl, []):
@@ -471,6 +476,7 @@ def build_day_report(
 
     # 5. Domain scores: equal-weight average of games within each domain.
     # Domains with no completed games are null ("Not measured"), NEVER 0.
+    # Recognition & Orientation: treat Face Recognition and Name Recall as ONE contribution (their average).
     domains: dict[str, dict[str, Any]] = {
         domain: {"score": None, "game_count": 0, "game_ids": [], "confidence": "no data"}
         for domain in DOMAINS
@@ -480,13 +486,38 @@ def build_day_report(
         domain_games = [r for r in completed_rows if r["primary_domain"] == domain]
         if not domain_games:
             continue
-        scores = [float(r["score"]) for r in domain_games]
-        domains[domain] = {
-            "score": round(sum(scores) / len(scores)),
-            "game_count": len(domain_games),
-            "game_ids": [r["game_id"] for r in domain_games],
-            "confidence": "limited observations" if len(domain_games) == 1 else "multiple games",
-        }
+
+        if domain == "Recognition & Orientation":
+            recall_ro = [
+                r for r in domain_games
+                if r.get("parent_game_id") == "daily_recall"
+                or r["game_id"] in ("face-recognition", "name-recognition", "daily_recall")
+            ]
+            other_ro = [r for r in domain_games if r not in recall_ro]
+            contributions: list[float] = []
+            contrib_ids: list[str] = []
+            if recall_ro:
+                recall_avg = round(sum(float(r["score"]) for r in recall_ro) / len(recall_ro))
+                contributions.append(float(recall_avg))
+                contrib_ids.append("daily_recall")
+            for r in other_ro:
+                contributions.append(float(r["score"]))
+                contrib_ids.append(r["game_id"])
+
+            domains[domain] = {
+                "score": round(sum(contributions) / len(contributions)),
+                "game_count": len(contributions),
+                "game_ids": contrib_ids,
+                "confidence": "limited observations" if len(contributions) == 1 else "multiple games",
+            }
+        else:
+            scores = [float(r["score"]) for r in domain_games]
+            domains[domain] = {
+                "score": round(sum(scores) / len(scores)),
+                "game_count": len(domain_games),
+                "game_ids": [r["game_id"] for r in domain_games],
+                "confidence": "limited observations" if len(domain_games) == 1 else "multiple games",
+            }
 
     # 6. Real start/end times and duration
     starts = [parse_iso(r.get("started_at")) for r in completed_rows if r.get("started_at")]
