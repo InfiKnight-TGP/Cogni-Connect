@@ -206,3 +206,25 @@ export function trend(series: (number | null)[]): "up" | "down" | "steady" | nul
   const change = values[values.length - 1] - values[0];
   return change >= 5 ? "up" : change <= -5 ? "down" : "steady";
 }
+
+/**
+ * Radar chart dataset builder. Null domains MUST stay null (never 0) so Chart.js leaves gaps.
+ */
+export function buildRadarChartData(scores: Record<Area, number | null>) {
+  return {
+    labels: [...AREAS],
+    datasets: [
+      {
+        label: "Observed task performance",
+        data: AREAS.map((domain) => (scores[domain] == null ? null : scores[domain])),
+        backgroundColor: "rgba(37, 99, 235, 0.16)",
+        borderColor: "rgb(37, 99, 235)",
+        pointBackgroundColor: "rgb(37, 99, 235)",
+        pointBorderColor: "#fff",
+        pointHoverBackgroundColor: "#fff",
+        pointHoverBorderColor: "rgb(37, 99, 235)",
+        spanGaps: false,
+      },
+    ],
+  };
+}

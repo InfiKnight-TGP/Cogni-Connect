@@ -968,6 +968,37 @@ def get_performance():
         return jsonify({"error": str(e)}), 500
 
 
+@api.route('/reports/days', methods=['GET'])
+def get_reports_days():
+    """List of all calendar days (YYYY-MM-DD) with recorded activity."""
+    try:
+        from cognitive_reports import get_active_days
+        perf_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'performance_data.json')
+        days = get_active_days(perf_file)
+        return jsonify({"days": days}), 200
+    except Exception as e:
+        print(f"Get reports days error: {e}")
+        return jsonify({"error": str(e), "days": []}), 500
+
+
+@api.route('/reports/day', methods=['GET'])
+def get_report_for_day():
+    """Cognitive performance report for ?date=YYYY-MM-DD."""
+    date_str = request.args.get('date')
+    if not date_str:
+        return jsonify({"error": "date query parameter is required (YYYY-MM-DD)"}), 400
+    try:
+        from cognitive_reports import build_day_report, load_store
+        perf_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'performance_data.json')
+        games_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'games.json')
+        store = load_store(perf_file)
+        report = build_day_report(store, date_str, games_file=games_file)
+        return jsonify(report), 200
+    except Exception as e:
+        print(f"Get report for day error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @api.route('/generate-questions', methods=['POST'])
 def generate_questions():
     """Generate quiz questions from uploaded videos using GPT."""

@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import {
   daysPlayedThisWeek, dayKey, declines, lastFourWeeks, skillArea, gameArea, toEntries, trend, weeklyAverages,
+  buildRadarChartData,
 } from "./progress.ts";
 
 const today = new Date(2026, 9, 9); // Fri 9 Oct 2026, local time
@@ -121,5 +122,19 @@ assert.equal(trend([50, null, null, 70]), "up");
 assert.equal(trend([70, 68]), "steady");
 assert.equal(trend([null, 80, 60, null]), "down");
 assert.equal(trend([null, 80, null, null]), null);
+
+// Radar chart null domain test:
+// Unmeasured domains must remain null (never 0) with spanGaps: false
+const radarData = buildRadarChartData({
+  Memory: 80,
+  Attention: null,
+  "Executive Function": 90,
+  "Recognition & Orientation": null,
+});
+assert.equal(radarData.datasets[0].spanGaps, false);
+assert.equal(radarData.datasets[0].data[0], 80); // Memory: 80
+assert.equal(radarData.datasets[0].data[1], null); // Attention: stays null, never 0
+assert.equal(radarData.datasets[0].data[2], 90); // Executive Function: 90
+assert.equal(radarData.datasets[0].data[3], null); // Recognition & Orientation: stays null, never 0
 
 console.log("progress checks passed");
