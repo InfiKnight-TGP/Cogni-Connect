@@ -108,8 +108,13 @@ export function toEntries(perf: { scores?: RawScore[]; game_scores?: RawScore[] 
       if (hasA1 || hasA2 || hasA3) {
         const split: Entry[] = [];
         // Area-only entries: used for area charts and tables
-        if (hasA1) split.push({ day: d, area: "Recognition & Orientation", score: a1, gameId });
-        if (hasA2) split.push({ day: d, area: "Recognition & Orientation", score: a2, gameId });
+        const roScores: number[] = [];
+        if (hasA1) roScores.push(a1);
+        if (hasA2) roScores.push(a2);
+        if (roScores.length > 0) {
+          const roAvg = Math.round(roScores.reduce((a, b) => a + b, 0) / roScores.length);
+          split.push({ day: d, area: "Recognition & Orientation", score: roAvg, gameId });
+        }
         if (hasA3) split.push({ day: d, area: "Memory", score: a3, gameId });
         // Level-only entry: Daily Recall counted ONCE with combined score for Easy/Medium/Hard averages
         split.push({ day: d, level: lvl, score: s.score, gameId });

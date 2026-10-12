@@ -22,7 +22,7 @@ export default function StartQuiz({
   return (
     <>
       <div className="flex items-center justify-between">
-        <div className="text-2xl font-medium">My Day Activities</div>
+        <div className="text-2xl font-medium">Daily Recall</div>
         {onRegenerateQuestions && (
           <Button
             onClick={onRegenerateQuestions}

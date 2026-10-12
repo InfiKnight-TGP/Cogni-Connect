@@ -73,11 +73,35 @@ const recallEntries = toEntries({
     },
   ],
 });
+const roEntries = recallEntries.filter((e) => e.area === "Recognition & Orientation");
+assert.equal(roEntries.length, 1);
+assert.equal(roEntries[0].score, 85); // average of 80 and 90
+const memEntries = recallEntries.filter((e) => e.area === "Memory");
+assert.equal(memEntries.length, 1);
+assert.equal(memEntries[0].score, 70); // activity 3
+const lvlEntries = recallEntries.filter((e) => e.level !== undefined);
+assert.equal(lvlEntries.length, 1);
+assert.equal(lvlEntries[0].score, 85); // combined score counted ONCE
+
 const recallByArea = weeklyAverages(recallEntries, weeks, (e) => e.area);
 assert.deepEqual(recallByArea["Recognition & Orientation"], [null, null, null, 85]); // average of 80 and 90
 assert.deepEqual(recallByArea["Memory"], [null, null, null, 70]); // activity 3
 const recallByLevel = weeklyAverages(recallEntries, weeks, (e) => (e.level ? { 1: "Easy", 2: "Medium", 3: "Hard" }[e.level] : undefined));
 assert.deepEqual(recallByLevel["Easy"], [null, null, null, 85]); // combined score counted ONCE
+
+// Whichever exists: only activity1
+const onlyA1 = toEntries({
+  scores: [{ score: 80, date: "2026-10-09", game_id: "daily_recall", level: 1, breakdown: { activity1: 80 } }],
+});
+assert.equal(onlyA1.filter((e) => e.area === "Recognition & Orientation").length, 1);
+assert.equal(onlyA1.find((e) => e.area === "Recognition & Orientation")?.score, 80);
+
+// Whichever exists: only activity2
+const onlyA2 = toEntries({
+  scores: [{ score: 90, date: "2026-10-09", game_id: "daily_recall", level: 1, breakdown: { activity2: 90 } }],
+});
+assert.equal(onlyA2.filter((e) => e.area === "Recognition & Orientation").length, 1);
+assert.equal(onlyA2.find((e) => e.area === "Recognition & Orientation")?.score, 90);
 
 // Mon 5 Oct .. Sun 11 Oct
 assert.deepEqual(daysPlayedThisWeek(entries, today), [true, false, false, true, true, false, false]);

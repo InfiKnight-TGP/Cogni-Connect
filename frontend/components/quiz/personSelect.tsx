@@ -159,7 +159,16 @@ export default function PersonSelect({
           <ArrowLeft className="mr-2 h-5 w-5" /> Back
         </Button>
         <div className="text-xl font-medium">
-          My Day
+          {myDay ? (
+            "My Day"
+          ) : (
+            <>
+              Daily Recall —{" "}
+              <span className="text-blue-600 dark:text-blue-400">
+                {format(date, "EEE d MMM yyyy")}
+              </span>
+            </>
+          )}
         </div>
         <Badge className="ml-4 h-8 px-4">{myDay ? "Part 1 of 3" : "Part 1"}</Badge>
       </div>
