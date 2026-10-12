@@ -1,26 +1,49 @@
 // Progress maths for the caregiver Progress page and the doctor's report.
 // No imports, so `node lib/progress.check.mjs` can test it directly.
 
-export type Area = "Memory" | "Attention" | "Planning" | "Switching" | "Directions";
-export const AREAS: Area[] = ["Memory", "Attention", "Planning", "Switching", "Directions"];
+export type Area = "Memory" | "Attention" | "Executive Function" | "Recognition & Orientation";
+export const AREAS: Area[] = ["Memory", "Attention", "Executive Function", "Recognition & Orientation"];
 export const LEVEL_NAMES = { 1: "Easy", 2: "Medium", 3: "Hard" } as const;
 export type Level = keyof typeof LEVEL_NAMES;
 
-// Each game's skill (registry.ts / saved scores) belongs to one caregiver-facing area
-const AREA_OF: Record<string, Area> = {
+const GAME_AREA: Record<string, Area> = {
+  "story-builder": "Memory",
+  "word-association": "Memory",
+  "mole-path": "Memory",
+  "odd-one-out": "Attention",
+  "whack-a-mole": "Attention",
+  "attention-hunt": "Attention",
+  "plan-the-day": "Executive Function",
+  "sorting-station": "Executive Function",
+  "map-navigator": "Recognition & Orientation",
+};
+
+const SKILL_AREA: Record<string, Area> = {
+  memory: "Memory",
+  attention: "Attention",
+  "executive function": "Executive Function",
+  "recognition & orientation": "Recognition & Orientation",
   "personal memory": "Memory",
   "verbal memory": "Memory",
   "semantic memory": "Memory",
   "working memory": "Memory",
-  attention: "Attention",
   "selective attention": "Attention",
   inhibition: "Attention",
-  sequencing: "Planning",
-  flexibility: "Switching",
-  spatial: "Directions",
+  sequencing: "Executive Function",
+  flexibility: "Executive Function",
+  planning: "Executive Function",
+  switching: "Executive Function",
+  spatial: "Recognition & Orientation",
+  directions: "Recognition & Orientation",
 };
 
-export const skillArea = (skill?: string): Area | undefined => AREA_OF[(skill ?? "").toLowerCase()];
+export const gameArea = (gameId?: string, skill?: string): Area | undefined => {
+  if (gameId && GAME_AREA[gameId]) return GAME_AREA[gameId];
+  if (skill) return SKILL_AREA[skill.toLowerCase()];
+  return undefined;
+};
+
+export const skillArea = (skill?: string): Area | undefined => gameArea(undefined, skill);
 
 const pad = (n: number) => String(n).padStart(2, "0");
 /** Local "yyyy-MM-dd" (never toISOString, which is UTC). */
@@ -36,7 +59,7 @@ export const shortDate = (key: string) => `${Number(key.slice(8))} ${MONTHS[Numb
 
 export interface Entry {
   day: string;
-  level: Level;
+  level?: Level;
   area?: Area;
   score: number;
   gameId: string;
@@ -49,6 +72,14 @@ interface RawScore {
   game_id?: string;
   level?: number;
   skill?: string;
+  breakdown?: {
+    activity1?: number | null;
+    activity2?: number | null;
+    activity3?: number | null;
+    activity1_faceRecognition?: number | null;
+    activity2_namePeople?: number | null;
+    activity3_contextQuestions?: number | null;
+  };
 }
 
 /** Normalise GET /performance: Daily Recall from "scores", games from "game_scores". */
@@ -58,12 +89,40 @@ export function toEntries(perf: { scores?: RawScore[]; game_scores?: RawScore[] 
     const d = s.date || s.timestamp || "";
     return d.length === 10 ? d : d ? dayKey(new Date(d)) : "";
   };
-  const make = (s: RawScore, gameId: string, skill: string | undefined, level: number | undefined): Entry[] =>
-    typeof s.score === "number" && Number.isFinite(s.score) && day(s) && (level ?? 1) in LEVEL_NAMES
-      ? [{ day: day(s), level: (level ?? 1) as Level, area: skillArea(skill), score: s.score, gameId }]
-      : [];
+
+  const make = (s: RawScore, gameId: string, skill: string | undefined, level: number | undefined): Entry[] => {
+    const d = day(s);
+    if (!d || typeof s.score !== "number" || !Number.isFinite(s.score)) return [];
+    if (level !== undefined && !(level in LEVEL_NAMES)) return [];
+    const lvl = (level ?? 1) as Level;
+
+    // Daily Recall breakdown split: activity1/activity2 -> Recognition & Orientation, activity3 -> Memory
+    if (gameId === "daily_recall" || s.breakdown) {
+      const a1 = s.breakdown?.activity1 ?? (s.breakdown as any)?.activity1_faceRecognition;
+      const a2 = s.breakdown?.activity2 ?? (s.breakdown as any)?.activity2_namePeople;
+      const a3 = s.breakdown?.activity3 ?? (s.breakdown as any)?.activity3_contextQuestions;
+      const hasA1 = typeof a1 === "number" && Number.isFinite(a1);
+      const hasA2 = typeof a2 === "number" && Number.isFinite(a2);
+      const hasA3 = typeof a3 === "number" && Number.isFinite(a3);
+
+      if (hasA1 || hasA2 || hasA3) {
+        const split: Entry[] = [];
+        // Area-only entries: used for area charts and tables
+        if (hasA1) split.push({ day: d, area: "Recognition & Orientation", score: a1, gameId });
+        if (hasA2) split.push({ day: d, area: "Recognition & Orientation", score: a2, gameId });
+        if (hasA3) split.push({ day: d, area: "Memory", score: a3, gameId });
+        // Level-only entry: Daily Recall counted ONCE with combined score for Easy/Medium/Hard averages
+        split.push({ day: d, level: lvl, score: s.score, gameId });
+        return split;
+      }
+    }
+
+    const area = gameArea(gameId, skill) ?? (gameId === "daily_recall" ? "Memory" : undefined);
+    return [{ day: d, level: lvl, area, score: s.score, gameId }];
+  };
+
   return [
-    ...(perf.scores ?? []).flatMap((s) => make(s, "daily_recall", s.skill ?? "personal memory", s.level)),
+    ...(perf.scores ?? []).flatMap((s) => make(s, s.game_id || "daily_recall", s.skill, s.level)),
     ...(perf.game_scores ?? []).flatMap((s) => make(s, s.game_id ?? "", s.skill, s.level)),
   ];
 }

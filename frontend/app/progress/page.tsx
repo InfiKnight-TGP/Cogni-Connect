@@ -18,10 +18,10 @@ import RecallGraph from "./recall-graph";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
-// Categorical slots 1-5, validated for both themes (dataviz validate_palette.js). Colour follows the entity.
+// Categorical slots 1-4, validated for both themes (dataviz validate_palette.js). Colour follows the entity.
 const SERIES = {
-  light: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"],
-  dark: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"],
+  light: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"],
+  dark: ["#3987e5", "#d95926", "#199e70", "#c98500"],
 };
 const LEVEL_GROUPS = Object.values(LEVEL_NAMES);
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -115,7 +115,7 @@ function Progress() {
             title="Average score by level"
             weeks={weeks}
             groups={LEVEL_GROUPS}
-            series={weeklyAverages(entries, weeks, (e) => LEVEL_NAMES[e.level])}
+            series={weeklyAverages(entries, weeks, (e) => (e.level ? LEVEL_NAMES[e.level] : undefined))}
           />
 
           <section className="flex h-96 flex-col rounded-xl border bg-card p-6">

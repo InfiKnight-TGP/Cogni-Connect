@@ -118,15 +118,14 @@ export default function NamePeople({
         <Button
           variant="secondary"
           onClick={() => setProgress(-1)}
-          className="mr-6"
+          className="mr-6 min-h-[48px] px-5 text-lg"
         >
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back
+          <ArrowLeft className="mr-2 h-5 w-5" /> Back
         </Button>
-        <div className="text-lg font-medium">
-          {myDay ? "My Day" : <>Memory Quiz —{" "}
-          <span className="text-blue-600">{date.toDateString()}</span></>}
+        <div className="text-xl font-medium">
+          My Day
         </div>
-        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 2 of 3" : "Activity 2 of 3"}</Badge>
+        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 2 of 3" : "Part 2"}</Badge>
       </div>
 
       <div className="mt-12 text-2xl font-medium">
@@ -145,9 +144,9 @@ export default function NamePeople({
           <Button
             size="lg"
             onClick={() => setProgress((prev) => prev + 1)}
-            className="text-lg font-medium transition-all"
+            className="min-h-[48px] text-lg font-medium transition-all"
           >
-            {myDay ? "Continue to Part 3" : "Continue to Activity 3"} <ArrowRight className="ml-3 h-4 w-4" />
+            Continue to Part 3 <ArrowRight className="ml-3 h-4 w-4" />
           </Button>
         </div>
       ) : (
@@ -163,9 +162,9 @@ export default function NamePeople({
               <Button
                 size="lg"
                 onClick={() => setProgress((prev) => prev + 1)}
-                className="text-lg font-medium transition-all"
+                className="min-h-[48px] text-lg font-medium transition-all"
               >
-                {myDay ? "Continue to Part 3" : "Continue to Activity 3"} <ArrowRight className="ml-3 h-4 w-4" />
+                Continue to Part 3 <ArrowRight className="ml-3 h-4 w-4" />
               </Button>
             </div>
           ) : null}

@@ -10,11 +10,10 @@ import {
 import { useEffect, useState } from "react";
 
 const AREA_MEANING: Record<Area, string> = {
-  Memory: "remembering people, events and words (includes the daily personal-memory quiz)",
-  Attention: "finding targets among distractions",
-  Planning: "putting the steps of everyday tasks in order",
-  Switching: "adapting when a sorting rule changes",
-  Directions: "following routes and directions on a map",
+  Memory: "remembering words, daily events, and sequences",
+  Attention: "focusing on targets and spotting items among distractions",
+  "Executive Function": "planning daily steps and adapting when rules change",
+  "Recognition & Orientation": "recognising familiar people and following routes and directions",
 };
 
 const fullDate = (key: string) => `${shortDate(key)} ${key.slice(0, 4)}`;
@@ -57,7 +56,7 @@ function Report() {
   const inPeriod = entries.filter((e) => e.day >= weeks[0].start && e.day <= weeks[3].end);
   const daysPlayed = new Set(inPeriod.map((e) => e.day)).size;
   const byArea = weeklyAverages(inPeriod, weeks, (e) => e.area);
-  const byLevel = weeklyAverages(inPeriod, weeks, (e) => LEVEL_NAMES[e.level]);
+  const byLevel = weeklyAverages(inPeriod, weeks, (e) => (e.level ? LEVEL_NAMES[e.level] : undefined));
   const drops = declines(entries, today);
   const changes = AREAS.flatMap((a) => {
     const values = (byArea[a] ?? []).filter((v): v is number => v !== null);
@@ -116,7 +115,7 @@ function Report() {
         groups={Object.values(LEVEL_NAMES)}
         series={byLevel}
         entries={inPeriod}
-        groupOf={(e) => LEVEL_NAMES[e.level]}
+        groupOf={(e) => (e.level ? LEVEL_NAMES[e.level] : undefined)}
       />
 
       <section className="space-y-2">

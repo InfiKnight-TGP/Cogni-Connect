@@ -159,15 +159,14 @@ export default function ContextQuestions({
         <Button
           variant="secondary"
           onClick={() => setProgress(-1)}
-          className="mr-6"
+          className="mr-6 min-h-[48px] px-5 text-lg"
         >
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back
+          <ArrowLeft className="mr-2 h-5 w-5" /> Back
         </Button>
-        <div className="text-lg font-medium">
-          {myDay ? "My Day" : <>Memory Quiz —{" "}
-          <span className="text-blue-600">{date.toDateString()}</span></>}
+        <div className="text-xl font-medium">
+          My Day
         </div>
-        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 3 of 3" : "Memory Quiz"}</Badge>
+        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 3 of 3" : "Part 3"}</Badge>
       </div>
 
       {loading ? (
@@ -236,9 +235,9 @@ export default function ContextQuestions({
               <Button
                 onClick={() => setProgress(-1)}
                 size="lg"
-                className="text-lg font-medium"
+                className="min-h-[48px] px-6 text-lg font-medium"
               >
-                Finish Quiz <ArrowRight className="ml-3 h-5 w-5" />
+                Finish <ArrowRight className="ml-3 h-5 w-5" />
               </Button>
             </div>
           )}

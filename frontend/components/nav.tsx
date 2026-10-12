@@ -52,7 +52,7 @@ export default function Nav() {
           ))}
           {caregiver ? (
             <button
-              className="flex min-h-12 items-center rounded-md border border-border px-3 text-base"
+              className="flex min-h-12 items-center rounded-md border border-border px-3 text-lg"
               onClick={() => {
                 lockCaregiver();
                 router.push("/");
@@ -62,7 +62,7 @@ export default function Nav() {
             </button>
           ) : (
             <button
-              className="flex min-h-12 items-center rounded-md border border-border px-3 text-base text-muted-foreground"
+              className="flex min-h-12 items-center rounded-md border border-border px-3 text-lg text-muted-foreground"
               onClick={() => setPinOpen(true)}
             >
               Caregiver

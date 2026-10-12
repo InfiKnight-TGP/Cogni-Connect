@@ -117,19 +117,20 @@ export default function Page() {
       <div className="absolute bottom-8 w-full max-w-screen-sm rounded-xl border border-border bg-background p-4 transition-all">
         <div className="flex w-full justify-between">
           <Link href="/">
-            <Button variant="secondary">
-              <BrainCircuit className="mr-3 h-5 w-5" /> Back to Today
+            <Button variant="secondary" className="h-12 min-h-[48px] px-5 text-lg">
+              <BrainCircuit className="mr-3 h-6 w-6" /> Back to Today
             </Button>
           </Link>
           <Button
             onClick={() => setMinimized(!minimized)}
             variant="secondary"
             size="icon"
+            className="h-12 w-12 min-h-[48px] min-w-[48px]"
           >
             {minimized ? (
-              <Plus className="h-5 w-5" />
+              <Plus className="h-6 w-6" />
             ) : (
-              <Minus className="h-5 w-5" />
+              <Minus className="h-6 w-6" />
             )}
           </Button>
         </div>
@@ -138,12 +139,13 @@ export default function Page() {
             <div className="mt-4 flex w-full space-x-4">
               <Input
                 placeholder="Search through your memories..."
-                className="grow bg-background text-foreground placeholder:text-muted-foreground"
+                className="h-12 grow bg-background text-lg text-foreground placeholder:text-muted-foreground"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
               />
               <Button
                 disabled={value === ""}
+                className="h-12 min-h-[48px] px-6 text-lg"
                 onClick={() => {
                   setLoading(true);
                   setQuery(value);
@@ -151,29 +153,29 @@ export default function Page() {
                   setValue("");
                 }}
               >
-                Query{" "}
+                Search{" "}
                 {loading ? (
-                  <Loader2 className="ml-2 h-4 w-2 animate-spin" />
+                  <Loader2 className="ml-2 h-5 w-5 animate-spin" />
                 ) : (
-                  <Search className="ml-2 h-4 w-4" />
+                  <Search className="ml-2 h-5 w-5" />
                 )}
               </Button>
             </div>
             {query !== "" ? (
               <div className="mb-2 mt-4 text-center text-lg font-medium">
                 {results.length === 0 ? (
-                  <div className="text-muted-foreground text-base">No matching memories found</div>
+                  <div className="text-muted-foreground text-lg">No matching memories found</div>
                 ) : (
                   <>
-                    Currently displaying query: {query}
+                    Showing memories for: {query}
                     {results[index] && metadata[results[index]]?.vision_answer && (
-                      <div className="mt-3 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg text-left">
-                        <div className="font-semibold text-blue-700 mb-1">🔍 AI Analysis:</div>
+                      <div className="mt-3 rounded-lg border border-border bg-muted/70 p-4 text-left text-lg text-foreground">
+                        <div className="mb-1 font-semibold text-primary">About this memory:</div>
                         {metadata[results[index]].vision_answer}
                       </div>
                     )}
                     {results[index] && metadata[results[index]]?.people && metadata[results[index]]?.people.length > 0 && (
-                      <div className="mt-2 text-base text-blue-600">
+                      <div className="mt-2 text-lg font-medium text-primary">
                         👤 {metadata[results[index]].people.join(", ")}
                       </div>
                     )}

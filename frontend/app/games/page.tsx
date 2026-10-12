@@ -55,7 +55,7 @@ function AllGames() {
           <h2 className="text-2xl font-bold">{LEVEL_NAMES[level]}</h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {level === 1 && (
-              <Card emoji="🧠" name="Daily Recall (My Day)" area="Memory" description="Questions about the patient's own day: who they saw, names, and what happened, from the uploaded videos.">
+              <Card emoji="🧠" name="Daily Recall (My Day)" area="Recognition & Orientation / Memory" description="Questions about the patient's own day: who they saw, names, and what happened, from the uploaded videos.">
                 <Link href="/quiz">
                   <Button variant="outline" className="w-full">Open the quiz</Button>
                 </Link>
@@ -67,7 +67,7 @@ function AllGames() {
                 key={game.id}
                 emoji={game.emoji}
                 name={game.name}
-                area={skillArea(game.skill)}
+                area={game.area}
                 description={game.description}
                 comingSoon={game.comingSoon}
               >

@@ -9,11 +9,13 @@ import WhackAMole from "./whack-a-mole";
 import AttentionHunt from "./attention-hunt";
 import MapNavigator from "./map-navigator";
 import { GameProps } from "./_shared/types";
+import { Area } from "@/lib/progress";
 
 export interface GameRegistryEntry {
   id: string;
   name: string;
   skill: string;
+  area: Area;
   levels: (1 | 2 | 3)[];
   component?: React.ComponentType<GameProps>;
   comingSoon: boolean;
@@ -27,6 +29,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     id: "story-builder",
     name: "Story Builder",
     skill: "verbal memory",
+    area: "Memory",
     levels: [1],
     component: StoryBuilder,
     comingSoon: false,
@@ -37,6 +40,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     id: "plan-the-day",
     name: "Plan the Day",
     skill: "sequencing",
+    area: "Executive Function",
     levels: [1],
     component: PlanTheDay,
     comingSoon: false,
@@ -47,6 +51,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     id: "word-association",
     name: "Word Association",
     skill: "semantic memory",
+    area: "Memory",
     levels: [1],
     component: WordAssociation,
     comingSoon: true,
@@ -57,6 +62,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     id: "odd-one-out",
     name: "Odd One Out",
     skill: "attention",
+    area: "Attention",
     levels: [1],
     component: OddOneOut,
     comingSoon: true,
@@ -67,6 +73,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     id: "mole-path",
     name: "Mole Path",
     skill: "working memory",
+    area: "Memory",
     levels: [2],
     component: MolePath,
     comingSoon: false,
@@ -77,6 +84,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     id: "sorting-station",
     name: "Sorting Station",
     skill: "flexibility",
+    area: "Executive Function",
     levels: [2],
     component: SortingStation,
     comingSoon: false,
@@ -87,6 +95,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     id: "whack-a-mole",
     name: "Whack-a-Mole",
     skill: "inhibition",
+    area: "Attention",
     levels: [2],
     component: WhackAMole,
     comingSoon: true,
@@ -97,6 +106,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     id: "attention-hunt",
     name: "Attention Hunt",
     skill: "selective attention",
+    area: "Attention",
     levels: [3],
     component: AttentionHunt,
     comingSoon: false,
@@ -107,6 +117,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     id: "map-navigator",
     name: "Map Navigator",
     skill: "spatial",
+    area: "Recognition & Orientation",
     levels: [3],
     component: MapNavigator,
     comingSoon: false,

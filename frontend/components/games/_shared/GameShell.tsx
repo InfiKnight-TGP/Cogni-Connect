@@ -5,6 +5,7 @@ import { saveScore } from "./saveScore";
 import { Button } from "@/components/ui/button";
 import { Award, Play, RotateCcw } from "lucide-react";
 import { useCaregiver } from "@/lib/mode";
+import { LEVEL_NAMES, gameArea } from "@/lib/progress";
 
 /** True on the caregiver's All Games page: games can be tried without saving a score. */
 export const PreviewContext = createContext(false);
@@ -76,10 +77,10 @@ export default function GameShell({
         </div>
         {caregiver && <div className="flex flex-col items-end gap-1">
           <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
-            Level {level}
+            {LEVEL_NAMES[level]}
           </span>
           <span className="text-xs text-muted-foreground capitalize">
-            {skill}
+            {gameArea(gameId, skill) ?? skill}
           </span>
         </div>}
       </div>
@@ -93,12 +94,12 @@ export default function GameShell({
           <div className="max-w-md space-y-2">
             <h2 className="text-xl font-semibold">Ready to begin?</h2>
             <p className="text-sm text-muted-foreground">
-              Click Start to launch {title}.{caregiver && level === 1 && " No timers apply in Level 1."}
+              Click Start to launch {title}.{caregiver && level === 1 && " No timers apply in Easy mode."}
             </p>
           </div>
           <Button
             size="lg"
-            className="px-8 py-6 text-lg font-bold shadow-lg hover:scale-105 transition-transform"
+            className="min-h-[48px] px-8 py-6 text-lg font-bold shadow-lg hover:scale-105 transition-transform"
             onClick={() => setStarted(true)}
           >
             <Play className="mr-2 h-5 w-5 fill-current" /> Start Game
@@ -138,7 +139,7 @@ export default function GameShell({
             variant="outline"
             size="lg"
             onClick={handleRestart}
-            className="mt-4"
+            className="mt-4 min-h-[48px] px-6 text-lg"
           >
             <RotateCcw className="mr-2 h-4 w-4" /> Play Again
           </Button>

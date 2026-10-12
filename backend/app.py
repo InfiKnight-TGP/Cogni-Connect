@@ -913,7 +913,7 @@ def save_performance():
         # Load existing performance data
         performance_file = 'performance_data.json'
         if os.path.exists(performance_file):
-            with open(performance_file, 'r') as f:
+            with open(performance_file, 'r', encoding='utf-8') as f:
                 performance_data = json.load(f)
         else:
             performance_data = {"scores": []}
@@ -942,7 +942,7 @@ def save_performance():
             })
         
         # Save updated data
-        with open(performance_file, 'w') as f:
+        with open(performance_file, 'w', encoding='utf-8') as f:
             json.dump(performance_data, f, indent=2)
         
         return jsonify({"success": True, "message": "Performance saved"}), 200
@@ -957,7 +957,7 @@ def get_performance():
     try:
         performance_file = 'performance_data.json'
         if os.path.exists(performance_file):
-            with open(performance_file, 'r') as f:
+            with open(performance_file, 'r', encoding='utf-8') as f:
                 performance_data = json.load(f)
             return jsonify(performance_data), 200
         else:

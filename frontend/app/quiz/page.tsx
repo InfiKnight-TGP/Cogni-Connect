@@ -89,7 +89,7 @@ export default function Page() {
             <div className="flex w-full flex-col items-center justify-center py-20">
               <Loader2 className="h-12 w-12 animate-spin text-primary" />
               <p className="mt-4 text-lg font-medium">
-                {myDay ? "Getting your day ready…" : "Generating personalized quiz questions from your videos..."}
+                {myDay ? "Getting your day ready…" : "Getting your activities ready…"}
               </p>
               {!myDay && (
                 <p className="mt-2 text-sm text-muted-foreground">
