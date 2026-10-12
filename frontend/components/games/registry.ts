@@ -21,6 +21,7 @@ export interface GameRegistryEntry {
   comingSoon: boolean;
   emoji: string;
   description: string;
+  trains: string;
   href?: string;
 }
 
@@ -35,6 +36,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     comingSoon: false,
     emoji: "📖",
     description: "Read a short everyday story, then recall missing details.",
+    trains: "Verbal memory: recall words from a short story",
   },
   {
     id: "plan-the-day",
@@ -46,6 +48,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     comingSoon: false,
     emoji: "📅",
     description: "Organize daily tasks in correct logical order.",
+    trains: "Planning and sequencing everyday errands",
   },
   {
     id: "word-association",
@@ -57,6 +60,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     comingSoon: true,
     emoji: "🔗",
     description: "Connect related words and concepts together.",
+    trains: "Semantic memory: link related things",
   },
   {
     id: "odd-one-out",
@@ -68,6 +72,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     comingSoon: true,
     emoji: "🔍",
     description: "Find the item that doesn't belong in the group.",
+    trains: "Selective attention and categorising",
   },
   {
     id: "mole-path",
@@ -79,6 +84,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     comingSoon: false,
     emoji: "🐹",
     description: "Watch the circles fill, then tap the path in the same order.",
+    trains: "Visual working memory: repeat a growing path",
   },
   {
     id: "sorting-station",
@@ -90,6 +96,18 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     comingSoon: false,
     emoji: "📦",
     description: "Adapt to changing rules to sort items correctly.",
+    trains: "Cognitive flexibility: switching rules",
+  },
+  {
+    id: "pill-box-planner",
+    name: "Pill Box Planner",
+    skill: "rule switching",
+    area: "Executive Function",
+    levels: [2],
+    comingSoon: true,
+    emoji: "💊",
+    description: "Follow a weekly medication schedule with multiple rules.",
+    trains: "Following several rules at once (a weekly medication schedule)",
   },
   {
     id: "whack-a-mole",
@@ -101,6 +119,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     comingSoon: true,
     emoji: "🔨",
     description: "Tap target moles while suppressing impulses for distractors.",
+    trains: "Impulse control: tap targets, ignore distractors",
   },
   {
     id: "attention-hunt",
@@ -112,6 +131,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     comingSoon: false,
     emoji: "🎯",
     description: "Find every copy of the target while ignoring distractors.",
+    trains: "Visual search among similar items",
   },
   {
     id: "map-navigator",
@@ -123,6 +143,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     comingSoon: false,
     emoji: "🗺️",
     description: "Navigate routes and spatial directions accurately.",
+    trains: "Spatial orientation: route finding",
   },
 ];
 

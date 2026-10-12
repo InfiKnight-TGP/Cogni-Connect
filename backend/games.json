@@ -7,6 +7,7 @@
     { "id": "odd-one-out", "levels": [1], "status": "coming_soon", "area": "Attention" },
     { "id": "mole-path", "levels": [2], "status": "ready", "area": "Memory" },
     { "id": "sorting-station", "levels": [2], "status": "ready", "area": "Executive Function" },
+    { "id": "pill-box-planner", "levels": [2], "status": "coming_soon", "area": "Executive Function" },
     { "id": "whack-a-mole", "levels": [2], "status": "coming_soon", "area": "Attention" },
     { "id": "attention-hunt", "levels": [3], "status": "ready", "area": "Attention" },
     { "id": "map-navigator", "levels": [3], "status": "ready", "area": "Recognition & Orientation" }

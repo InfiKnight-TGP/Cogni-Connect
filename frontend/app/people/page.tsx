@@ -1,11 +1,10 @@
 "use client";
 
 import Nav from "@/components/nav";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { API_URL } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
-import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface Person {
@@ -22,18 +21,14 @@ const RELATIONS = [
   "Friend", "Neighbour", "Doctor", "Caregiver",
 ];
 
-// "Dinesh, your son"
-const caption = (p: Person) =>
-  p.relation ? `${p.name}, your ${p.relation.toLowerCase()}` : p.name;
-
-function speak(p: Person) {
-  if (!("speechSynthesis" in window)) return;
-  const u = new SpeechSynthesisUtterance(`This is ${caption(p)}.`);
-  u.lang = "en-IN";
-  u.rate = 0.85;
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(u);
-}
+const relationText = (rel: string) => {
+  if (!rel) return "";
+  const trimmed = rel.trim();
+  if (trimmed.toLowerCase().startsWith("your ")) {
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  }
+  return `Your ${trimmed.toLowerCase()}`;
+};
 
 export default function PeoplePage() {
   const [people, setPeople] = useState<Person[] | null>(null);
@@ -81,25 +76,25 @@ export default function PeoplePage() {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={photoUrl(p)} alt={p.name} className="aspect-square w-full object-cover" />
                   <div className="space-y-4 p-6">
-                    <p className="text-3xl font-bold">{caption(p)}</p>
-                    <div className="flex gap-3">
-                      {p.phone && (
-                        <a
-                          href={`tel:${p.phone.replace(/\s/g, "")}`}
-                          className={cn(buttonVariants({ size: "lg" }), "h-16 flex-1 px-4 text-2xl")}
-                        >
-                          📞 Call
-                        </a>
-                      )}
-                      <Button
-                        size="lg"
-                        variant="secondary"
-                        className="h-16 flex-1 px-4 text-2xl"
-                        onClick={() => speak(p)}
+                    <p className="text-3xl font-bold">{p.name}</p>
+                    {p.relation && (
+                      <p className="text-2xl font-semibold text-muted-foreground">
+                        {relationText(p.relation)}
+                      </p>
+                    )}
+                    {p.phone && (
+                      <p className="text-2xl font-semibold text-foreground">
+                        {p.phone}
+                      </p>
+                    )}
+                    {p.phone && (
+                      <a
+                        href={`tel:${p.phone.replace(/\s/g, "")}`}
+                        className="flex h-16 w-full items-center justify-center rounded-xl bg-green-600 px-6 text-2xl font-bold text-white transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-green-500 shadow-sm"
                       >
-                        🔊 Listen
-                      </Button>
-                    </div>
+                        📞 Call
+                      </a>
+                    )}
                   </div>
                 </div>
               ))}

@@ -9,12 +9,14 @@ import { ThemeToggle } from "./theme-toggle";
 import { lockCaregiver, useCaregiver } from "@/lib/mode";
 
 const PATIENT_LINKS = [
-  { href: "/", label: "Today" },
+  { href: "/", label: "Home" },
+  { href: "/today", label: "Today" },
   { href: "/explore", label: "My Memories" },
   { href: "/people", label: "My People" },
 ];
 
 const CAREGIVER_LINKS = [
+  { href: "/caregiver", label: "Home" },
   { href: "/progress", label: "Progress" },
   { href: "/upload", label: "Add Videos" },
   { href: "/people", label: "People" },
@@ -32,7 +34,7 @@ export default function Nav() {
   return (
     <div className="fixed z-50 flex min-h-16 w-screen items-center justify-center border-b border-border bg-background">
       <nav className="flex w-full max-w-screen-lg flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-2">
-        <Link href={caregiver ? "/progress" : "/"}>
+        <Link href={caregiver ? "/caregiver" : "/"}>
           <div className="flex items-center text-lg font-semibold">
             <BrainCircuit className="mr-2 h-6 w-6 text-primary" /> Cogni Connect
           </div>
@@ -71,7 +73,7 @@ export default function Nav() {
           <ThemeToggle />
         </div>
       </nav>
-      <PinDialog open={pinOpen} onOpenChange={setPinOpen} onUnlocked={() => router.push("/progress")} />
+      <PinDialog open={pinOpen} onOpenChange={setPinOpen} onUnlocked={() => router.push("/caregiver")} />
     </div>
   );
 }
