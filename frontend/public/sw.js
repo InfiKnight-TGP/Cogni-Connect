@@ -2,18 +2,13 @@
 const PREFIX = 'cogni-patient-';
 let activeCache;
 self.addEventListener('install', event => {
-  event.waitUntil((async () => {
-    const manifest = await fetch('/sw-assets.json', { cache: 'no-store' }).then(response => { if (!response.ok) throw Error('Offline manifest unavailable'); return response.json(); });
-    activeCache = PREFIX + manifest.version;
-    const cache = await caches.open(activeCache);
-    await cache.addAll([...manifest.assets, '/play', '/support']);
-    await self.skipWaiting();
-  })());
+  event.waitUntil(self.skipWaiting());
 });
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = (await caches.keys()).filter(key => key.startsWith(PREFIX)).sort();
-    activeCache ||= keys[keys.length - 1];
+    if (!keys.length) throw Error('Offline shell cache is missing');
+    activeCache = keys[keys.length - 1];
     await Promise.all(keys.filter(key => key !== activeCache).map(key => caches.delete(key)));
     await self.clients.claim();
   })());

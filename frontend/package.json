@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "postbuild": "node scripts/offline-assets.mjs",
-    "test:unit": "node lib/progress.check.mjs && node components/games/plan-the-day/rules.check.mjs && node lib/interaction/interaction.check.mjs && node lib/interaction/adaptive.check.mjs && node lib/interaction/content.check.mjs && node lib/interaction/sync.check.mjs && node lib/interaction/trends.check.mjs",
+    "test:unit": "node lib/progress.check.mjs && node components/games/plan-the-day/rules.check.mjs && node lib/interaction/interaction.check.mjs && node lib/interaction/adaptive.check.mjs && node lib/interaction/content.check.mjs && node lib/interaction/yesterday-quiz.check.mjs && node lib/interaction/sync.check.mjs && node lib/interaction/trends.check.mjs",
     "test:e2e": "playwright test",
     "start": "next start",
     "lint": "next lint"

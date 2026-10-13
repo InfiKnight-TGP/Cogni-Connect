@@ -57,3 +57,32 @@ pushes must still be checked for actual success.
 ## Game expansion checkpoint
 
 Added Matching Pictures, Sound Tap (with visual alternative), Pattern Completion, Object Naming, and journal-sourced Yesterday Quiz to both catalogs. Added the patient /play page. Extended voice controls to path, map, routine steps and attention questions; removed countdown penalties from map/attention. Catalog levels and the four existing domains remain unchanged. TypeScript, seven frontend check suites and 27 backend tests pass. Browser acceptance remains pending. Push of stabilization commit 4135b9d succeeded.
+
+## Adaptive quiz and offline acceptance checkpoint
+
+Updated Yesterday Quiz to use its learned Memory difficulty knob: harder
+sessions add saved memories as distractors, preserve the "I don't remember"
+choice, and rotate the correct answer position. Added focused choice-builder
+checks to the frontend unit-check script.
+
+Fixed production offline preparation uncovered by browser acceptance. The
+generated asset list now excludes Next.js build/SSG manifests that are not
+served as static files. Offline setup fetches and normalizes response bodies
+before adding them to Cache Storage, avoiding Cache API failures on previously
+loaded immutable JavaScript chunks. The service worker is registered only
+after the patient shell cache is prepared; setup failures remain visible.
+Playwright can target a separate local port through `PLAYWRIGHT_BASE_URL`.
+
+Verification on `feature/voice-ai-journal-platform`:
+
+- `npm run build` passed; the build reports five existing `<img>` optimization
+  warnings in caregiver/game screens.
+- `npm run test:unit` passed all eight frontend check scripts, including
+  adaptive Yesterday Quiz choices.
+- `npx tsc --noEmit` passed.
+- Production Playwright suite passed all five tests, including offline reload
+  and a game interaction after disconnect.
+- Baseline backend verification remains 31 unittests passed and Flask app
+  import passed; no backend files changed in this checkpoint.
+
+Changes are verified locally; feature-branch commit and push are pending.
