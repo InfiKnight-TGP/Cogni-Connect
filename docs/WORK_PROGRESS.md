@@ -143,3 +143,9 @@ mocked browser tests. Next milestone: verify personal-content question semantics
 and caregiver end-to-end flows. In particular, Yesterday Quiz currently presents
 other yesterday memories as distractors to a generic yesterday question; those
 are also truthful answers and need a date-aware content regression test and fix.
+
+The speech milestone is committed as `942acd1`. Push was attempted to the feature
+branch only. Git Credential Manager waited for interactive sign-in; a retry with
+`GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never` failed with "could not read
+Username". GitHub HTTPS authentication must be restored before these new commits
+can be uploaded. No reset, force push, merge, or main-branch modification occurred.
