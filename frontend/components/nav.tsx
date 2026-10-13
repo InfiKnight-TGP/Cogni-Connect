@@ -4,20 +4,20 @@ import {
   BrainCircuit,
   CalendarCheck,
   CalendarDays,
-  FileText,
   Gamepad2,
   Home,
   Image as ImageIcon,
   Lock,
   LogOut,
   Star,
+  Settings,
   TrendingUp,
   Upload,
   Users2,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { PinDialog } from "./caregiver";
 import { lockCaregiver, useCaregiver } from "@/lib/mode";
 
@@ -39,8 +39,7 @@ const PATIENT_LINKS: NavItem[] = [
 
 const CAREGIVER_LINKS: NavItem[] = [
   { href: "/caregiver", label: "Home", short: "Home", icon: Home, color: "text-orange-500" },
-  { href: "/caregiver?tab=progress", label: "Progress", short: "Progress", icon: TrendingUp, color: "text-green-600 dark:text-green-500" },
-  { href: "/report", label: "Doctor's Report", short: "Report", icon: FileText, color: "text-sky-500" },
+  { href: "/progress", label: "Progress & Reports", short: "Progress", icon: TrendingUp, color: "text-green-600 dark:text-green-500" },
   { href: "/upload", label: "Add Videos", short: "Videos", icon: Upload, color: "text-violet-500" },
   { href: "/people", label: "People", short: "People", icon: Users2, color: "text-pink-500" },
   { href: "/routine", label: "Daily Routine", short: "Routine", icon: CalendarDays, color: "text-teal-500" },
@@ -58,25 +57,10 @@ const itemClass = (active: boolean) =>
 export default function Nav() {
   const [caregiver] = useCaregiver();
   const [pinOpen, setPinOpen] = useState(false);
-  const [caregiverTab, setCaregiverTab] = useState("overview");
   const pathname = usePathname();
   const router = useRouter();
   const links = caregiver ? CAREGIVER_LINKS : PATIENT_LINKS;
-  useEffect(() => {
-    const updateTab = (event?: Event) => setCaregiverTab(
-      (event as CustomEvent<string> | undefined)?.detail || new URLSearchParams(window.location.search).get("tab") || "overview",
-    );
-    updateTab();
-    window.addEventListener("popstate", updateTab);
-    window.addEventListener("caregiver-tab-change", updateTab);
-    return () => {
-      window.removeEventListener("popstate", updateTab);
-      window.removeEventListener("caregiver-tab-change", updateTab);
-    };
-  }, []);
-  const isActive = (href: string) => href.startsWith("/caregiver?")
-    ? pathname === "/caregiver" && caregiverTab === "progress"
-    : pathname === href && (href !== "/caregiver" || caregiverTab === "overview");
+  const isActive = (href: string) => pathname === href;
 
   const modeButton = caregiver
     ? {
@@ -128,6 +112,7 @@ export default function Nav() {
           })}
         </nav>
         <div className="flex flex-col gap-2 border-t border-border pt-4">
+          {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={itemClass(isActive("/caregiver/settings"))}><Settings className="h-8 w-8 shrink-0 text-muted-foreground" /><span>Settings</span></Link>}
           <button type="button" className={itemClass(false)} onClick={modeButton.onClick}>
             <ModeIcon className="h-8 w-8 shrink-0 text-muted-foreground" />
             <span>{modeButton.label}</span>
@@ -157,6 +142,7 @@ export default function Nav() {
             </Link>
           );
         })}
+        {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${isActive("/caregiver/settings") ? "border-primary text-primary" : "border-transparent text-foreground"}`}><Settings className="h-7 w-7" /><span className="whitespace-nowrap">Settings</span></Link>}
         <button
           type="button"
           onClick={modeButton.onClick}

@@ -56,7 +56,7 @@ export default function GameShell({
     setStarted(false);
 
     // Previews from All Games must not count as the patient's scores
-    if (!preview && saveResult) await saveScore({
+    if (!caregiver && !preview && saveResult) await saveScore({
       date: selectedDate,
       game_id: gameId,
       level,
@@ -154,7 +154,9 @@ export default function GameShell({
             <p className="text-lg text-foreground font-medium">
               You scored <span className="font-extrabold text-primary">{score}</span> / 100
             </p>
-            {preview && <p className="text-sm text-muted-foreground">Preview: this score was not saved.</p>}
+            {caregiver
+              ? <p className="text-sm text-muted-foreground">Caregiver mode: this score was not saved.</p>
+              : preview && <p className="text-sm text-muted-foreground">Preview: this score was not saved.</p>}
           </div>
           <Button
             variant="outline"

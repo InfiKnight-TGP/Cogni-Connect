@@ -1,16 +1,13 @@
 "use client";
 
-import { buttonVariants } from "@/components/ui/button";
 import { API_URL } from "@/lib/api";
 import { COGNITIVE_AREAS } from "@/lib/areas";
 import {
-  AREAS, Entry, LEVEL_NAMES, Week, daysPlayedThisWeek, declines, lastFourWeeks, shortDate, toEntries, trend,
+  AREAS, Entry, LEVEL_NAMES, Week, declines, lastFourWeeks, shortDate, toEntries, trend,
   weeklyAverages,
 } from "@/lib/progress";
-import { cn } from "@/lib/utils";
 import { CategoryScale, Chart as ChartJS, Legend, LinearScale, LineElement, PointElement, Tooltip } from "chart.js";
 import { useTheme } from "next-themes";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Line } from "react-chartjs-2";
 import RecallGraph from "@/app/progress/recall-graph";
@@ -22,7 +19,6 @@ const SERIES = {
   dark: COGNITIVE_AREAS.map((area) => area.chartColors.dark),
 };
 const LEVEL_GROUPS = Object.values(LEVEL_NAMES);
-const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const TREND_TEXT = { up: "↑ Better", down: "↓ Lower", steady: "→ Steady" };
 
 export default function ProgressContent() {
@@ -38,22 +34,11 @@ export default function ProgressContent() {
   }, []);
 
   const weeks = lastFourWeeks(today);
-  const played = entries ? daysPlayedThisWeek(entries, today) : [];
   const notes = entries ? declines(entries, today) : [];
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Progress</h1>
-          <p className="text-muted-foreground">
-            Last 4 weeks: {shortDate(weeks[0].start)} – {shortDate(weeks[3].end)}
-          </p>
-        </div>
-        <Link href="/report" target="_blank" className={cn(buttonVariants({ size: "lg" }))}>
-          Download report
-        </Link>
-      </div>
+      <p className="text-sm text-muted-foreground">Last 4 weeks: {shortDate(weeks[0].start)} – {shortDate(weeks[3].end)}</p>
 
       {failed ? (
         <p>Could not load scores. Is the backend running?</p>
@@ -61,25 +46,6 @@ export default function ProgressContent() {
         <p>Loading…</p>
       ) : (
         <>
-          <section className="rounded-xl border bg-card p-6">
-            <h2 className="text-xl font-semibold">This week</h2>
-            <p className="mt-1 text-muted-foreground">
-              Played on {played.filter(Boolean).length} of 7 days
-            </p>
-            <ol className="mt-4 flex flex-wrap gap-2">
-              {DAY_NAMES.map((d, i) => (
-                <li
-                  key={d}
-                  className={`flex h-14 w-14 flex-col items-center justify-center rounded-lg border text-sm ${
-                    played[i] ? "border-green-600 bg-green-600/10" : "text-muted-foreground"
-                  }`}
-                >
-                  {d}
-                  <span aria-label={played[i] ? "played" : "not played"}>{played[i] ? "✓" : "–"}</span>
-                </li>
-              ))}
-            </ol>
-          </section>
 
           {notes.map((n) => (
             <div key={n.area} role="note" className="flex gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">

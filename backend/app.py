@@ -6,11 +6,13 @@ import os
 from dotenv import load_dotenv
 import base64
 import re
+import shutil
 import cv2
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 import threading
 import sys
+import uuid
 
 # process_video prints "✓"; under `npm run dev` stdout is a pipe, which Windows encodes as cp1252
 sys.stdout.reconfigure(encoding="utf-8")
@@ -808,6 +810,42 @@ SETTINGS_PATH = 'settings.json'
 PERFORMANCE_PATH = 'performance_data.json'
 DAILY_PLANS_PATH = 'daily_plans.json'
 GAMES_PATH = 'games.json'
+
+
+def _migrate_performance_record_ids():
+    """Give legacy performance rows stable IDs, backing up only when changing the file."""
+    from datetime import datetime
+    from pathlib import Path
+
+    path = Path(PERFORMANCE_PATH)
+    if not path.exists():
+        return False
+    with path.open('r', encoding='utf-8') as f:
+        performance_data = json.load(f)
+
+    changed = False
+    for group in ('scores', 'game_scores'):
+        records = performance_data.get(group, [])
+        if not isinstance(records, list):
+            continue
+        for record in records:
+            if isinstance(record, dict) and not record.get('id'):
+                record['id'] = str(uuid.uuid4())
+                changed = True
+
+    if not changed:
+        return False
+
+    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+    backup_path = path.with_name(f'{path.stem}.backup-{timestamp}{path.suffix}')
+    shutil.copy2(path, backup_path)
+    with path.open('w', encoding='utf-8') as f:
+        json.dump(performance_data, f, indent=2, ensure_ascii=False)
+    return True
+
+
+_migrate_performance_record_ids()
+
 SUPPORTED_LANGUAGES = {
     'en', 'hi', 'bn', 'mr', 'te', 'ta', 'gu', 'ur', 'kn', 'or', 'ml', 'pa', 'as', 'ne', 'mni-Mtei',
 }
@@ -1011,7 +1049,11 @@ def daily_plan():
 def save_performance():
     """Save quiz performance score."""
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "A JSON performance record is required"}), 400
+        if data.get('source') == 'caregiver':
+            return jsonify({"error": "Caregiver scores cannot be saved as patient activity"}), 400
         score = data.get('score')
         date = data.get('date')
         breakdown = data.get('breakdown', {})
@@ -1030,17 +1072,22 @@ def save_performance():
         from datetime import datetime
         if data.get('game_id') and data['game_id'] != 'daily_recall':
             # Game scores are kept apart so the quiz dashboard chart is unaffected
-            performance_data.setdefault("game_scores", []).append({
+            record = {
+                "id": str(uuid.uuid4()),
                 "game_id": data['game_id'],
                 "level": data.get('level'),
                 "skill": data.get('skill'),
                 "score": score,
                 "date": date or datetime.now().isoformat(),
                 "timestamp": datetime.now().isoformat(),
-            })
+            }
+            if 'source' in data:
+                record['source'] = data['source']
+            performance_data.setdefault("game_scores", []).append(record)
         else:
             # Add new score with timestamp and breakdown
-            performance_data["scores"].append({
+            record = {
+                "id": str(uuid.uuid4()),
                 "score": score,
                 "date": date or datetime.now().isoformat(),
                 "timestamp": datetime.now().isoformat(),
@@ -1048,7 +1095,10 @@ def save_performance():
                 "game_id": data.get('game_id'),
                 "level": data.get('level'),
                 "skill": data.get('skill'),
-            })
+            }
+            if 'source' in data:
+                record['source'] = data['source']
+            performance_data.setdefault("scores", []).append(record)
         
         # Save updated data
         with open(performance_file, 'w', encoding='utf-8') as f:
@@ -1074,6 +1124,30 @@ def get_performance():
             return jsonify({"scores": []}), 200
     except Exception as e:
         print(f"Get performance error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api.route('/performance/<record_id>', methods=['DELETE'])
+def delete_performance(record_id):
+    """Remove one original performance record by its stable ID."""
+    try:
+        if not os.path.exists(PERFORMANCE_PATH):
+            return jsonify({"error": "Performance record not found"}), 404
+        with open(PERFORMANCE_PATH, 'r', encoding='utf-8') as f:
+            performance_data = json.load(f)
+        for group in ('scores', 'game_scores'):
+            records = performance_data.get(group, [])
+            if not isinstance(records, list):
+                continue
+            index = next((i for i, row in enumerate(records) if isinstance(row, dict) and row.get('id') == record_id), None)
+            if index is not None:
+                records.pop(index)
+                with open(PERFORMANCE_PATH, 'w', encoding='utf-8') as f:
+                    json.dump(performance_data, f, indent=2, ensure_ascii=False)
+                return jsonify({"success": True}), 200
+        return jsonify({"error": "Performance record not found"}), 404
+    except Exception as e:
+        print(f"Delete performance error: {e}")
         return jsonify({"error": str(e)}), 500
 
 

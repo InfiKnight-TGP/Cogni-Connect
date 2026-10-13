@@ -12,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import VideoModal from "../videoModal";
 import { format } from "date-fns";
 import { API_URL } from "@/lib/api";
+import { isCaregiverUnlocked } from "@/lib/mode";
 
 export default function ContextQuestions({
   setProgress,
@@ -113,7 +114,7 @@ export default function ContextQuestions({
         Math.round(activity3Score)
       ].filter((score): score is number => score !== null && score !== undefined && !isNaN(score));
       
-      if (validScores.length > 0) {
+      if (validScores.length > 0 && !isCaregiverUnlocked()) {
         const combinedScore = Math.round(validScores.reduce((sum, score) => sum + score, 0) / validScores.length);
         
         // Save combined performance to backend
@@ -123,6 +124,7 @@ export default function ContextQuestions({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+              source: "patient",
             score: combinedScore,
             date: format(date, "yyyy-MM-dd"),
             game_id: "daily_recall",

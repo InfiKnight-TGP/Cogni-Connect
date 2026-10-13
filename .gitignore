@@ -28,6 +28,7 @@ backend/people.json
 backend/models/*.onnx
 backend/qas.json
 backend/performance_data.json
+backend/performance_data.backup-*.json
 backend/video_journals.json
 backend/daily_plans.json
 backend/routines.json

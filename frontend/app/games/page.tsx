@@ -8,6 +8,7 @@ import { PreviewContext } from "@/components/games/_shared/GameShell";
 import { Button } from "@/components/ui/button";
 import { LEVEL_NAMES, Level } from "@/lib/progress";
 import { ArrowLeft } from "lucide-react";
+import CaregiverPageLabel from "@/components/caregiver/pageLabel";
 
 export default function AllGamesPage() {
   return (
@@ -27,6 +28,7 @@ function AllGames() {
   if (active && Game) {
     return (
       <main className="mx-auto max-w-screen-lg space-y-6 px-4 pb-16 pt-24 lg:pt-8">
+        <CaregiverPageLabel />
         <Button variant="outline" onClick={() => setActive(null)}>
           <ArrowLeft className="mr-2 h-4 w-4" /> Back to all games
         </Button>
@@ -61,7 +63,7 @@ function AllGames() {
   return (
     <main className="mx-auto max-w-screen-lg space-y-10 px-4 pb-16 pt-24 lg:pt-8">
       <div>
-        <h1 className="text-3xl font-bold">All Games</h1>
+        <div><CaregiverPageLabel /><h1 className="text-3xl font-bold">All Games</h1></div>
         <p className="mt-1 text-muted-foreground">
           Every activity organized by cognitive area. Previews here are not saved as the patient&apos;s scores.
         </p>
