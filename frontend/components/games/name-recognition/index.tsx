@@ -3,7 +3,7 @@
 import GameShell from "../_shared/GameShell";
 import { localDateKey } from "../_shared/date";
 import type { GameProps } from "../_shared/types";
-import NamePeople from "@/components/quiz/namePeople";
+import NameRecallSession from "./NameRecallSession";
 
 export default function NameRecognition({ date = localDateKey(), onFinish }: GameProps) {
   return (
@@ -17,13 +17,7 @@ export default function NameRecognition({ date = localDateKey(), onFinish }: Gam
       showPreviewDatePicker={false}
       onFinish={onFinish}
     >
-      {(handleFinish) => (
-        <NamePeople
-          setProgress={() => {}}
-          standalone
-          onComplete={handleFinish}
-        />
-      )}
+      {(handleFinish) => <NameRecallSession onFinish={handleFinish} />}
     </GameShell>
   );
 }
