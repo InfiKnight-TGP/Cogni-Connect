@@ -55,7 +55,7 @@ function Progress() {
   const notes = entries ? declines(entries, today) : [];
 
   return (
-    <main className="mx-auto max-w-screen-lg space-y-8 px-4 pb-16 pt-24">
+    <main className="mx-auto max-w-screen-lg space-y-8 px-4 pb-16 pt-24 lg:pt-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Progress</h1>

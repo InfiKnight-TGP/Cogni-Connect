@@ -27,7 +27,7 @@ function AllGames() {
 
   if (active && Game) {
     return (
-      <main className="mx-auto max-w-screen-lg space-y-6 px-4 pb-16 pt-24">
+      <main className="mx-auto max-w-screen-lg space-y-6 px-4 pb-16 pt-24 lg:pt-8">
         <Button variant="outline" onClick={() => setActive(null)}>
           <ArrowLeft className="mr-2 h-4 w-4" /> Back to all games
         </Button>
@@ -60,7 +60,7 @@ function AllGames() {
   const comingSoonCount = 4;
 
   return (
-    <main className="mx-auto max-w-screen-lg space-y-10 px-4 pb-16 pt-24">
+    <main className="mx-auto max-w-screen-lg space-y-10 px-4 pb-16 pt-24 lg:pt-8">
       <div>
         <h1 className="text-3xl font-bold">All Games</h1>
         <p className="mt-1 text-muted-foreground">

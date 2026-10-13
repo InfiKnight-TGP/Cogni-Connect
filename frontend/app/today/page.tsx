@@ -122,7 +122,7 @@ export default function TodayPage() {
     return (
       <>
         <Nav />
-        <main className="mx-auto max-w-screen-lg px-4 pb-16 pt-24">
+        <main className="mx-auto max-w-screen-lg px-4 pb-16 pt-24 lg:pt-8">
           <Button
             variant="outline"
             className="mb-6 h-14 px-6 text-xl"
@@ -151,7 +151,7 @@ export default function TodayPage() {
   return (
     <>
       <Nav />
-      <div className="mx-auto flex max-w-screen-xl gap-8 px-4 pb-16 pt-24">
+      <div className="mx-auto flex max-w-screen-xl gap-8 px-4 pb-16 pt-24 lg:pt-8">
       <main className="min-w-0 flex-1 space-y-6">
         {/* Greeting & Progress */}
         <div className="space-y-1">

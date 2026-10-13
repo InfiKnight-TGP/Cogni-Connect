@@ -93,7 +93,7 @@ export default function PatientHomePage() {
   return (
     <>
       <Nav />
-      <div className="mx-auto flex max-w-screen-xl gap-8 px-4 pb-16 pt-24">
+      <div className="mx-auto flex max-w-screen-xl gap-8 px-4 pb-16 pt-24 lg:pt-8">
       <main className="min-w-0 flex-1 space-y-8">
         <div className="space-y-2">
           <h1 className="text-4xl font-bold sm:text-5xl">{hello}</h1>
