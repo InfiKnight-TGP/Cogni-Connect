@@ -212,19 +212,56 @@ def build_daily_plan(
     date_str: str,
     games_file: str | Path = "games.json",
     plans_file: str | Path = "daily_plans.json",
+    settings_file: str | Path = "settings.json",
+    performance_file: str | Path = "performance_data.json",
+    today_str: str | None = None,
 ) -> dict[str, list[str]]:
-    """Determine planned games for date_str from saved plan or games.json, matching /daily-plan."""
+    """Compute a stable plan. Only today and past plans are persisted."""
+    from datetime import date
+
+    today_str = today_str or date.today().isoformat()
     plans_path = Path(plans_file)
+    saved_plans: dict[str, Any] = {}
     if plans_path.exists():
         try:
             with plans_path.open("r", encoding="utf-8") as f:
-                saved_plans = json.load(f)
-                if isinstance(saved_plans, dict) and date_str in saved_plans:
-                    saved = saved_plans[date_str]
-                    if isinstance(saved, dict) and "level1" in saved:
-                        return saved
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    saved_plans = loaded
         except Exception:
             pass
+
+    performance: dict[str, Any] = {"scores": [], "game_scores": []}
+    performance_path = Path(performance_file)
+    if performance_path.exists():
+        try:
+            with performance_path.open("r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    performance = loaded
+        except Exception:
+            pass
+    has_activity = any(
+        record_day(row) == date_str
+        for key in ("scores", "game_scores")
+        for row in performance.get(key, [])
+        if isinstance(row, dict)
+    )
+
+    pins: list[dict[str, Any]] = []
+    settings_path = Path(settings_file)
+    if settings_path.exists():
+        try:
+            with settings_path.open("r", encoding="utf-8") as f:
+                settings = json.load(f)
+                if isinstance(settings, dict) and isinstance(settings.get("pins"), list):
+                    pins = [p for p in settings["pins"] if isinstance(p, dict)]
+        except Exception:
+            pass
+
+    saved = saved_plans.get(date_str)
+    if isinstance(saved, dict) and "level1" in saved and (date_str <= today_str or has_activity):
+        return saved
 
     games_path = Path(games_file)
     games_list: list[dict[str, Any]] = []
@@ -235,30 +272,55 @@ def build_daily_plan(
         except Exception:
             games_list = []
 
-    rng = random.Random(date_str)
-    plan: dict[str, list[str]] = {}
-    for lvl, count in ((1, 1), (2, 2), (3, 2)):
-        pool = [
-            g["id"]
-            for g in games_list
-            if lvl in g.get("levels", [])
-            and g.get("status") == "ready"
-            and g["id"] != "daily_recall"
-            and not g.get("bundle")
-        ]
-        plan[f"level{lvl}"] = rng.sample(pool, min(count, len(pool)))
-    plan["level1"].insert(0, "daily_recall")
+    if isinstance(saved, dict) and "level1" in saved:
+        plan = {key: list(value) for key, value in saved.items() if isinstance(value, list)}
+        for key in ("level1", "level2", "level3"):
+            plan.setdefault(key, [])
+    else:
+        rng = random.Random(date_str)
+        plan: dict[str, list[str]] = {}
+        for lvl, count in ((1, 1), (2, 2), (3, 2)):
+            pool = [
+                g["id"]
+                for g in games_list
+                if lvl in g.get("levels", [])
+                and g.get("status") == "ready"
+                and g["id"] != "daily_recall"
+                and not g.get("bundle")
+            ]
+            plan[f"level{lvl}"] = rng.sample(pool, min(count, len(pool)))
+        plan["level1"].insert(0, "daily_recall")
+
+    # Pins override one existing selection in the same level. Saved plans with
+    # recorded activity remain fixed; unplayed future plans are recomputed.
+    if not has_activity:
+        for pin in pins:
+            game_id, start, end = pin.get("game_id"), pin.get("start"), pin.get("end")
+            if not isinstance(game_id, str) or not isinstance(start, str) or not isinstance(end, str):
+                continue
+            if not start <= date_str <= end:
+                continue
+            game = next((g for g in games_list if g.get("id") == game_id and g.get("status") == "ready" and not g.get("bundle") and game_id != "daily_recall"), None)
+            if not game:
+                continue
+            level = next((lvl for lvl in (1, 2, 3) if lvl in game.get("levels", [])), None)
+            if level is None:
+                continue
+            key = f"level{level}"
+            if game_id in plan[key]:
+                continue
+            first_replaceable = 1 if level == 1 and plan[key] and plan[key][0] == "daily_recall" else 0
+            replace_at = len(plan[key]) - 1
+            if replace_at >= first_replaceable:
+                plan[key][replace_at] = game_id
+            else:
+                plan[key].append(game_id)
 
     try:
-        saved_plans = {}
-        if plans_path.exists():
-            with plans_path.open("r", encoding="utf-8") as f:
-                saved_plans = json.load(f)
-                if not isinstance(saved_plans, dict):
-                    saved_plans = {}
-        saved_plans[date_str] = plan
-        with plans_path.open("w", encoding="utf-8") as f:
-            json.dump(saved_plans, f, indent=2, ensure_ascii=False)
+        if date_str <= today_str:
+            saved_plans[date_str] = plan
+            with plans_path.open("w", encoding="utf-8") as f:
+                json.dump(saved_plans, f, indent=2, ensure_ascii=False)
     except Exception:
         pass
 
@@ -283,6 +345,8 @@ def build_day_report(
     date_str: str,
     games_file: str | Path = "games.json",
     plans_file: str | Path = "daily_plans.json",
+    settings_file: str | Path = "settings.json",
+    performance_file: str | Path = "performance_data.json",
 ) -> dict[str, Any]:
     """Build a daily cognitive report for date_str from performance store data."""
     all_scores: list[dict[str, Any]] = performance_data.get("scores", [])
@@ -453,7 +517,8 @@ def build_day_report(
     completed_rows = list(latest_by_game.values())
 
     # 4. Determine missing_games = activities in that day's /daily-plan that were NOT completed
-    daily_plan = build_daily_plan(date_str, games_file=games_file, plans_file=plans_file)
+    daily_plan = build_daily_plan(date_str, games_file=games_file, plans_file=plans_file,
+                                  settings_file=settings_file, performance_file=performance_file)
     planned_game_ids: list[str] = []
     for lvl in ("level1", "level2", "level3"):
         for gid in daily_plan.get(lvl, []):

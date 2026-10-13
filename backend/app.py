@@ -8,6 +8,7 @@ import base64
 import re
 import cv2
 from werkzeug.utils import secure_filename
+from werkzeug.security import check_password_hash, generate_password_hash
 import threading
 import sys
 
@@ -804,6 +805,9 @@ def serve_frame(filepath):
 
 
 SETTINGS_PATH = 'settings.json'
+PERFORMANCE_PATH = 'performance_data.json'
+DAILY_PLANS_PATH = 'daily_plans.json'
+GAMES_PATH = 'games.json'
 SUPPORTED_LANGUAGES = {
     'en', 'hi', 'bn', 'mr', 'te', 'ta', 'gu', 'ur', 'kn', 'or', 'ml', 'pa', 'as', 'ne', 'mni-Mtei',
 }
@@ -811,19 +815,32 @@ SUPPORTED_LANGUAGES = {
 
 def _load_settings():
     with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
-        settings = {"pin": "1234", "patient_name": "", "language": "en", **json.load(f)}
+        settings = {"pin": "1234", "patient_name": "", "language": "en", "pins": [], **json.load(f)}
+    pin = str(settings.get('pin', '1234'))
+    if not pin.startswith(('scrypt:', 'pbkdf2:')):
+        settings['pin'] = generate_password_hash(pin)
+        with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, indent=2, ensure_ascii=False)
+    if not isinstance(settings.get('pins'), list):
+        settings['pins'] = []
     if not isinstance(settings.get('language'), str) or settings['language'] not in SUPPORTED_LANGUAGES:
         settings['language'] = 'en'
     return settings
+
+
+@api.before_request
+def migrate_plain_pin_on_startup():
+    # The first request completes startup migration; subsequent requests only
+    # see the already-hashed value. Tests can safely redirect the path to temp.
+    _load_settings()
 
 
 @api.route('/caregiver/unlock', methods=['POST'])
 def caregiver_unlock():
     """{"pin": "1234"} -> 200 if it matches settings.json, else 403.
     ponytail: a soft lock that keeps the patient out of caregiver screens; it does not secure the API."""
-    import hmac
     pin = str((request.get_json(silent=True) or {}).get('pin', ''))
-    if hmac.compare_digest(pin, str(_load_settings()['pin'])):
+    if check_password_hash(str(_load_settings()['pin']), pin):
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Wrong PIN"}), 403
 
@@ -832,15 +849,15 @@ def caregiver_unlock():
 def get_settings():
     """Settings the app may show (never the PIN)."""
     settings = _load_settings()
-    return jsonify({"patient_name": settings['patient_name'], "language": settings['language']})
+    return jsonify({"patient_name": settings['patient_name'], "language": settings['language'], "pins": settings['pins']})
 
 
 @api.route('/settings', methods=['POST'])
 def save_settings():
-    """Save patient-facing preferences; the PIN is changed by editing settings.json."""
+    """Save patient-facing preferences and validated focus-game pins (never expose the PIN)."""
     payload = request.get_json(silent=True)
-    if not isinstance(payload, dict) or not ({'patient_name', 'language'} & payload.keys()):
-        return jsonify({"error": "Provide patient_name or language"}), 400
+    if not isinstance(payload, dict) or not ({'patient_name', 'language', 'pins'} & payload.keys()):
+        return jsonify({"error": "Provide patient_name, language or pins"}), 400
 
     name = payload.get('patient_name')
     if 'patient_name' in payload and (not isinstance(name, str) or len(name.strip()) > 60):
@@ -849,14 +866,95 @@ def save_settings():
     if 'language' in payload and (not isinstance(language, str) or language not in SUPPORTED_LANGUAGES):
         return jsonify({"error": "language must be one of the supported language codes"}), 400
 
+    pins = payload.get('pins')
+    if 'pins' in payload:
+        if not isinstance(pins, list) or len(pins) > 2:
+            return jsonify({"error": "pins must contain at most two games"}), 400
+        try:
+            with open(GAMES_PATH, 'r', encoding='utf-8') as f:
+                games = json.load(f).get('games', [])
+        except Exception:
+            games = []
+        game_map = {g.get('id'): g for g in games if isinstance(g, dict)}
+        levels = set()
+        seen_ids = set()
+        from datetime import date, timedelta
+        tomorrow = date.today() + timedelta(days=1)
+        for pin in pins:
+            if not isinstance(pin, dict) or set(pin) != {'game_id', 'start', 'end'}:
+                return jsonify({"error": "Each pin needs game_id, start and end"}), 400
+            game = game_map.get(pin.get('game_id'))
+            if not game or game.get('status') != 'ready' or game.get('bundle') or pin.get('game_id') == 'daily_recall':
+                return jsonify({"error": "Only ready, non-bundled games can be pinned"}), 400
+            if not isinstance(pin.get('start'), str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', pin['start']) or not isinstance(pin.get('end'), str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', pin['end']):
+                return jsonify({"error": "Pin dates must use yyyy-MM-dd"}), 400
+            try:
+                start = date.fromisoformat(pin['start'])
+                end = date.fromisoformat(pin['end'])
+            except (TypeError, ValueError):
+                return jsonify({"error": "Pin dates must use yyyy-MM-dd"}), 400
+            if start != tomorrow or end != start + timedelta(days=6):
+                return jsonify({"error": "Pins must cover seven days starting tomorrow"}), 400
+            game_levels = game.get('levels', [])
+            level = next((n for n in (1, 2, 3) if n in game_levels), None)
+            if level is None or level in levels or pin['game_id'] in seen_ids:
+                return jsonify({"error": "Pin at most one game per level"}), 400
+            levels.add(level)
+            seen_ids.add(pin['game_id'])
+
     settings = _load_settings()
+    previous_pins = settings.get('pins', [])
     if 'patient_name' in payload:
         settings['patient_name'] = name.strip()
     if 'language' in payload:
         settings['language'] = language
+    if 'pins' in payload:
+        settings['pins'] = pins
+        if pins != previous_pins:
+            changed_dates = [p['start'] for p in [*previous_pins, *pins] if isinstance(p, dict) and isinstance(p.get('start'), str)]
+            _invalidate_unplayed_plans(min(changed_dates, default=None))
     with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
         json.dump(settings, f, indent=2, ensure_ascii=False)
-    return jsonify({"patient_name": settings['patient_name'], "language": settings['language']})
+    return jsonify({"patient_name": settings['patient_name'], "language": settings['language'], "pins": settings['pins']})
+
+
+def _invalidate_unplayed_plans(start_date):
+    if not start_date or not os.path.exists(DAILY_PLANS_PATH):
+        return
+    try:
+        with open(DAILY_PLANS_PATH, 'r', encoding='utf-8') as f:
+            plans = json.load(f)
+        performance = {"scores": [], "game_scores": []}
+        if os.path.exists(PERFORMANCE_PATH):
+            with open(PERFORMANCE_PATH, 'r', encoding='utf-8') as f:
+                performance = json.load(f)
+        active_days = {
+            str(row.get('date') or row.get('timestamp') or '')[:10]
+            for key in ('scores', 'game_scores')
+            for row in performance.get(key, [])
+            if isinstance(row, dict)
+        }
+        plans = {day: plan for day, plan in plans.items() if day < start_date or day in active_days}
+        with open(DAILY_PLANS_PATH, 'w', encoding='utf-8') as f:
+            json.dump(plans, f, indent=2, ensure_ascii=False)
+    except Exception as exc:
+        print(f"Could not invalidate unplayed plans: {exc}")
+
+
+@api.route('/caregiver/change-pin', methods=['POST'])
+def change_caregiver_pin():
+    payload = request.get_json(silent=True) or {}
+    current_pin = payload.get('current_pin')
+    new_pin = payload.get('new_pin')
+    settings = _load_settings()
+    if not isinstance(current_pin, str) or not check_password_hash(str(settings['pin']), current_pin):
+        return jsonify({"error": "Current PIN is incorrect"}), 400
+    if not isinstance(new_pin, str) or not re.fullmatch(r'\d{4}', new_pin):
+        return jsonify({"error": "New PIN must contain four digits"}), 400
+    settings['pin'] = generate_password_hash(new_pin)
+    with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
+        json.dump(settings, f, indent=2, ensure_ascii=False)
+    return jsonify({"ok": True})
 
 
 ROUTINES_PATH = 'routines.json'
@@ -902,9 +1000,8 @@ def daily_plan():
     date_str = request.args.get('date') or _date.today().isoformat()
     try:
         from cognitive_reports import build_daily_plan
-        games_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'games.json')
-        plans_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'daily_plans.json')
-        return jsonify(build_daily_plan(date_str, games_file=games_file, plans_file=plans_file))
+        return jsonify(build_daily_plan(date_str, games_file=GAMES_PATH, plans_file=DAILY_PLANS_PATH,
+                                        settings_file=SETTINGS_PATH, performance_file=PERFORMANCE_PATH))
     except Exception as e:
         print(f"Daily plan error: {e}")
         return jsonify({"error": str(e)}), 500
@@ -923,7 +1020,7 @@ def save_performance():
             return jsonify({"error": "Score is required"}), 400
 
         # Load existing performance data
-        performance_file = 'performance_data.json'
+        performance_file = PERFORMANCE_PATH
         if os.path.exists(performance_file):
             with open(performance_file, 'r', encoding='utf-8') as f:
                 performance_data = json.load(f)
@@ -967,7 +1064,7 @@ def save_performance():
 def get_performance():
     """Get performance history."""
     try:
-        performance_file = 'performance_data.json'
+        performance_file = PERFORMANCE_PATH
         if os.path.exists(performance_file):
             with open(performance_file, 'r', encoding='utf-8') as f:
                 performance_data = json.load(f)
@@ -985,7 +1082,7 @@ def get_reports_days():
     """List of all calendar days (YYYY-MM-DD) with recorded activity."""
     try:
         from cognitive_reports import get_active_days
-        perf_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'performance_data.json')
+        perf_file = PERFORMANCE_PATH
         days = get_active_days(perf_file)
         return jsonify({"days": days}), 200
     except Exception as e:
@@ -1001,11 +1098,12 @@ def get_report_for_day():
         return jsonify({"error": "date query parameter is required (YYYY-MM-DD)"}), 400
     try:
         from cognitive_reports import build_day_report, load_store
-        perf_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'performance_data.json')
-        games_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'games.json')
-        plans_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'daily_plans.json')
+        perf_file = PERFORMANCE_PATH
+        games_file = GAMES_PATH
+        plans_file = DAILY_PLANS_PATH
         store = load_store(perf_file)
-        report = build_day_report(store, date_str, games_file=games_file, plans_file=plans_file)
+        report = build_day_report(store, date_str, games_file=games_file, plans_file=plans_file,
+                                  settings_file=SETTINGS_PATH, performance_file=PERFORMANCE_PATH)
         return jsonify(report), 200
     except Exception as e:
         print(f"Get report for day error: {e}")

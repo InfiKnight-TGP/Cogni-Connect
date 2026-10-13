@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from cognitive_reports import (
     DOMAINS,
@@ -22,6 +23,9 @@ class CognitiveReportTests(unittest.TestCase):
         self.perf_path = Path(self.temp_dir.name) / "performance_data.json"
         self.games_path = Path(self.temp_dir.name) / "games.json"
         self.plans_path = Path(self.temp_dir.name) / "daily_plans.json"
+        self.settings_path = Path(self.temp_dir.name) / "settings.json"
+        self.settings_path.write_text(json.dumps({"pins": []}), encoding="utf-8")
+        self.perf_path.write_text(json.dumps({"scores": [], "game_scores": []}), encoding="utf-8")
 
         # Standard games.json mirroring production
         self.games_path.write_text(
@@ -82,7 +86,7 @@ class CognitiveReportTests(unittest.TestCase):
                 },
             ],
         }
-        report = build_day_report(perf, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path)
+        report = build_day_report(perf, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
         self.assertEqual(report["domains"]["Memory"]["score"], 80)
         self.assertEqual(report["domains"]["Attention"]["score"], 60)
         self.assertIsNone(report["domains"]["Executive Function"]["score"])
@@ -113,7 +117,7 @@ class CognitiveReportTests(unittest.TestCase):
                 },
             ],
         }
-        report = build_day_report(perf, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path)
+        report = build_day_report(perf, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
         # story-builder latest is 80, mole-path is 60 -> Memory mean = (80 + 60) / 2 = 70
         self.assertEqual(report["domains"]["Memory"]["score"], 70)
         self.assertEqual(report["domains"]["Memory"]["game_count"], 2)
@@ -135,7 +139,7 @@ class CognitiveReportTests(unittest.TestCase):
             ],
             "game_scores": [],
         }
-        report = build_day_report(perf, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path)
+        report = build_day_report(perf, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
         # Face Recognition (80) & Name Recall (90) count as ONE contribution (their average: 85)
         # game_count for R&O is 1 (Daily Recall)
         self.assertEqual(report["domains"]["Recognition & Orientation"]["score"], 85)
@@ -154,10 +158,42 @@ class CognitiveReportTests(unittest.TestCase):
         bundled = {"face-recognition", "name-recognition", "context-recall"}
         for day in range(1, 25):
             date_str = f"2026-11-{day:02d}"
-            plan = build_daily_plan(date_str, games_file=self.games_path, plans_file=self.plans_path)
+            plan = build_daily_plan(date_str, games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
             self.assertEqual(plan["level1"][0], "daily_recall")
             self.assertEqual(len(plan["level1"]), 2)
             self.assertFalse(bundled.intersection(plan["level1"][1:]))
+
+    def test_future_plan_with_pin_is_computed_not_saved_and_pin_expires_after_seven_days(self):
+        self.settings_path.write_text(json.dumps({"pins": [
+            {"game_id": "story-builder", "start": "2026-10-14", "end": "2026-10-20"},
+        ]}), encoding="utf-8")
+        saved_tomorrow = {
+            "level1": ["daily_recall", "plan-the-day"],
+            "level2": ["mole-path", "sorting-station"],
+            "level3": ["attention-hunt", "map-navigator"],
+        }
+        self.plans_path.write_text(json.dumps({"2026-10-14": saved_tomorrow}), encoding="utf-8")
+        for offset in range(7):
+            day = f"2026-10-{14 + offset:02d}"
+            plan = build_daily_plan(day, games_file=self.games_path, plans_file=self.plans_path,
+                                    settings_file=self.settings_path, performance_file=self.perf_path,
+                                    today_str="2026-10-13")
+            self.assertIn("story-builder", plan["level1"])
+            self.assertNotIn("plan-the-day", plan["level1"])
+        self.settings_path.write_text(json.dumps({"pins": []}), encoding="utf-8")
+        baseline_after = build_daily_plan("2026-10-21", games_file=self.games_path, plans_file=self.plans_path,
+                                          settings_file=self.settings_path, performance_file=self.perf_path,
+                                          today_str="2026-10-13")
+        self.settings_path.write_text(json.dumps({"pins": [
+            {"game_id": "story-builder", "start": "2026-10-14", "end": "2026-10-20"},
+        ]}), encoding="utf-8")
+        after = build_daily_plan("2026-10-21", games_file=self.games_path, plans_file=self.plans_path,
+                                 settings_file=self.settings_path, performance_file=self.perf_path,
+                                 today_str="2026-10-13")
+        self.assertEqual(after, baseline_after)
+        persisted = json.loads(self.plans_path.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["2026-10-14"], saved_tomorrow)
+        self.assertNotIn("2026-10-21", persisted)
 
     def test_new_daily_recall_games_count_individually_and_match_progress_area_score(self):
         perf = {
@@ -169,7 +205,7 @@ class CognitiveReportTests(unittest.TestCase):
                 {"game_id": "map-navigator", "score": 60, "level": 3, "date": "2026-10-11"},
             ],
         }
-        report = build_day_report(perf, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path)
+        report = build_day_report(perf, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
         self.assertEqual(report["domains"]["Recognition & Orientation"]["score"], 77)
         self.assertEqual(report["domains"]["Recognition & Orientation"]["game_count"], 3)
         self.assertEqual(report["domains"]["Memory"]["score"], 70)
@@ -183,7 +219,7 @@ class CognitiveReportTests(unittest.TestCase):
                 {"game_id": "name-recognition", "score": 90, "level": 1, "date": date_str},
             ],
         }
-        partial_report = build_day_report(partial, date_str, games_file=self.games_path, plans_file=self.plans_path)
+        partial_report = build_day_report(partial, date_str, games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
         self.assertIn("daily_recall", partial_report["missing_games"])
 
         complete = {
@@ -192,13 +228,13 @@ class CognitiveReportTests(unittest.TestCase):
                 {"game_id": "context-recall", "score": 70, "level": 1, "date": date_str},
             ],
         }
-        complete_report = build_day_report(complete, date_str, games_file=self.games_path, plans_file=self.plans_path)
+        complete_report = build_day_report(complete, date_str, games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
         self.assertNotIn("daily_recall", complete_report["missing_games"])
 
     def test_missing_games_tracked_from_daily_plan_not_entire_registry(self):
         # Determine that day's plan
         date_str = "2026-10-11"
-        plan = build_daily_plan(date_str, games_file=self.games_path, plans_file=self.plans_path)
+        plan = build_daily_plan(date_str, games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
         planned = []
         for lvl in ("level1", "level2", "level3"):
             for g in plan[lvl]:
@@ -218,7 +254,7 @@ class CognitiveReportTests(unittest.TestCase):
             ],
             "game_scores": [],
         }
-        report = build_day_report(perf, date_str, games_file=self.games_path, plans_file=self.plans_path)
+        report = build_day_report(perf, date_str, games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
 
         self.assertEqual(report["games_available"], len(planned))
         self.assertEqual(report["games_completed"], 1)
@@ -235,19 +271,23 @@ class CognitiveReportTests(unittest.TestCase):
         client = api.test_client()
 
         date_str = "2026-10-15"
-        plan_res = client.get(f"/daily-plan?date={date_str}")
-        self.assertEqual(plan_res.status_code, 200)
-        plan_data = plan_res.get_json()
+        with patch.object(__import__("app"), "PERFORMANCE_PATH", str(self.perf_path)), \
+             patch.object(__import__("app"), "SETTINGS_PATH", str(self.settings_path)), \
+             patch.object(__import__("app"), "DAILY_PLANS_PATH", str(self.plans_path)), \
+             patch.object(__import__("app"), "GAMES_PATH", str(self.games_path)):
+            plan_res = client.get(f"/daily-plan?date={date_str}")
+            self.assertEqual(plan_res.status_code, 200)
+            plan_data = plan_res.get_json()
 
-        planned_ids = []
-        for lvl in ("level1", "level2", "level3"):
-            for gid in plan_data.get(lvl, []):
-                if gid not in planned_ids:
-                    planned_ids.append(gid)
+            planned_ids = []
+            for lvl in ("level1", "level2", "level3"):
+                for gid in plan_data.get(lvl, []):
+                    if gid not in planned_ids:
+                        planned_ids.append(gid)
 
-        report_res = client.get(f"/reports/day?date={date_str}")
-        self.assertEqual(report_res.status_code, 200)
-        report_data = report_res.get_json()
+            report_res = client.get(f"/reports/day?date={date_str}")
+            self.assertEqual(report_res.status_code, 200)
+            report_data = report_res.get_json()
 
         # Both agree on the number of available games and missing games
         self.assertEqual(report_data["games_available"], len(planned_ids))
@@ -262,10 +302,10 @@ class CognitiveReportTests(unittest.TestCase):
             }
         }
         self.plans_path.write_text(json.dumps(custom_saved), encoding="utf-8")
-        loaded_plan = build_daily_plan("2026-10-20", games_file=self.games_path, plans_file=self.plans_path)
+        loaded_plan = build_daily_plan("2026-10-20", games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
         self.assertEqual(loaded_plan["level1"], ["daily_recall", "plan-the-day"])
 
-        report_saved = build_day_report({"scores": [], "game_scores": []}, "2026-10-20", games_file=self.games_path, plans_file=self.plans_path)
+        report_saved = build_day_report({"scores": [], "game_scores": []}, "2026-10-20", games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
         expected_custom = ["daily_recall", "plan-the-day", "mole-path", "sorting-station", "attention-hunt", "map-navigator"]
         self.assertEqual(report_saved["missing_games"], expected_custom)
 
@@ -276,7 +316,7 @@ class CognitiveReportTests(unittest.TestCase):
                 {"game_id": "story-builder", "score": 80, "date": "2026-10-11"},
             ],
         }
-        report1 = build_day_report(perf_without_times, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path)
+        report1 = build_day_report(perf_without_times, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
         self.assertNotIn("overall_observed_score", report1)
         self.assertIsNone(report1["duration_seconds"])
 
@@ -299,7 +339,7 @@ class CognitiveReportTests(unittest.TestCase):
                 },
             ],
         }
-        report2 = build_day_report(perf_with_times, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path)
+        report2 = build_day_report(perf_with_times, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
         self.assertNotIn("overall_observed_score", report2)
         # 10:00:00 to 10:12:00 = 12 minutes = 720 seconds
         self.assertEqual(report2["duration_seconds"], 720)
@@ -309,7 +349,7 @@ class CognitiveReportTests(unittest.TestCase):
             "scores": [{"score": 56, "date": "2025-11-07T18:30:00.000Z", "timestamp": "2025-11-09T17:37:23Z"}],
             "game_scores": [],
         }
-        report = build_day_report(legacy, "2025-11-08", games_file=self.games_path, plans_file=self.plans_path)
+        report = build_day_report(legacy, "2025-11-08", games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
         for domain in DOMAINS:
             self.assertIsNone(report["domains"][domain]["score"])
         self.assertEqual(report["status"], "empty")
@@ -336,20 +376,24 @@ class CognitiveReportTests(unittest.TestCase):
         api.config["TESTING"] = True
         client = api.test_client()
 
-        res_days = client.get("/reports/days")
-        self.assertEqual(res_days.status_code, 200)
-        self.assertIn("days", res_days.get_json())
+        with patch.object(__import__("app"), "PERFORMANCE_PATH", str(self.perf_path)), \
+             patch.object(__import__("app"), "SETTINGS_PATH", str(self.settings_path)), \
+             patch.object(__import__("app"), "DAILY_PLANS_PATH", str(self.plans_path)), \
+             patch.object(__import__("app"), "GAMES_PATH", str(self.games_path)):
+            res_days = client.get("/reports/days")
+            self.assertEqual(res_days.status_code, 200)
+            self.assertIn("days", res_days.get_json())
 
-        res_day = client.get("/reports/day?date=2026-10-09")
-        self.assertEqual(res_day.status_code, 200)
-        data = res_day.get_json()
-        self.assertEqual(data["date"], "2026-10-09")
-        self.assertIn("domains", data)
-        self.assertIn("missing_games", data)
-        self.assertNotIn("overall_observed_score", data)
+            res_day = client.get("/reports/day?date=2026-10-09")
+            self.assertEqual(res_day.status_code, 200)
+            data = res_day.get_json()
+            self.assertEqual(data["date"], "2026-10-09")
+            self.assertIn("domains", data)
+            self.assertIn("missing_games", data)
+            self.assertNotIn("overall_observed_score", data)
 
-        res_missing = client.get("/reports/day")
-        self.assertEqual(res_missing.status_code, 400)
+            res_missing = client.get("/reports/day")
+            self.assertEqual(res_missing.status_code, 400)
 
 
 if __name__ == "__main__":
