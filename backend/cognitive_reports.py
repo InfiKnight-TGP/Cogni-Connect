@@ -534,7 +534,7 @@ def build_day_report(
             return (
                 "daily_recall" in completed_parent_ids
                 or "daily_recall" in completed_game_ids
-                or {"face-recognition", "name-recognition", "context-recall"}.issubset(completed_game_ids)
+                or {"face-recognition", "context-recall"}.issubset(completed_game_ids)
             )
         return planned_id in completed_game_ids or planned_id in completed_parent_ids
 

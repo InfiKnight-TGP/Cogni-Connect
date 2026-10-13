@@ -159,7 +159,7 @@ export function patientStatsFromEntries(entries: Entry[], now: Date): PatientSta
 
   const monday = addDays(now, -((now.getDay() + 6) % 7));
   const week = new Set(Array.from({ length: 7 }, (_, i) => dayKey(addDays(monday, i))));
-  const bundledIds = new Set(["face-recognition", "name-recognition", "context-recall"]);
+  const bundledIds = new Set(["face-recognition", "context-recall"]);
   const bestByGameDay = new Map<string, number>();
   const recallPartsByDay = new Map<string, Map<string, number>>();
   const legacyRecallByDay = new Map<string, number>();
@@ -182,15 +182,15 @@ export function patientStatsFromEntries(entries: Entry[], now: Date): PatientSta
     const parts = recallPartsByDay.get(day);
     if (legacyScore !== undefined) {
       bestByGameDay.set(`${day}|daily_recall`, legacyScore);
-    } else if (parts && ["face-recognition", "name-recognition", "context-recall"].every((id) => parts.has(id))) {
-      const averageScore = Math.round(Array.from(parts.values()).reduce((sum, score) => sum + score, 0) / 3);
+    } else if (parts && ["face-recognition", "context-recall"].every((id) => parts.has(id))) {
+      const averageScore = Math.round(["face-recognition", "context-recall"].reduce((sum, id) => sum + (parts.get(id) ?? 0), 0) / 2);
       bestByGameDay.set(`${day}|daily_recall`, averageScore);
     }
   }
   const starsThisWeek = Array.from(bestByGameDay.values()).reduce((sum, score) => sum + starsFor(score), 0);
   const todayIds = new Set(results.filter((entry) => entry.day === today && !bundledIds.has(entry.gameId)).map((entry) => entry.gameId));
   const todayParts = recallPartsByDay.get(today);
-  if (legacyRecallByDay.has(today) || (todayParts && ["face-recognition", "name-recognition", "context-recall"].every((id) => todayParts.has(id)))) {
+  if (legacyRecallByDay.has(today) || (todayParts && ["face-recognition", "context-recall"].every((id) => todayParts.has(id)))) {
     todayIds.add("daily_recall");
   }
   const doneToday = todayIds.size;

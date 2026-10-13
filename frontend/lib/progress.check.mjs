@@ -179,11 +179,18 @@ assert.equal(patientStatsFromEntries(toEntries({}), today).streak, 0);
 const bundledStats = patientStatsFromEntries(toEntries({
   game_scores: [
     { game_id: "face-recognition", level: 1, score: 50, date: "2026-10-09" },
-    { game_id: "name-recognition", level: 1, score: 80, date: "2026-10-09" },
     { game_id: "context-recall", level: 1, score: 70, date: "2026-10-09" },
+    { game_id: "name-recognition", level: 1, score: 80, date: "2026-10-09" },
   ],
 }), today);
-assert.equal(bundledStats.doneToday, 1); // The three parts count as My Day once.
-assert.equal(bundledStats.starsThisWeek, 2); // Stars use the bundle average: 67.
+assert.equal(bundledStats.doneToday, 2); // My Day plus standalone Name Recall.
+assert.equal(bundledStats.starsThisWeek, 5); // My Day average (60) plus Name Recall (80).
+const incompleteMyDay = patientStatsFromEntries(toEntries({
+  game_scores: [
+    { game_id: "face-recognition", level: 1, score: 80, date: "2026-10-09" },
+    { game_id: "name-recognition", level: 1, score: 90, date: "2026-10-09" },
+  ],
+}), today);
+assert.equal(incompleteMyDay.doneToday, 1); // Name Recall counts; My Day still needs Relive Memories.
 
 console.log("progress checks passed");

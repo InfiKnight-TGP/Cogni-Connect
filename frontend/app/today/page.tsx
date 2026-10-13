@@ -91,7 +91,7 @@ export default function TodayPage() {
       const recallParts: Record<string, number> = {};
       let legacyRecall: number | undefined;
       dayEntries.forEach((entry) => {
-        if (["face-recognition", "name-recognition", "context-recall"].includes(entry.gameId)) {
+        if (["face-recognition", "context-recall"].includes(entry.gameId)) {
           recallParts[entry.gameId] = Math.max(recallParts[entry.gameId] ?? 0, entry.score);
         } else if (entry.gameId === "daily_recall") {
           legacyRecall = Math.max(legacyRecall ?? 0, entry.score);
@@ -99,7 +99,7 @@ export default function TodayPage() {
           add(entry.gameId, entry.score);
         }
       });
-      const recallIds = ["face-recognition", "name-recognition", "context-recall"];
+      const recallIds = ["face-recognition", "context-recall"];
       if (legacyRecall !== undefined) {
         add("daily_recall", legacyRecall);
       } else if (recallIds.every((id) => recallParts[id] !== undefined)) {

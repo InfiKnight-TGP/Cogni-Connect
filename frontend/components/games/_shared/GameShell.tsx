@@ -19,6 +19,7 @@ export interface GameShellProps {
   skill: string;
   date?: string;
   saveResult?: boolean;
+  showPreviewDatePicker?: boolean;
   onFinish?: (score: number) => void;
   children:
     | React.ReactNode
@@ -33,6 +34,7 @@ export default function GameShell({
   skill,
   date,
   saveResult = true,
+  showPreviewDatePicker = true,
   onFinish,
   children,
 }: GameShellProps) {
@@ -105,7 +107,7 @@ export default function GameShell({
               Click Start to launch {title}.{caregiver && level === 1 && " No timers apply in Easy mode."}
             </p>
           </div>
-          {caregiver && preview && (
+          {caregiver && preview && showPreviewDatePicker && (
             <label className="flex items-center gap-3 text-sm text-muted-foreground">
               <span>Preview date</span>
               <input

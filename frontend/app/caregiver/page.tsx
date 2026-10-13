@@ -11,7 +11,7 @@ import { dayKey, daysPlayedThisWeek, gameArea, LEVEL_NAMES, toEntries, weeklyAve
 import { computeStats } from "@/lib/stats";
 import ProgressContent from "@/components/caregiver/progressContent";
 import { addDays, formatDistanceToNow } from "date-fns";
-import { ArrowRight, CalendarDays, Check, Download, FileText, Gamepad2, LockKeyhole, Upload, Users2, X } from "lucide-react";
+import { ArrowRight, CalendarDays, Check, Download, FileText, LockKeyhole, Upload, Users2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -29,7 +29,7 @@ const LANGUAGE_CHOICES = [
   ["ta", "தமிழ்"], ["gu", "ગુજરાતી"], ["ur", "اردو"], ["kn", "ಕನ್ನಡ"], ["or", "ଓଡ଼ିଆ"],
   ["ml", "മലയാളം"], ["pa", "ਪੰਜਾਬੀ"], ["as", "অসমীয়া"], ["ne", "नेपाली"], ["mni-Mtei", "ꯃꯤꯇꯩꯂꯣꯟ"],
 ] as const;
-const BUNDLE_PARTS = ["face-recognition", "name-recognition", "context-recall"];
+const BUNDLE_PARTS = ["face-recognition", "context-recall"];
 const REAL_NAMES: Record<string, string> = { "daily_recall": "Daily Recall", "face-recognition": "Face Recognition", "name-recognition": "Name Recall", "context-recall": "Relive Memories" };
 const cardClass = "rounded-xl border border-border bg-card p-5 shadow-sm";
 
@@ -68,9 +68,8 @@ function myDayComplete(perf: Perf, day: string) {
   for (const row of perf.game_scores ?? []) if (localDay(row.date || row.timestamp) === day && row.game_id && BUNDLE_PARTS.includes(row.game_id)) found.add(row.game_id);
   for (const row of perf.scores ?? []) {
     if (localDay(row.date || row.timestamp) !== day || row.game_id !== "daily_recall" || !row.breakdown) continue;
-    if (typeof (row.breakdown.activity1 ?? row.breakdown.activity1_faceRecognition) === "number") found.add(BUNDLE_PARTS[0]);
-    if (typeof (row.breakdown.activity2 ?? row.breakdown.activity2_namePeople) === "number") found.add(BUNDLE_PARTS[1]);
-    if (typeof (row.breakdown.activity3 ?? row.breakdown.activity3_contextQuestions) === "number") found.add(BUNDLE_PARTS[2]);
+    if (typeof (row.breakdown.activity1 ?? row.breakdown.activity1_faceRecognition) === "number") found.add("face-recognition");
+    if (typeof (row.breakdown.activity3 ?? row.breakdown.activity3_contextQuestions) === "number") found.add("context-recall");
   }
   return BUNDLE_PARTS.every((id) => found.has(id));
 }
@@ -177,7 +176,6 @@ function CaregiverDashboard() {
         <Card className={cardClass}><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-lg font-semibold">Today’s plan</h2><p className="text-sm text-muted-foreground">Planned activities and completion</p></div><span className="text-sm text-muted-foreground">{todayPlan.filter(({ gameId }) => gameId === "daily_recall" ? myDayComplete(perf, today) : rows.some((row) => row.date === today && row.gameId === gameId)).length} of {todayPlan.length} complete</span></div>
           {todayPlan.length ? <ul className="mt-3 divide-y divide-border">{todayPlan.map(({ level, gameId }) => { const done = gameId === "daily_recall" ? myDayComplete(perf, today) : rows.some((row) => row.date === today && row.gameId === gameId); const game = GAME_REGISTRY.find((item) => item.id === gameId); return <li key={`${level}-${gameId}`} className="flex items-center justify-between gap-3 py-3"><span><span className="font-medium">{gameId === "daily_recall" ? "My Day" : game?.name ?? gameId}</span><span className="ml-2 text-sm text-muted-foreground">{gameId === "daily_recall" ? "Daily Recall" : game?.area} · {LEVEL_NAMES[level as keyof typeof LEVEL_NAMES]}</span></span><span className={`flex h-7 w-7 items-center justify-center rounded-full ${done ? "bg-emerald-600/15 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`} aria-label={done ? "Done" : "Not done"}>{done ? <Check className="h-4 w-4" /> : <span className="text-xs">—</span>}</span></li>; })}</ul> : <p className="mt-4 text-sm text-muted-foreground">No activities are planned for today.</p>}</Card>
         <FocusCard pins={settings.pins ?? []} onAdd={addPin} onRemove={removePin} notice={notice} />
-        <section><h2 className="mb-3 text-lg font-semibold">Quick links</h2><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[["Add Videos", "/upload", Upload], ["People", "/people", Users2], ["Daily Routine", "/routine", CalendarDays], ["All Games", "/games", Gamepad2]].map(([label, href, Icon]) => { const LinkIcon = Icon as typeof Upload; return <Link key={label as string} href={href as string} className="flex min-h-16 items-center justify-between rounded-xl border bg-card px-4 font-medium hover:bg-muted"><span>{label as string}</span><LinkIcon className="h-5 w-5 text-muted-foreground" /></Link>; })}</div></section>
       </div>}
       {tab === "log" && <ActivityLog rows={rows} />}
       {tab === "progress" && <ProgressContent />}

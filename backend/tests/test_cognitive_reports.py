@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from cognitive_reports import (
@@ -33,7 +34,7 @@ class CognitiveReportTests(unittest.TestCase):
                 "games": [
                     {"id": "daily_recall", "levels": [1], "status": "ready", "area": "Recognition & Orientation / Memory"},
                     {"id": "face-recognition", "levels": [1], "status": "ready", "area": "Recognition & Orientation", "bundle": "daily_recall"},
-                    {"id": "name-recognition", "levels": [1], "status": "ready", "area": "Recognition & Orientation", "bundle": "daily_recall"},
+                    {"id": "name-recognition", "levels": [1], "status": "ready", "area": "Recognition & Orientation"},
                     {"id": "context-recall", "levels": [1], "status": "ready", "area": "Memory", "bundle": "daily_recall"},
                     {"id": "story-builder", "levels": [1], "status": "ready", "area": "Memory"},
                     {"id": "plan-the-day", "levels": [1], "status": "ready", "area": "Executive Function"},
@@ -155,13 +156,16 @@ class CognitiveReportTests(unittest.TestCase):
         self.assertIn("Personal Memory Questions", names)
 
     def test_daily_plan_never_selects_bundled_activities_as_extra_easy_game(self):
-        bundled = {"face-recognition", "name-recognition", "context-recall"}
-        for day in range(1, 25):
-            date_str = f"2026-11-{day:02d}"
+        bundled = {"face-recognition", "context-recall"}
+        name_recall_seen = False
+        for offset in range(90):
+            date_str = (date(2026, 11, 1) + timedelta(days=offset)).isoformat()
             plan = build_daily_plan(date_str, games_file=self.games_path, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path)
             self.assertEqual(plan["level1"][0], "daily_recall")
             self.assertEqual(len(plan["level1"]), 2)
             self.assertFalse(bundled.intersection(plan["level1"][1:]))
+            name_recall_seen = name_recall_seen or "name-recognition" in plan["level1"][1:]
+        self.assertTrue(name_recall_seen, "Name Recall should be eligible for the level-1 random pick")
 
     def test_future_plan_with_pin_is_computed_not_saved_and_pin_expires_after_seven_days(self):
         self.settings_path.write_text(json.dumps({"pins": [
@@ -210,7 +214,7 @@ class CognitiveReportTests(unittest.TestCase):
         self.assertEqual(report["domains"]["Recognition & Orientation"]["game_count"], 3)
         self.assertEqual(report["domains"]["Memory"]["score"], 70)
 
-    def test_daily_recall_bundle_requires_all_three_new_games(self):
+    def test_daily_recall_bundle_requires_face_and_context_games(self):
         date_str = "2026-10-11"
         partial = {
             "scores": [],
@@ -224,7 +228,8 @@ class CognitiveReportTests(unittest.TestCase):
 
         complete = {
             "scores": [],
-            "game_scores": partial["game_scores"] + [
+            "game_scores": [
+                {"game_id": "face-recognition", "score": 80, "level": 1, "date": date_str},
                 {"game_id": "context-recall", "score": 70, "level": 1, "date": date_str},
             ],
         }

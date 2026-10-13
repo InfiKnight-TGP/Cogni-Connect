@@ -24,7 +24,7 @@ export default function ContextQuestions({
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
-  myDay?: boolean; // "My Day" from the Today page: no date, "Part X of 3"
+  myDay?: boolean; // "My Day" from the Today page: no date, "Part X of 2"
   standalone?: boolean;
   activityScores?: {
     activity1: number | null;
@@ -186,7 +186,7 @@ export default function ContextQuestions({
             </>
           )}
         </div>
-        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 3 of 3" : "Part 3"}</Badge>
+        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 2 of 2" : "Part 3"}</Badge>
       </div>}
 
       {loading ? (
