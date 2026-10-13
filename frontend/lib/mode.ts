@@ -14,6 +14,11 @@ function read() {
   }
 }
 
+/** Synchronous mode check for shared request helpers outside React components. */
+export function isCaregiverUnlocked() {
+  return read();
+}
+
 function write(on: boolean) {
   try {
     if (on) sessionStorage.setItem(KEY, "1");

@@ -10,6 +10,7 @@ import {
 } from "@/lib/progress";
 import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
+import Nav from "@/components/nav";
 
 const ReportRadar = dynamic(() => import("./RadarChart"), {
   ssr: false,
@@ -143,9 +144,11 @@ function exportCsv(report: DayReport, date: string) {
 
 export default function ReportPage() {
   return (
-    <CaregiverOnly>
+    <><Nav /><CaregiverOnly>
+      <div className="mx-auto max-w-3xl px-8 pt-24 lg:ml-[260px] lg:pt-8 print:hidden"><p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Caregiver portal</p><h2 className="mt-1 text-3xl font-bold">Doctor&apos;s Report</h2></div>
       <Report />
     </CaregiverOnly>
+    </>
   );
 }
 
@@ -219,7 +222,7 @@ function Report() {
   };
 
   return (
-    <main className="mx-auto max-w-3xl space-y-6 bg-white p-8 text-[15px] leading-relaxed text-black print:p-0">
+    <main className="mx-auto mt-16 max-w-3xl space-y-6 bg-white p-8 text-[15px] leading-relaxed text-black lg:ml-[260px] lg:mt-0 print:ml-0 print:mt-0 print:p-0">
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-300 bg-slate-50 p-4 print:hidden">
         <label className="flex flex-1 items-center gap-2">
           <span className="text-sm font-medium">Patient name</span>
@@ -328,7 +331,7 @@ function Report() {
           </div>
           {dayReport?.games && dayReport.games.length > 0 ? (
             <>
-              <ReportRadar scores={radarScores} />
+              <ReportRadar scores={radarScores} forceLight />
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm border-collapse">
                   <thead>
@@ -359,7 +362,7 @@ function Report() {
             </>
           ) : (
             <p className="py-6 text-center text-sm text-slate-500">
-              No activities completed on this day. Missing domains are not measured.
+              No activities on this day yet.
             </p>
           )}
         </div>

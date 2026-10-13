@@ -1,4 +1,5 @@
 import { API_URL } from "@/lib/api";
+import { isCaregiverUnlocked } from "@/lib/mode";
 
 export interface SaveScoreParams {
   date: string;
@@ -9,13 +10,14 @@ export interface SaveScoreParams {
 }
 
 export async function saveScore(params: SaveScoreParams): Promise<boolean> {
+  if (isCaregiverUnlocked()) return true;
   try {
     const response = await fetch(`${API_URL}/performance`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(params),
+      body: JSON.stringify({ ...params, source: "patient" }),
     });
     return response.ok;
   } catch (error) {

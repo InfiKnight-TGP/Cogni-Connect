@@ -9,6 +9,7 @@ import { useState, useRef, useEffect } from "react";
 import { DatePickerWithPresets } from "@/components/quiz/datePicker";
 import { API_URL } from "@/lib/api";
 import { CaregiverOnly } from "@/components/caregiver";
+import CaregiverPageLabel from "@/components/caregiver/pageLabel";
 
 interface UploadedVideo {
   filename: string;
@@ -176,6 +177,7 @@ function UploadVideos() {
         <div className="w-full max-w-screen-lg space-y-8 px-4 py-8">
           {/* Header */}
           <div className="text-center">
+            <CaregiverPageLabel />
             <h1 className="text-4xl font-bold">Upload Videos</h1>
             <p className="mt-2 text-muted-foreground">
               Upload videos to enhance your memory library

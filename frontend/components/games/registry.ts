@@ -8,6 +8,9 @@ import SortingStation from "./sorting-station";
 import WhackAMole from "./whack-a-mole";
 import AttentionHunt from "./attention-hunt";
 import MapNavigator from "./map-navigator";
+import FaceRecognition from "./face-recognition";
+import NameRecognition from "./name-recognition";
+import ContextRecall from "./context-recall";
 import { GameProps } from "./_shared/types";
 import { Area } from "@/lib/progress";
 
@@ -37,6 +40,18 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     emoji: "📖",
     description: "Read a short everyday story, then recall missing details.",
     trains: "Verbal memory: recall words from a short story",
+  },
+  {
+    id: "context-recall",
+    name: "Relive Memories",
+    skill: "personal memory",
+    area: "Memory",
+    levels: [1],
+    component: ContextRecall,
+    comingSoon: false,
+    emoji: "💭",
+    description: "Recall details of the day’s videos in your own words.",
+    trains: "Recall details of the day's videos in your own words",
   },
   {
     id: "plan-the-day",
@@ -144,6 +159,30 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     emoji: "🗺️",
     description: "Navigate routes and spatial directions accurately.",
     trains: "Spatial orientation: route finding",
+  },
+  {
+    id: "face-recognition",
+    name: "Face Recognition",
+    skill: "face recognition",
+    area: "Recognition & Orientation",
+    levels: [1],
+    component: FaceRecognition,
+    comingSoon: false,
+    emoji: "👤",
+    description: "Recognise familiar people from the day’s video.",
+    trains: "Recognise familiar people from the day's video",
+  },
+  {
+    id: "name-recognition",
+    name: "Name Recall",
+    skill: "name recall",
+    area: "Recognition & Orientation",
+    levels: [1],
+    component: NameRecognition,
+    comingSoon: false,
+    emoji: "🏷️",
+    description: "Match a familiar face to the right name.",
+    trains: "Match a familiar face to the right name",
   },
 ];
 

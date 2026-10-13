@@ -17,6 +17,9 @@ assert.equal(skillArea("attention"), "Attention");
 assert.equal(skillArea("juggling"), undefined);
 assert.equal(gameArea("plan-the-day"), "Executive Function");
 assert.equal(gameArea("map-navigator"), "Recognition & Orientation");
+assert.equal(gameArea("face-recognition"), "Recognition & Orientation");
+assert.equal(gameArea("name-recognition"), "Recognition & Orientation");
+assert.equal(gameArea("context-recall"), "Memory");
 
 // /performance -> entries; old quiz rows (ISO, no skill/level) count as Easy Memory
 const entries = toEntries({
@@ -90,6 +93,21 @@ assert.deepEqual(recallByArea["Memory"], [null, null, null, 70]); // activity 3
 const recallByLevel = weeklyAverages(recallEntries, weeks, (e) => (e.level ? { 1: "Easy", 2: "Medium", 3: "Hard" }[e.level] : undefined));
 assert.deepEqual(recallByLevel["Easy"], [null, null, null, 85]); // combined score counted ONCE
 
+// New Daily Recall records count as individual games in each area's mean.
+// This same day and input is asserted by the backend Report test (RO = 77).
+const newRecallEntries = toEntries({
+  game_scores: [
+    { game_id: "face-recognition", level: 1, score: 80, date: "2026-10-11" },
+    { game_id: "name-recognition", level: 1, score: 90, date: "2026-10-11" },
+    { game_id: "context-recall", level: 1, score: 70, date: "2026-10-11" },
+    { game_id: "map-navigator", level: 3, score: 60, date: "2026-10-11" },
+  ],
+});
+const newRecallWeeks = lastFourWeeks(new Date(2026, 9, 11));
+const newRecallByArea = weeklyAverages(newRecallEntries, newRecallWeeks, (e) => e.area);
+assert.equal(newRecallByArea["Recognition & Orientation"][3], 77);
+assert.equal(newRecallByArea.Memory[3], 70);
+
 // Whichever exists: only activity1
 const onlyA1 = toEntries({
   scores: [{ score: 80, date: "2026-10-09", game_id: "daily_recall", level: 1, breakdown: { activity1: 80 } }],
@@ -131,11 +149,19 @@ const radarData = buildRadarChartData({
   "Executive Function": 90,
   "Recognition & Orientation": null,
 });
+assert.deepEqual(radarData.labels, ["Memory", "Attention", ["Executive", "Function"], ["Recognition", "&", "Orientation"]]);
 assert.equal(radarData.datasets[0].spanGaps, false);
 assert.equal(radarData.datasets[0].data[0], 80); // Memory: 80
 assert.equal(radarData.datasets[0].data[1], null); // Attention: stays null, never 0
 assert.equal(radarData.datasets[0].data[2], 90); // Executive Function: 90
 assert.equal(radarData.datasets[0].data[3], null); // Recognition & Orientation: stays null, never 0
+const emptyRadarData = buildRadarChartData({
+  Memory: null,
+  Attention: null,
+  "Executive Function": null,
+  "Recognition & Orientation": null,
+});
+assert.deepEqual(emptyRadarData.datasets[0].data, [null, null, null, null]);
 
 // Patient stats normalize ISO timestamps to local days, count Daily Recall once, and ignore replays.
 const patientStats = patientStatsFromEntries(
@@ -158,5 +184,21 @@ assert.equal(patientStats.doneToday, 2); // Daily Recall and mole-path
 assert.equal(patientStats.starsThisWeek, 3 + 2 + 3); // recall on each day and best mole-path replay
 assert.equal(patientStatsFromEntries(toEntries({ scores: [{ score: 50, date: "2026-10-08" }] }), today).streak, 1);
 assert.equal(patientStatsFromEntries(toEntries({}), today).streak, 0);
+const bundledStats = patientStatsFromEntries(toEntries({
+  game_scores: [
+    { game_id: "face-recognition", level: 1, score: 50, date: "2026-10-09" },
+    { game_id: "context-recall", level: 1, score: 70, date: "2026-10-09" },
+    { game_id: "name-recognition", level: 1, score: 80, date: "2026-10-09" },
+  ],
+}), today);
+assert.equal(bundledStats.doneToday, 2); // My Day plus standalone Name Recall.
+assert.equal(bundledStats.starsThisWeek, 5); // My Day average (60) plus Name Recall (80).
+const incompleteMyDay = patientStatsFromEntries(toEntries({
+  game_scores: [
+    { game_id: "face-recognition", level: 1, score: 80, date: "2026-10-09" },
+    { game_id: "name-recognition", level: 1, score: 90, date: "2026-10-09" },
+  ],
+}), today);
+assert.equal(incompleteMyDay.doneToday, 1); // Name Recall counts; My Day still needs Relive Memories.
 
 console.log("progress checks passed");

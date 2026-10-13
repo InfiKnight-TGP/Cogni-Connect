@@ -4,13 +4,13 @@ import {
   BrainCircuit,
   CalendarCheck,
   CalendarDays,
-  FileText,
   Gamepad2,
   Home,
   Image as ImageIcon,
   Lock,
   LogOut,
   Star,
+  Settings,
   TrendingUp,
   Upload,
   Users2,
@@ -39,8 +39,7 @@ const PATIENT_LINKS: NavItem[] = [
 
 const CAREGIVER_LINKS: NavItem[] = [
   { href: "/caregiver", label: "Home", short: "Home", icon: Home, color: "text-orange-500" },
-  { href: "/progress", label: "Progress", short: "Progress", icon: TrendingUp, color: "text-green-600 dark:text-green-500" },
-  { href: "/report", label: "Doctor's Report", short: "Report", icon: FileText, color: "text-sky-500" },
+  { href: "/progress", label: "Progress & Reports", short: "Progress", icon: TrendingUp, color: "text-green-600 dark:text-green-500" },
   { href: "/upload", label: "Add Videos", short: "Videos", icon: Upload, color: "text-violet-500" },
   { href: "/people", label: "People", short: "People", icon: Users2, color: "text-pink-500" },
   { href: "/routine", label: "Daily Routine", short: "Routine", icon: CalendarDays, color: "text-teal-500" },
@@ -113,6 +112,7 @@ export default function Nav() {
           })}
         </nav>
         <div className="flex flex-col gap-2 border-t border-border pt-4">
+          {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={itemClass(isActive("/caregiver/settings"))}><Settings className="h-8 w-8 shrink-0 text-muted-foreground" /><span>Settings</span></Link>}
           <button type="button" className={itemClass(false)} onClick={modeButton.onClick}>
             <ModeIcon className="h-8 w-8 shrink-0 text-muted-foreground" />
             <span>{modeButton.label}</span>
@@ -142,6 +142,7 @@ export default function Nav() {
             </Link>
           );
         })}
+        {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${isActive("/caregiver/settings") ? "border-primary text-primary" : "border-transparent text-foreground"}`}><Settings className="h-7 w-7" /><span className="whitespace-nowrap">Settings</span></Link>}
         <button
           type="button"
           onClick={modeButton.onClick}

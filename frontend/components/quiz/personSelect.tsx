@@ -27,12 +27,16 @@ export default function PersonSelect({
   setProgress,
   date,
   myDay = false,
+  standalone = false,
   setActivityScore,
+  onComplete,
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
-  myDay?: boolean; // "My Day" from the Today page: no date, "Part X of 3"
+  myDay?: boolean; // "My Day" from the Today page: no date, "Part X of 2"
+  standalone?: boolean;
   setActivityScore?: (score: number) => void;
+  onComplete?: (score: number) => void;
 }) {
   const [selected, setSelected] = useState<number[]>([]);
   const [knownFaces, setKnownFaces] = useState<KnownFace[]>([]);
@@ -47,6 +51,7 @@ export default function PersonSelect({
   const [submitted, setSubmitted] = useState<{
     correct: boolean;
   } | null>(null);
+  const [finalScore, setFinalScore] = useState(0);
 
   // Fetch data on date change
   useEffect(() => {
@@ -122,6 +127,7 @@ export default function PersonSelect({
   const onSubmit = () => {
     if (selected.length === 0) {
       setSubmitted({ correct: false });
+      setFinalScore(0);
       if (setActivityScore) setActivityScore(0);
     } else {
       const res =
@@ -140,17 +146,20 @@ export default function PersonSelect({
       const rawScore = ((correctCount - incorrectCount) / totalFaces) * 100;
       const finalScore = Math.max(0, Math.min(100, rawScore));
 
-      if (setActivityScore) setActivityScore(Math.round(finalScore));
+      const roundedScore = Math.round(finalScore);
+      setFinalScore(roundedScore);
+      if (setActivityScore) setActivityScore(roundedScore);
     }
   };
 
   const nullify = () => {
     setSubmitted(null);
   };
+  const advance = () => onComplete ? onComplete(finalScore) : setProgress((prev) => prev + 1);
 
   return (
     <>
-      <div className="flex w-full items-center justify-start">
+      {!standalone && <div className="flex w-full items-center justify-start">
         <Button
           variant="secondary"
           onClick={() => setProgress(-1)}
@@ -170,8 +179,8 @@ export default function PersonSelect({
             </>
           )}
         </div>
-        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 1 of 3" : "Part 1"}</Badge>
-      </div>
+        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 1 of 2" : "Part 1"}</Badge>
+      </div>}
 
       <div className="mt-12 text-xl font-medium">
         On this day, who did you talk to? (Select all that apply)
@@ -188,10 +197,10 @@ export default function PersonSelect({
           </p>
           <Button
             size="lg"
-            onClick={() => setProgress((prev) => prev + 1)}
+            onClick={advance}
             className="min-h-[48px] text-lg font-medium transition-all"
           >
-            Continue to Part 2 <ArrowRight className="ml-3 h-4 w-4" />
+            {onComplete ? "Finish Game" : "Continue to Part 2"} <ArrowRight className="ml-3 h-4 w-4" />
           </Button>
         </div>
       ) : (
@@ -267,10 +276,10 @@ export default function PersonSelect({
           <Button
             disabled={!revealed && (!submitted || !submitted.correct)}
             size="lg"
-            onClick={() => setProgress((prev) => prev + 1)}
+            onClick={advance}
             className="min-h-[48px] text-lg font-medium transition-all"
           >
-            Continue to Part 2 <ArrowRight className="ml-3 h-4 w-4" />
+            {onComplete ? "Finish Game" : "Continue to Part 2"} <ArrowRight className="ml-3 h-4 w-4" />
           </Button>
         </>
       )}

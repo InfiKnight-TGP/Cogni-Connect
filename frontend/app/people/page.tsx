@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { API_URL } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
+import CaregiverPageLabel from "@/components/caregiver/pageLabel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface Person {
@@ -59,6 +60,7 @@ export default function PeoplePage() {
       <Nav />
       <main className="min-h-screen pt-24 lg:pt-8">
         <div className="mx-auto max-w-screen-lg space-y-8 px-4 py-8">
+          {caregiver && <CaregiverPageLabel />}
           <h1 className="text-4xl font-bold">{caregiver ? "People" : "My People"}</h1>
 
           {loadError ? (

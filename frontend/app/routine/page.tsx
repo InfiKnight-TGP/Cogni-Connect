@@ -5,6 +5,7 @@ import { CaregiverOnly } from "@/components/caregiver";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { API_URL } from "@/lib/api";
+import CaregiverPageLabel from "@/components/caregiver/pageLabel";
 import { useEffect, useState } from "react";
 
 const MAX_STEPS = 5;
@@ -67,6 +68,7 @@ function Routine() {
   return (
     <main className="mx-auto max-w-2xl space-y-6 px-4 pb-16 pt-24 lg:pt-8">
       <div>
+        <CaregiverPageLabel />
         <h1 className="text-3xl font-bold">Daily Routine</h1>
         <p className="mt-1 text-muted-foreground">
           Write {MIN_STEPS} to {MAX_STEPS} steps of the patient&apos;s own day, in order (for example &quot;Wake up&quot;,

@@ -3,6 +3,6 @@ export type GameLevel = 1 | 2 | 3;
 
 export interface GameProps {
   level?: GameLevel;
-  date?: string; // YYYY-MM-DD
+  date?: string; // local YYYY-MM-DD
   onFinish?: (score: number) => void;
 }
