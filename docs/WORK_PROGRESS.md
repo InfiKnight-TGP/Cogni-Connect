@@ -88,3 +88,58 @@ Verification on `feature/voice-ai-journal-platform`:
 Verified changes were committed as `9992072` on the feature branch. The push
 attempt was blocked because GitHub HTTPS credentials are unavailable in this
 non-interactive session; the local feature branch is ahead of origin.
+
+## Repository re-audit - 14 October 2026
+
+Started on `feature/voice-ai-journal-platform` at `1c4229e`, clean and equal to
+`origin/feature/voice-ai-journal-platform`. Fetch succeeded. No uncommitted work
+needed ownership attribution or reconciliation. `109e009` contains the prior
+platform expansion. `9992072` explicitly credits Copilot and adds adaptive
+Yesterday Quiz choices and production offline-cache preparation. Both were
+reviewed and preserved; the earlier note about an unpushed branch is historical.
+
+Current feature inventory (source inspection, not a claim of full acceptance):
+
+| Feature | Present | Remaining acceptance / limitation |
+| --- | --- | --- |
+| Stack and baseline | Next 14 / React / Flask `api`, legacy JSON plus scoped SQLite support API | Legacy routes remain single-patient, not secure multi-tenant APIs |
+| Read / voice / mixed | Per-profile local preferences, remote defaults and patient override | Native-device and full menu/question coverage checks |
+| Speech and matching | Browser provider, replay/mic, synonym/fuzzy confirmation, silence retry | English/Hindi/Assamese control strings; content not fully translated; voices depend on browser; no fourth locale |
+| Games | Existing games plus matching cards, sound, odd-one-out, pattern, naming and Yesterday Quiz | Adaptive knobs are not applied to every legacy game; full domain browser acceptance pending |
+| Crossword | Personal words and favourite places, template clues, typed/confirmed voice answers, persisted puzzle | Romanized/English grid; automatic family/journal sourcing and optional LLM generation incomplete |
+| Adaptation | Elo estimate, accuracy window, separate tap/typed/voice rolling medians | Hesitation/touch-duration fields reserved but not measured; no clinical calibration |
+| Dashboard | Scoped caregiver account, session slopes, explainable activity index, simulated seed script | End-to-end seeded dashboard acceptance and more complete activity coverage |
+| Journal | Text, local audio/video, private media upload, editable live transcript, extractive summary | Real devices unverified; transcription is a short live recognition pass, not full-file transcription |
+| Location | Caregiver consent/log, explicit start/pause, local visits, clusters/favourites/home | Tracking only while Places is open; yesterday quiz does not yet use timeline; revoke/sync races need broader checks |
+| SOS/reminders | Five-second cancellation, scoped caregiver inbox, tap/voice completion and adherence | No SMS/push delivery; reminders have no background scheduler |
+| Offline/sync | Cached patient shells/chunks, local records/IndexedDB media, scoped LWW uploads | Legacy media routes not fully offline; no cross-tab transactional queue; local storage is not encrypted |
+| Security/accessibility | Hashed passwords, session cookies, caregiver checks on support records, big controls/theme/text size | Legacy PIN lock is not backend authorization; trusted-device storage; full accessibility review pending |
+
+Re-run baseline: 31 backend unittests passed, `import app` passed, TypeScript
+passed, and all eight existing frontend check scripts passed. Existing Node
+module-type warnings remain in the legacy progress and routine check scripts.
+
+## Speech reliability milestone - 14 October 2026
+
+Fixed browser-wide speech ownership so cleanup from an inactive provider cannot
+cancel another question. Cancellation now settles pending audio/recognition even
+when an engine emits no callbacks, disconnects late recognition results, and
+cancels delayed voice discovery. A TTS callback watchdog reports an unavailable
+engine; it never scores a patient answer. Confirmation cancels its outstanding
+recognition before invoking the game handler.
+
+Validation: `npx tsc --noEmit` passed; all nine `npm run test:unit` check scripts
+passed, including the new speech lifecycle checks; `npm run build` passed with
+the same five existing image-optimization warnings. All eight production
+Playwright tests passed against `http://127.0.0.1:3001`: read-mode persistence,
+low-confidence confirmation/permission fallback, silence retry, SOS cancel,
+offline reload/play, automatic voice answer with voice timing, mid-listen mode
+switch retaining the question, and spoken confirmation in Mixed mode.
+`git diff --check` passed. Backend remained unchanged after its 31-test baseline.
+README now includes test commands and honest language/privacy/device limitations.
+
+No actual microphone, camera, GPS, or native-language validation is implied by
+mocked browser tests. Next milestone: verify personal-content question semantics
+and caregiver end-to-end flows. In particular, Yesterday Quiz currently presents
+other yesterday memories as distractors to a generic yesterday question; those
+are also truthful answers and need a date-aware content regression test and fix.

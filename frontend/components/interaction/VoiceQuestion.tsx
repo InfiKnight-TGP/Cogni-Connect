@@ -20,12 +20,14 @@ export default function VoiceQuestion({ prompt, options, onAnswer, disabled = fa
   current.current = { options, onAnswer, disabled };
   const confirmCandidate = () => {
     if (!candidate || current.current.disabled) return;
+    controller.current?.abort(); provider.current.cancel(); setBusy(false); setStatus("");
     if (candidate.option.id === "__sos") window.dispatchEvent(new Event("cogni:sos"));
     else current.current.onAnswer(candidate.option.id, { method: "voice", responseMs: candidate.responseMs, recognitionConfirmed: true });
     setCandidate(null);
   };
   const confirmByVoice = async () => {
     if (!candidate) return;
+    controller.current?.abort();
     const control = new AbortController(); controller.current = control; setBusy(true);
     try {
       setStatus(locale.speaking);
