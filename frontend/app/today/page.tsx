@@ -3,6 +3,7 @@
 import DashboardCard from "@/components/dashboardCard";
 import { getGameById } from "@/components/games/registry";
 import Nav from "@/components/nav";
+import RightColumn from "@/components/rightColumn";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/lib/api";
 import { format } from "date-fns";
@@ -150,7 +151,8 @@ export default function TodayPage() {
   return (
     <>
       <Nav />
-      <main className="mx-auto max-w-screen-lg space-y-6 px-4 pb-16 pt-24">
+      <div className="mx-auto flex max-w-screen-xl gap-8 px-4 pb-16 pt-24">
+      <main className="min-w-0 flex-1 space-y-6">
         {/* Greeting & Progress */}
         <div className="space-y-1">
           <h1 className="text-4xl font-bold sm:text-5xl">{hello}</h1>
@@ -276,6 +278,8 @@ export default function TodayPage() {
           </>
         )}
       </main>
+      <RightColumn />
+      </div>
     </>
   );
 }
