@@ -29,9 +29,9 @@ type LanguageCode = (typeof LANGUAGES)[number]["code"];
 type ThemeChoice = "system" | "light" | "dark";
 
 const THEME_CHOICES: { value: ThemeChoice; label: string; Icon: typeof Monitor }[] = [
+  { value: "system", label: "System", Icon: Monitor },
   { value: "light", label: "Light", Icon: Sun },
   { value: "dark", label: "Dark", Icon: Moon },
-  { value: "system", label: "System", Icon: Monitor },
 ];
 
 function languageLabel(code: LanguageCode) {
@@ -49,7 +49,11 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
   const [languageLoaded, setLanguageLoaded] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const languageMenuRef = useRef<HTMLDivElement>(null);
+  const languageTriggerRef = useRef<HTMLButtonElement>(null);
+  const themeMenuRef = useRef<HTMLDivElement>(null);
+  const themeTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -72,20 +76,59 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
   }, []);
 
   useEffect(() => {
-    if (!languageMenuOpen) return;
+    if (!languageMenuOpen && !themeMenuOpen) return;
     const closeOnOutsideClick = (event: PointerEvent) => {
-      if (!languageMenuRef.current?.contains(event.target as Node)) setLanguageMenuOpen(false);
+      const target = event.target as Node;
+      if (!languageMenuRef.current?.contains(target)) setLanguageMenuOpen(false);
+      if (!themeMenuRef.current?.contains(target)) setThemeMenuOpen(false);
     };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setLanguageMenuOpen(false);
+    const handleMenuKeyboard = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const menu = target.closest<HTMLElement>('[role="menu"]');
+      if (event.key === "Escape") {
+        if (menu && languageMenuRef.current?.contains(menu)) {
+          setLanguageMenuOpen(false);
+          languageTriggerRef.current?.focus();
+          event.preventDefault();
+        } else if (menu && themeMenuRef.current?.contains(menu)) {
+          setThemeMenuOpen(false);
+          themeTriggerRef.current?.focus();
+          event.preventDefault();
+        }
+        return;
+      }
+      if (!menu || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
+      const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('button[role="menuitemradio"]'));
+      if (!items.length) return;
+      const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      const nextIndex = currentIndex < 0
+        ? (delta > 0 ? 0 : items.length - 1)
+        : (currentIndex + delta + items.length) % items.length;
+      event.preventDefault();
+      items[nextIndex].focus();
     };
     document.addEventListener("pointerdown", closeOnOutsideClick);
-    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("keydown", handleMenuKeyboard);
     return () => {
       document.removeEventListener("pointerdown", closeOnOutsideClick);
-      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("keydown", handleMenuKeyboard);
     };
-  }, [languageMenuOpen]);
+  }, [languageMenuOpen, themeMenuOpen]);
+
+  useEffect(() => {
+    if (languageMenuOpen) {
+      const menu = languageMenuRef.current;
+      (menu?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')
+        ?? menu?.querySelector<HTMLButtonElement>('[role="menuitemradio"]'))?.focus();
+    }
+    if (themeMenuOpen) {
+      const menu = themeMenuRef.current;
+      (menu?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')
+        ?? menu?.querySelector<HTMLButtonElement>('[role="menuitemradio"]'))?.focus();
+    }
+  }, [languageMenuOpen, themeMenuOpen]);
 
   const saveLanguage = async (code: LanguageCode) => {
     const previous = language || "en";
@@ -106,7 +149,8 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
     }
   };
 
-  const isSelected = (choice: ThemeChoice) => mounted && theme === choice;
+  const currentTheme: ThemeChoice = mounted && (theme === "light" || theme === "dark") ? theme : "system";
+  const CurrentThemeIcon = THEME_CHOICES.find(({ value }) => value === currentTheme)?.Icon ?? Monitor;
 
   return (
     <section className={`w-full text-center ${placement === "right-column" ? "" : "mx-auto"}`} aria-label="Site links and preferences">
@@ -122,12 +166,16 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
         <div className="flex w-full flex-wrap items-center justify-center gap-x-6 gap-y-2">
           <div className="relative" ref={languageMenuRef}>
             <button
+              ref={languageTriggerRef}
               type="button"
               aria-label={`Language: ${languageLabel(language || "en")}`}
               aria-haspopup="menu"
               aria-expanded={languageMenuOpen}
               disabled={!languageLoaded}
-              onClick={() => setLanguageMenuOpen((open) => !open)}
+              onClick={() => {
+                setThemeMenuOpen(false);
+                setLanguageMenuOpen((open) => !open);
+              }}
               className="flex min-h-11 items-center gap-2 px-2 text-base text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60"
             >
               <Globe aria-hidden="true" className="h-5 w-5" />
@@ -160,23 +208,47 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
             )}
           </div>
 
-          <div className="flex min-h-11 items-center gap-1 text-base text-muted-foreground" role="group" aria-label="Theme">
-            <span className="mr-1">Theme</span>
-            {THEME_CHOICES.map(({ value, label, Icon }) => (
-              <button
-                key={value}
-                type="button"
-                aria-label={value === "system" ? "Use system theme" : `${label} theme`}
-                title={value === "system" ? "Use system theme" : `${label} theme`}
-                aria-pressed={isSelected(value)}
-                onClick={() => setTheme(value)}
-                className={`relative flex min-h-11 min-w-11 items-center justify-center px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                  isSelected(value) ? "text-primary after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:bg-primary" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Icon aria-hidden="true" className="h-5 w-5 shrink-0" />
-              </button>
-            ))}
+          <div className="relative" ref={themeMenuRef}>
+            <button
+              ref={themeTriggerRef}
+              type="button"
+              aria-label={`Theme: ${THEME_CHOICES.find(({ value }) => value === currentTheme)?.label}`}
+              aria-haspopup="menu"
+              aria-expanded={themeMenuOpen}
+              onClick={() => {
+                setLanguageMenuOpen(false);
+                setThemeMenuOpen((open) => !open);
+              }}
+              className="flex min-h-11 items-center gap-2 px-2 text-base text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <CurrentThemeIcon aria-hidden="true" className="h-5 w-5" />
+              <span>Theme</span>
+              <ChevronDown aria-hidden="true" className="h-4 w-4" />
+            </button>
+            {themeMenuOpen && (
+              <div role="menu" aria-label="Choose theme" className="absolute left-1/2 top-full z-50 mt-1 max-h-72 w-max min-w-52 -translate-x-1/2 overflow-y-auto rounded-md border border-border bg-card p-1 text-left shadow-lg">
+                {THEME_CHOICES.map(({ value, label, Icon }) => {
+                  const selected = mounted && currentTheme === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      onClick={() => {
+                        setTheme(value);
+                        setThemeMenuOpen(false);
+                      }}
+                      className="flex min-h-11 w-full items-center gap-2 rounded px-3 py-2 text-left text-base text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      <Icon aria-hidden="true" className="h-5 w-5 shrink-0" />
+                      <span>{label}</span>
+                      {selected && <Check aria-hidden="true" className="ml-auto h-4 w-4" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
         {saveError && <p className="text-sm text-destructive" role="status">Could not save language. Try again.</p>}
