@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Globe, Monitor, Moon, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, ChevronDown, Globe, Monitor, Moon, Sun } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { API_URL } from "@/lib/api";
 
 const LANGUAGES = [
@@ -28,16 +28,15 @@ const LANGUAGES = [
 type LanguageCode = (typeof LANGUAGES)[number]["code"];
 type ThemeChoice = "system" | "light" | "dark";
 
-const FOOTER_COPY = {
-  memoryLine: "Built with ❤️ to help individuals with dementia and Alzheimer's stay connected to their memories",
-  tagline: "CogniConnect - Connecting Minds, Preserving Memories",
-};
-
 const THEME_CHOICES: { value: ThemeChoice; label: string; Icon: typeof Monitor }[] = [
-  { value: "system", label: "System", Icon: Monitor },
   { value: "light", label: "Light", Icon: Sun },
   { value: "dark", label: "Dark", Icon: Moon },
+  { value: "system", label: "System", Icon: Monitor },
 ];
+
+function languageLabel(code: LanguageCode) {
+  return code === "mni-Mtei" ? "MNI" : code.toUpperCase();
+}
 
 function isLanguageCode(code: unknown): code is LanguageCode {
   return LANGUAGES.some((language) => language.code === code);
@@ -49,6 +48,8 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
   const [language, setLanguage] = useState<LanguageCode | "">("");
   const [languageLoaded, setLanguageLoaded] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
+  const languageMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -69,6 +70,22 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!languageMenuOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!languageMenuRef.current?.contains(event.target as Node)) setLanguageMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLanguageMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [languageMenuOpen]);
 
   const saveLanguage = async (code: LanguageCode) => {
     const previous = language || "en";
@@ -102,49 +119,67 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
           <Link className="flex min-h-11 items-center rounded px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" href="/privacy">Privacy</Link>
         </nav>
 
-        <div className="flex w-full flex-wrap items-center justify-center gap-2">
-          <label className="flex h-11 min-w-0 max-w-full items-center gap-2 rounded-lg border border-border bg-card px-2 text-foreground focus-within:ring-2 focus-within:ring-primary">
-            <Globe aria-hidden="true" className="h-5 w-5 shrink-0 text-muted-foreground" />
-            <span className="sr-only">Language</span>
-            <select
-              aria-label="Language"
-              className="h-full min-w-0 max-w-40 bg-transparent text-base outline-none"
-              dir={language === "ur" ? "rtl" : "ltr"}
-              value={languageLoaded ? language || "en" : ""}
+        <div className="flex w-full flex-wrap items-center justify-center gap-x-6 gap-y-2">
+          <div className="relative" ref={languageMenuRef}>
+            <button
+              type="button"
+              aria-label={`Language: ${languageLabel(language || "en")}`}
+              aria-haspopup="menu"
+              aria-expanded={languageMenuOpen}
               disabled={!languageLoaded}
-              onChange={(event) => {
-                if (isLanguageCode(event.target.value)) void saveLanguage(event.target.value);
-              }}
+              onClick={() => setLanguageMenuOpen((open) => !open)}
+              className="flex min-h-11 items-center gap-2 px-2 text-base text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60"
             >
-              {!languageLoaded && <option value="">Loading…</option>}
-              {LANGUAGES.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
-            </select>
-          </label>
+              <Globe aria-hidden="true" className="h-5 w-5" />
+              <span>{languageLabel(language || "en")}</span>
+              <ChevronDown aria-hidden="true" className="h-4 w-4" />
+            </button>
+            {languageMenuOpen && (
+              <div role="menu" aria-label="Choose language" className="absolute left-1/2 top-full z-50 mt-1 max-h-72 w-max min-w-52 -translate-x-1/2 overflow-y-auto rounded-md border border-border bg-card p-1 text-left shadow-lg">
+                {LANGUAGES.map((item) => {
+                  const selected = language === item.code;
+                  return (
+                    <button
+                      key={item.code}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      onClick={() => {
+                        setLanguageMenuOpen(false);
+                        void saveLanguage(item.code);
+                      }}
+                      className="flex min-h-11 w-full items-center gap-2 rounded px-3 py-2 text-left text-base text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      <span className="w-10 shrink-0 font-semibold">{languageLabel(item.code)}</span>
+                      <span>– {item.name}</span>
+                      {selected && <Check aria-hidden="true" className="ml-auto h-4 w-4" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-          <div className="flex h-12 items-center rounded-lg border border-border bg-card p-0.5" role="group" aria-label="Theme">
+          <div className="flex min-h-11 items-center gap-1 text-base text-muted-foreground" role="group" aria-label="Theme">
+            <span className="mr-1">Theme</span>
             {THEME_CHOICES.map(({ value, label, Icon }) => (
               <button
                 key={value}
                 type="button"
-                aria-label={label}
+                aria-label={value === "system" ? "Use system theme" : `${label} theme`}
+                title={value === "system" ? "Use system theme" : `${label} theme`}
                 aria-pressed={isSelected(value)}
                 onClick={() => setTheme(value)}
-                className={`flex h-11 min-w-11 items-center justify-center gap-1 rounded-md px-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                  isSelected(value) ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                className={`relative flex min-h-11 min-w-11 items-center justify-center px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                  isSelected(value) ? "text-primary after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:bg-primary" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
-                <span>{label}</span>
+                <Icon aria-hidden="true" className="h-5 w-5 shrink-0" />
               </button>
             ))}
           </div>
         </div>
         {saveError && <p className="text-sm text-destructive" role="status">Could not save language. Try again.</p>}
-
-        <div className="space-y-1 text-sm leading-relaxed text-muted-foreground">
-          <p>{FOOTER_COPY.memoryLine}</p>
-          <p>{FOOTER_COPY.tagline}</p>
-        </div>
       </div>
     </section>
   );
