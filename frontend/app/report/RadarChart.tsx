@@ -6,6 +6,7 @@ import {
   Legend,
   LineElement,
   PointElement,
+  type Plugin,
   RadarController,
   RadialLinearScale,
   Tooltip,
@@ -34,6 +35,36 @@ const DARK: Palette = {
   border: "hsl(217 16% 48%)",
 };
 
+function centeredPointLabels(color: string): Plugin<"radar"> {
+  return {
+    id: "centered-radar-point-labels",
+    afterDraw(chart) {
+      const scale = chart.scales.r as typeof chart.scales.r & {
+        _pointLabelItems?: { visible: boolean; x: number; top: number; bottom: number }[];
+      };
+      const items = scale?._pointLabelItems;
+      if (!items) return;
+
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.font = `14px ${chart.options.font?.family ?? ChartJS.defaults.font.family}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      chart.data.labels?.forEach((label, index) => {
+        const item = items[index];
+        if (!item?.visible) return;
+        const lines = (Array.isArray(label) ? label : [label]).map(String);
+        const lineHeight = (item.bottom - item.top) / lines.length;
+        lines.forEach((line, lineIndex) => {
+          ctx.fillText(line, item.x, item.top + lineHeight * (lineIndex + 0.5));
+        });
+      });
+      ctx.restore();
+    },
+  };
+}
+
 export default function RadarChart({ scores, forceLight = false }: { scores: Record<Area, number | null>; forceLight?: boolean }) {
   const { resolvedTheme } = useTheme();
 
@@ -55,7 +86,7 @@ export default function RadarChart({ scores, forceLight = false }: { scores: Rec
 
   return (
     <div className="mx-auto w-full max-w-xl" aria-label="Radar chart of observed scores for the current day">
-      <Radar data={chartData} options={{
+      <Radar data={chartData} plugins={[centeredPointLabels(colors.foreground)]} options={{
           responsive: true,
           maintainAspectRatio: true,
           plugins: {
@@ -80,7 +111,7 @@ export default function RadarChart({ scores, forceLight = false }: { scores: Rec
               grid: { color: colors.border },
               angleLines: { color: colors.border },
               ticks: { stepSize: 20, color: colors.muted, showLabelBackdrop: false, callback: (value) => Number(value) === 0 ? "" : `${value}%` },
-              pointLabels: { color: colors.foreground, font: { size: 14 }, centerPointLabels: true },
+              pointLabels: { color: "rgba(0, 0, 0, 0)", font: { size: 14 } },
             },
           },
         }}
