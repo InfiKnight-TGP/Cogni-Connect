@@ -102,7 +102,7 @@ function CaregiverHome() {
   };
 
   return (
-    <main className="mx-auto max-w-screen-lg space-y-8 px-4 pb-16 pt-24">
+    <main className="mx-auto max-w-screen-lg space-y-8 px-4 pb-16 pt-24 lg:pt-8">
       <div>
         <h1 className="text-3xl font-bold">Caregiver Dashboard</h1>
         <p className="mt-1 text-muted-foreground">

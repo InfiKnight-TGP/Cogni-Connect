@@ -20,15 +20,15 @@ c = app.api.test_client()
 # runtime data files are created empty when missing
 for f, default in {'qas.json': [], 'performance_data.json': {'scores': [], 'game_scores': []},
                    'video_journals.json': {}, 'routines.json': {'steps': []},
-                   'settings.json': {'pin': '1234', 'patient_name': ''}}.items():
+                   'settings.json': {'pin': '1234', 'patient_name': '', 'language': 'en'}}.items():
     assert json.load(open(f, encoding='utf-8')) == default, f
 assert c.get('/questions').get_json() == {'questions': []}
 # caregiver PIN (default 1234) and patient name
 assert c.post('/caregiver/unlock', json={'pin': '1234'}).status_code == 200
 assert c.post('/caregiver/unlock', json={'pin': '0000'}).status_code == 403
 assert c.post('/caregiver/unlock', json={}).status_code == 403
-assert c.post('/settings', json={'patient_name': ' Lakshmi '}).get_json() == {'patient_name': 'Lakshmi'}
-assert c.get('/settings').get_json() == {'patient_name': 'Lakshmi'}
+assert c.post('/settings', json={'patient_name': ' Lakshmi '}).get_json() == {'patient_name': 'Lakshmi', 'language': 'en'}
+assert c.get('/settings').get_json() == {'patient_name': 'Lakshmi', 'language': 'en'}
 assert json.load(open('settings.json', encoding='utf-8'))['pin'] == '1234'
 r = c.get('/people'); people = r.get_json()
 print('import:', [(p['id'], p['name'], p['photo']) for p in people])

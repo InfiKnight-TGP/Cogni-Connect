@@ -57,7 +57,7 @@ export default function PeoplePage() {
   return (
     <>
       <Nav />
-      <main className="min-h-screen pt-24">
+      <main className="min-h-screen pt-24 lg:pt-8">
         <div className="mx-auto max-w-screen-lg space-y-8 px-4 py-8">
           <h1 className="text-4xl font-bold">{caregiver ? "People" : "My People"}</h1>
 

@@ -83,7 +83,7 @@ export default function Page() {
     <>
       <Nav />
 
-      <main className="flex min-h-screen w-screen items-start justify-center overflow-x-hidden pt-24">
+      <main className="flex min-h-screen w-full items-start justify-center overflow-x-hidden pt-24 lg:pt-8">
         <div className="flex h-full w-full max-w-screen-lg flex-col items-start justify-start px-4">
           {generatingQuestions && (progress <= -1 || myDay) ? (
             <div className="flex w-full flex-col items-center justify-center py-20">

@@ -49,3 +49,20 @@
     --ring: 224.3 76.3% 48%;
   }
 }
+
+/* App shell: leave room for the sidebar (desktop) or the bottom tab bar (phone) */
+@media (min-width: 1024px) {
+  body:has([data-app-shell]) {
+    padding-inline-start: 260px;
+  }
+}
+@media (max-width: 1023px) {
+  body:has([data-app-shell]) {
+    padding-bottom: 5rem;
+  }
+}
+@media print {
+  body:has([data-app-shell]) {
+    padding: 0;
+  }
+}

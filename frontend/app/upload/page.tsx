@@ -172,7 +172,7 @@ function UploadVideos() {
 
   return (
     <>
-      <main className="flex min-h-screen w-screen items-start justify-center pt-24">
+      <main className="flex min-h-screen w-full items-start justify-center pt-24 lg:pt-8">
         <div className="w-full max-w-screen-lg space-y-8 px-4 py-8">
           {/* Header */}
           <div className="text-center">

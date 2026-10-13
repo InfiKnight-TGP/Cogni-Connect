@@ -1,28 +1,59 @@
 "use client";
 
-import { BrainCircuit } from "lucide-react";
+import {
+  BrainCircuit,
+  CalendarCheck,
+  CalendarDays,
+  FileText,
+  Gamepad2,
+  Home,
+  Image as ImageIcon,
+  Lock,
+  LogOut,
+  Star,
+  TrendingUp,
+  Upload,
+  Users2,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import React, { useState } from "react";
 import { PinDialog } from "./caregiver";
-import { ThemeToggle } from "./theme-toggle";
 import { lockCaregiver, useCaregiver } from "@/lib/mode";
 
-const PATIENT_LINKS = [
-  { href: "/", label: "Home" },
-  { href: "/today", label: "Today" },
-  { href: "/explore", label: "My Memories" },
-  { href: "/people", label: "My People" },
+interface NavItem {
+  href: string;
+  label: string;
+  short: string; // label for the phone tab bar
+  icon: React.ComponentType<{ className?: string }>;
+  color: string; // icon colour (works in light and dark mode)
+}
+
+const PATIENT_LINKS: NavItem[] = [
+  { href: "/", label: "Home", short: "Home", icon: Home, color: "text-orange-500" },
+  { href: "/today", label: "Today", short: "Today", icon: CalendarCheck, color: "text-green-600 dark:text-green-500" },
+  { href: "/explore", label: "My Memories", short: "Memories", icon: ImageIcon, color: "text-sky-500" },
+  { href: "/my-progress", label: "My Progress", short: "Progress", icon: Star, color: "text-amber-500" },
+  { href: "/people", label: "My People", short: "People", icon: Users2, color: "text-pink-500" },
 ];
 
-const CAREGIVER_LINKS = [
-  { href: "/caregiver", label: "Home" },
-  { href: "/progress", label: "Progress" },
-  { href: "/upload", label: "Add Videos" },
-  { href: "/people", label: "People" },
-  { href: "/routine", label: "Daily Routine" },
-  { href: "/games", label: "All Games" },
+const CAREGIVER_LINKS: NavItem[] = [
+  { href: "/caregiver", label: "Home", short: "Home", icon: Home, color: "text-orange-500" },
+  { href: "/progress", label: "Progress", short: "Progress", icon: TrendingUp, color: "text-green-600 dark:text-green-500" },
+  { href: "/report", label: "Doctor's Report", short: "Report", icon: FileText, color: "text-sky-500" },
+  { href: "/upload", label: "Add Videos", short: "Videos", icon: Upload, color: "text-violet-500" },
+  { href: "/people", label: "People", short: "People", icon: Users2, color: "text-pink-500" },
+  { href: "/routine", label: "Daily Routine", short: "Routine", icon: CalendarDays, color: "text-teal-500" },
+  { href: "/games", label: "All Games", short: "Games", icon: Gamepad2, color: "text-amber-500" },
 ];
+
+/** Duolingo-style "LEARN" highlight: rounded border + tint on the active item. */
+const itemClass = (active: boolean) =>
+  `flex min-h-14 w-full items-center gap-4 rounded-2xl border-2 px-4 py-2 text-lg font-semibold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/50 ${
+    active
+      ? "border-primary bg-primary/10 text-primary"
+      : "border-transparent text-foreground hover:bg-muted"
+  }`;
 
 export default function Nav() {
   const [caregiver] = useCaregiver();
@@ -30,50 +61,98 @@ export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
   const links = caregiver ? CAREGIVER_LINKS : PATIENT_LINKS;
+  const isActive = (href: string) => pathname === href;
+
+  const modeButton = caregiver
+    ? {
+        label: "Exit caregiver",
+        short: "Exit",
+        icon: LogOut,
+        onClick: () => {
+          lockCaregiver();
+          router.push("/");
+        },
+      }
+    : { label: "Caregiver", short: "Caregiver", icon: Lock, onClick: () => setPinOpen(true) };
+  const ModeIcon = modeButton.icon;
 
   return (
-    <div className="fixed z-50 flex min-h-16 w-screen items-center justify-center border-b border-border bg-background">
-      <nav className="flex w-full max-w-screen-lg flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-2">
-        <Link href={caregiver ? "/caregiver" : "/"}>
-          <div className="flex items-center text-lg font-semibold">
-            <BrainCircuit className="mr-2 h-6 w-6 text-primary" /> Cogni Connect
-          </div>
+    <>
+      {/* Phone: slim top bar with the logo */}
+      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center border-b border-border bg-background px-4 print:hidden lg:hidden">
+        <Link href={caregiver ? "/caregiver" : "/"} className="flex min-h-12 items-center text-xl font-bold">
+          <BrainCircuit className="me-2 h-7 w-7 text-primary" /> Cogni Connect
         </Link>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-lg font-medium">
-          {links.map((l) => (
+      </header>
+
+      {/* Desktop: left sidebar */}
+      <aside
+        data-app-shell
+        className="fixed inset-y-0 start-0 z-40 hidden w-[260px] flex-col border-e-2 border-border bg-background px-4 py-6 print:hidden lg:flex"
+      >
+        <Link
+          href={caregiver ? "/caregiver" : "/"}
+          className="mb-6 flex min-h-12 items-center px-3 text-2xl font-bold text-primary"
+        >
+          <BrainCircuit className="me-2 h-8 w-8" /> Cogni Connect
+        </Link>
+        <nav className="flex flex-1 flex-col gap-2" aria-label="Main">
+          {links.map((l) => {
+            const Icon = l.icon;
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                aria-current={isActive(l.href) ? "page" : undefined}
+                className={itemClass(isActive(l.href))}
+              >
+                <Icon className={`h-8 w-8 shrink-0 ${l.color}`} />
+                <span>{l.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="flex flex-col gap-2 border-t border-border pt-4">
+          <button type="button" className={itemClass(false)} onClick={modeButton.onClick}>
+            <ModeIcon className="h-8 w-8 shrink-0 text-muted-foreground" />
+            <span>{modeButton.label}</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Phone: bottom tab bar (scrolls sideways if there are many items) */}
+      <nav
+        aria-label="Main"
+        className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t-2 border-border bg-background print:hidden lg:hidden"
+      >
+        {links.map((l) => {
+          const Icon = l.icon;
+          const active = isActive(l.href);
+          return (
             <Link
               key={l.href}
               href={l.href}
-              aria-current={pathname === l.href ? "page" : undefined}
-              className={`flex min-h-12 items-center ${
-                pathname === l.href ? "text-primary underline underline-offset-8" : ""
+              aria-current={active ? "page" : undefined}
+              className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${
+                active ? "border-primary text-primary" : "border-transparent text-foreground"
               }`}
             >
-              {l.label}
+              <Icon className={`h-7 w-7 ${l.color}`} />
+              <span className="whitespace-nowrap">{l.short}</span>
             </Link>
-          ))}
-          {caregiver ? (
-            <button
-              className="flex min-h-12 items-center rounded-md border border-border px-3 text-lg"
-              onClick={() => {
-                lockCaregiver();
-                router.push("/");
-              }}
-            >
-              Exit caregiver
-            </button>
-          ) : (
-            <button
-              className="flex min-h-12 items-center rounded-md border border-border px-3 text-lg text-muted-foreground"
-              onClick={() => setPinOpen(true)}
-            >
-              Caregiver
-            </button>
-          )}
-          <ThemeToggle />
-        </div>
+          );
+        })}
+        <button
+          type="button"
+          onClick={modeButton.onClick}
+          className="flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 border-transparent px-1 text-base font-semibold text-muted-foreground"
+        >
+          <ModeIcon className="h-7 w-7" />
+          <span className="whitespace-nowrap">{modeButton.short}</span>
+        </button>
       </nav>
+
       <PinDialog open={pinOpen} onOpenChange={setPinOpen} onUnlocked={() => router.push("/caregiver")} />
-    </div>
+    </>
   );
 }

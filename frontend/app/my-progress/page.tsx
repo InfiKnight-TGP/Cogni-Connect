@@ -114,7 +114,7 @@ export default function MyProgressPage() {
   return (
     <>
       <Nav />
-      <main className="mx-auto max-w-screen-lg space-y-8 px-4 pb-16 pt-28">
+      <main className="mx-auto max-w-screen-lg space-y-8 px-4 pb-16 pt-28 lg:pt-8">
         <header className="space-y-2">
           <h1 className="text-4xl font-bold sm:text-5xl">My Progress</h1>
           <p className="text-2xl font-medium text-muted-foreground">

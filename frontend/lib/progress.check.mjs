@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import {
   daysPlayedThisWeek, dayKey, declines, lastFourWeeks, skillArea, gameArea, toEntries, trend, weeklyAverages,
-  buildRadarChartData,
+  buildRadarChartData, patientStatsFromEntries,
 } from "./progress.ts";
 
 const today = new Date(2026, 9, 9); // Fri 9 Oct 2026, local time
@@ -136,5 +136,27 @@ assert.equal(radarData.datasets[0].data[0], 80); // Memory: 80
 assert.equal(radarData.datasets[0].data[1], null); // Attention: stays null, never 0
 assert.equal(radarData.datasets[0].data[2], 90); // Executive Function: 90
 assert.equal(radarData.datasets[0].data[3], null); // Recognition & Orientation: stays null, never 0
+
+// Patient stats normalize ISO timestamps to local days, count Daily Recall once, and ignore replays.
+const patientStats = patientStatsFromEntries(
+  toEntries({
+    scores: [
+      { score: 90, date: new Date(2026, 9, 9).toISOString() },
+      { score: 70, date: "2026-10-08", game_id: "daily_recall", level: 1 },
+    ],
+    game_scores: [
+      { game_id: "mole-path", level: 2, score: 40, date: "2026-10-09" },
+      { game_id: "mole-path", level: 2, score: 85, date: "2026-10-09" },
+      { game_id: "mole-path", level: 2, score: 85, date: "2026-10-09" },
+      { game_id: "odd-one-out", level: 1, score: 60, date: "2026-10-03" },
+    ],
+  }),
+  today,
+);
+assert.equal(patientStats.streak, 2); // ISO Daily Recall today and Daily Recall yesterday
+assert.equal(patientStats.doneToday, 2); // Daily Recall and mole-path
+assert.equal(patientStats.starsThisWeek, 3 + 2 + 3); // recall on each day and best mole-path replay
+assert.equal(patientStatsFromEntries(toEntries({ scores: [{ score: 50, date: "2026-10-08" }] }), today).streak, 1);
+assert.equal(patientStatsFromEntries(toEntries({}), today).streak, 0);
 
 console.log("progress checks passed");
