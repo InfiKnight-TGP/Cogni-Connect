@@ -278,7 +278,7 @@ export function trend(series: (number | null)[]): "up" | "down" | "steady" | nul
  */
 export function buildRadarChartData(scores: Record<Area, number | null>) {
   return {
-    labels: [...AREAS],
+    labels: ["Memory", "Attention", ["Executive", "Function"], ["Recognition", "&", "Orientation"]],
     datasets: [
       {
         label: "Observed task performance",

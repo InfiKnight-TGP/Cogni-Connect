@@ -331,7 +331,7 @@ function Report() {
           </div>
           {dayReport?.games && dayReport.games.length > 0 ? (
             <>
-              <ReportRadar scores={radarScores} />
+              <ReportRadar scores={radarScores} forceLight />
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm border-collapse">
                   <thead>
@@ -362,7 +362,7 @@ function Report() {
             </>
           ) : (
             <p className="py-6 text-center text-sm text-slate-500">
-              No activities completed on this day. Missing domains are not measured.
+              No activities on this day yet.
             </p>
           )}
         </div>

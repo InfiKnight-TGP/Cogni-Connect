@@ -149,11 +149,19 @@ const radarData = buildRadarChartData({
   "Executive Function": 90,
   "Recognition & Orientation": null,
 });
+assert.deepEqual(radarData.labels, ["Memory", "Attention", ["Executive", "Function"], ["Recognition", "&", "Orientation"]]);
 assert.equal(radarData.datasets[0].spanGaps, false);
 assert.equal(radarData.datasets[0].data[0], 80); // Memory: 80
 assert.equal(radarData.datasets[0].data[1], null); // Attention: stays null, never 0
 assert.equal(radarData.datasets[0].data[2], 90); // Executive Function: 90
 assert.equal(radarData.datasets[0].data[3], null); // Recognition & Orientation: stays null, never 0
+const emptyRadarData = buildRadarChartData({
+  Memory: null,
+  Attention: null,
+  "Executive Function": null,
+  "Recognition & Orientation": null,
+});
+assert.deepEqual(emptyRadarData.datasets[0].data, [null, null, null, null]);
 
 // Patient stats normalize ISO timestamps to local days, count Daily Recall once, and ignore replays.
 const patientStats = patientStatsFromEntries(
