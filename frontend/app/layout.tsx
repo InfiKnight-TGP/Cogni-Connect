@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import localFont from "next/font/local";
 import { ThemeProvider } from "@/components/ui/theme";
-import Nav from "@/components/nav";
+import Footer from "@/components/footer";
 
 const satoshi = localFont({
   src: "../public/fonts/Satoshi-Variable.ttf",
@@ -30,6 +30,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
+          <Footer />
         </ThemeProvider>
       </body>
     </html>
