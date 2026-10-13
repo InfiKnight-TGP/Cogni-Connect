@@ -13,7 +13,7 @@ export default function RightColumn() {
   const done = Math.min(stats?.doneToday ?? 0, GOAL);
 
   return (
-    <aside className="sticky top-8 hidden w-80 shrink-0 space-y-6 self-start xl:block" aria-label="Your stats">
+    <aside className="sticky top-24 hidden w-80 shrink-0 space-y-6 self-start xl:block" aria-label="Your stats">
       <div className="flex gap-3">
         <div className="flex flex-1 items-center gap-2 rounded-2xl border-2 border-border bg-card p-4 text-lg font-bold">
           <span aria-hidden className="text-2xl">🔥</span>

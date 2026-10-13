@@ -132,6 +132,42 @@ export function toEntries(perf: { scores?: RawScore[]; game_scores?: RawScore[] 
   ];
 }
 
+export interface PatientStats {
+  streak: number;
+  starsThisWeek: number;
+  doneToday: number;
+}
+
+const starsFor = (score: number) => (score >= 80 ? 3 : score >= 50 ? 2 : 1);
+
+/** Calculate patient stats from the normalized, level-only activity entries. */
+export function patientStatsFromEntries(entries: Entry[], now: Date): PatientStats {
+  const results = entries.filter((entry) => entry.level !== undefined);
+  const today = dayKey(now);
+  const days = new Set(results.map((entry) => entry.day));
+
+  // Keep the current streak visible until the end of the day if today has no activity yet.
+  let cursor = days.has(today) ? now : addDays(now, -1);
+  let streak = 0;
+  while (days.has(dayKey(cursor))) {
+    streak++;
+    cursor = addDays(cursor, -1);
+  }
+
+  const monday = addDays(now, -((now.getDay() + 6) % 7));
+  const week = new Set(Array.from({ length: 7 }, (_, i) => dayKey(addDays(monday, i))));
+  const bestByGameDay = new Map<string, number>();
+  for (const entry of results) {
+    if (!week.has(entry.day)) continue;
+    const key = `${entry.day}|${entry.gameId}`;
+    bestByGameDay.set(key, Math.max(bestByGameDay.get(key) ?? -Infinity, entry.score));
+  }
+  const starsThisWeek = Array.from(bestByGameDay.values()).reduce((sum, score) => sum + starsFor(score), 0);
+  const doneToday = new Set(results.filter((entry) => entry.day === today).map((entry) => entry.gameId)).size;
+
+  return { streak, starsThisWeek, doneToday };
+}
+
 export interface Week {
   start: string;
   end: string;
@@ -227,41 +263,4 @@ export function buildRadarChartData(scores: Record<Area, number | null>) {
       },
     ],
   };
-}
-
-export const starsFor = (score: number) => (score >= 80 ? 3 : score >= 50 ? 2 : 1);
-
-export interface PatientStats {
-  streak: number; // consecutive local days with at least one activity
-  starsThisWeek: number; // best score per game per day only, so replays don't add stars
-  doneToday: number; // distinct activities finished today
-}
-
-/** Right-column stats for the patient. Dates are normalised by toEntries (ISO timestamps -> local day). */
-export function patientStats(perf: { scores?: RawScore[]; game_scores?: RawScore[] }, now: Date): PatientStats {
-  // One "level" entry per played result (Daily Recall's area split entries are skipped)
-  const results = toEntries(perf).filter((e) => e.level !== undefined);
-  const days = new Set(results.map((e) => e.day));
-  const today = dayKey(now);
-
-  // A streak still counts if today has nothing yet but yesterday did
-  let cursor = days.has(today) ? now : addDays(now, -1);
-  let streak = 0;
-  while (days.has(dayKey(cursor))) {
-    streak++;
-    cursor = addDays(cursor, -1);
-  }
-
-  const monday = addDays(now, -((now.getDay() + 6) % 7));
-  const week = new Set([0, 1, 2, 3, 4, 5, 6].map((i) => dayKey(addDays(monday, i))));
-  const best: Record<string, number> = {};
-  for (const e of results) {
-    if (!week.has(e.day)) continue;
-    const k = `${e.day}|${e.gameId}`;
-    best[k] = Math.max(best[k] ?? 0, e.score);
-  }
-  const starsThisWeek = Object.values(best).reduce((sum, s) => sum + starsFor(s), 0);
-
-  const doneToday = new Set(results.filter((e) => e.day === today).map((e) => e.gameId)).size;
-  return { streak, starsThisWeek, doneToday };
 }
