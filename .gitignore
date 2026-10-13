@@ -11,6 +11,12 @@ graphify-out/
 # Environments
 .env
 .env*.local
+.env.*
+!.env.example
+!**/.env.example
+*.tsbuildinfo
+*.log
+backend/platform-data/
 
 # Python
 .venv/
