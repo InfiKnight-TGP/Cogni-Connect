@@ -40,6 +40,8 @@ function centeredPointLabels(color: string): Plugin<"radar"> {
     id: "centered-radar-point-labels",
     afterDraw(chart) {
       const scale = chart.scales.r as typeof chart.scales.r & {
+        xCenter: number;
+        yCenter: number;
         _pointLabelItems?: { visible: boolean; x: number; top: number; bottom: number }[];
       };
       const items = scale?._pointLabelItems;
@@ -56,8 +58,19 @@ function centeredPointLabels(color: string): Plugin<"radar"> {
         if (!item?.visible) return;
         const lines = (Array.isArray(label) ? label : [label]).map(String);
         const lineHeight = (item.bottom - item.top) / lines.length;
+        const labelHeight = lineHeight * lines.length;
+        const labelWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
+        const centerY = (item.top + item.bottom) / 2;
+        const dx = item.x - scale.xCenter;
+        const dy = centerY - scale.yCenter;
+        const distance = Math.hypot(dx, dy) || 1;
+        const outwardX = dx / distance;
+        const outwardY = dy / distance;
+        const offset = Math.abs(outwardX) * labelWidth / 2 + Math.abs(outwardY) * labelHeight / 2 + 8;
+        const labelCenterX = item.x + outwardX * offset;
+        const labelCenterY = centerY + outwardY * offset;
         lines.forEach((line, lineIndex) => {
-          ctx.fillText(line, item.x, item.top + lineHeight * (lineIndex + 0.5));
+          ctx.fillText(line, labelCenterX, labelCenterY - labelHeight / 2 + lineHeight * (lineIndex + 0.5));
         });
       });
       ctx.restore();
