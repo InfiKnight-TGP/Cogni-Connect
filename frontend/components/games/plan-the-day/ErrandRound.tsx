@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { PLACES } from "./data";
 import { DAY_START, ErrandSet, formatHour, Place, ruleBreaker, validOrders } from "./rules";
 import { useSlots } from "./useSlots";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
 
 const LEG_SECONDS = 1.2; // walking time between two places
 
@@ -96,13 +98,15 @@ export default function ErrandRound({ set, onDone }: { set: ErrandSet; onDone: (
   const [tries, setTries] = useState(0);
   const [breaker, setBreaker] = useState<string | null>(null);
   const [points, setPoints] = useState(0);
+  const log = useAnswerLog("plan-the-day", "Executive Function", `${rule.text}:${tries}`, 3);
 
   const placed = slots.filter((s): s is number => s !== null).map((i) => errands[i]);
   const route: Place[] = ["home", ...placed.map((e) => e.place)];
   const breakerPlace = errands.find((e) => e.id === breaker)?.place ?? null;
 
-  const go = () => {
+  const go = (input?: AnswerInput) => {
     const order = placed.map((e) => e.id);
+    log(!ruleBreaker(order, rule), input);
     const attempt = tries + 1;
     setBreaker(null);
     setTries(attempt);
@@ -120,6 +124,7 @@ export default function ErrandRound({ set, onDone }: { set: ErrandSet; onDone: (
 
   return (
     <div className="space-y-6">
+      <VoiceQuestion prompt={`${rule.text}. Choose the next errand, or say Go when ready.`} disabled={phase === "walk"} options={phase === "done" ? [{ id: "next", label: "Next" }] : [...tray.map(i => ({ id: String(i), label: errands[i].label })), ...(full ? [{ id: "go", label: "Go" }] : []), ...slots.flatMap((card, i) => card === null ? [] : [{ id: `remove:${i}`, label: `Remove ${errands[card].label}` }])]} onAnswer={(id, input) => { if (id === "next") onDone(points); else if (id === "go") go(input); else if (id.startsWith("remove:")) sendBack(Number(id.split(":")[1])); else place(Number(id)); }} />
       <div>
         <h2 className="text-2xl font-bold md:text-3xl">Errand planner</h2>
         <p className="mt-1 text-xl">Tap the errands in order, then press Go.</p>
@@ -213,7 +218,7 @@ export default function ErrandRound({ set, onDone }: { set: ErrandSet; onDone: (
             Next
           </Button>
         ) : (
-          <Button size="lg" className="h-14 px-12 text-xl" disabled={!full || phase === "walk"} onClick={go}>
+          <Button size="lg" className="h-14 px-12 text-xl" disabled={!full || phase === "walk"} onClick={() => go()}>
             {phase === "walk" ? "Walking…" : "Go"}
           </Button>
         )}

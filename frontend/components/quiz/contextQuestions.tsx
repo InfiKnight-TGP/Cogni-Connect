@@ -13,6 +13,8 @@ import VideoModal from "../videoModal";
 import { format } from "date-fns";
 import { API_URL } from "@/lib/api";
 import { isCaregiverUnlocked } from "@/lib/mode";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
 
 export default function ContextQuestions({
   setProgress,
@@ -297,8 +299,12 @@ function Question({
   setTab: React.Dispatch<React.SetStateAction<string>>;
 }) {
   const [value, setValue] = useState("");
+  const [error, setError] = useState("");
+  const [input, setInput] = useState<AnswerInput>({ method: "typed", responseMs: null });
+  const log = useAnswerLog("context-recall", "Memory", data.question, 1);
 
   const onSubmit = async () => {
+    try {
     const res = await fetch("/api/accuracy", {
       method: "POST",
       body: JSON.stringify({
@@ -313,6 +319,7 @@ function Question({
     });
 
     const jsonData = await res.json();
+    if (!res.ok || !Number.isFinite(Number(jsonData.data))) throw new Error("Answer evaluation is unavailable. Your answer is kept and has not been scored. Please try again when connected with an evaluator configured.");
 
     const newFeedback = [...feedback];
     newFeedback[parseInt(n) - 1].submitted = true;
@@ -320,9 +327,12 @@ function Question({
     const scoreValue = typeof jsonData.data === 'string' 
       ? parseInt(jsonData.data) 
       : jsonData.data;
-    newFeedback[parseInt(n) - 1].feedback = isNaN(scoreValue) ? 0 : scoreValue;
+    newFeedback[parseInt(n) - 1].feedback = scoreValue;
 
     setFeedback(newFeedback);
+    log(scoreValue >= 6, input);
+    setError("");
+    } catch (failure) { setError((failure as Error).message); }
   };
 
   const goToNextQuestion = () => {
@@ -341,10 +351,13 @@ function Question({
         value={value}
         onChange={(e) => {
           setValue(e.target.value);
+          setInput({ method: "typed", responseMs: null });
         }}
         placeholder="Answer the question here."
         className="mt-8 h-12 max-h-36 w-full text-lg"
       />
+      <VoiceQuestion prompt={data.question} freeText options={[]} disabled={feedback[parseInt(n) - 1].submitted} onAnswer={(answer, spoken) => { setValue(answer); setInput(spoken); }} />
+      {error && <p role="status">{error}</p>}
       <Button
         onClick={() => onSubmit()}
         size="lg"

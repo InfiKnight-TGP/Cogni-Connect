@@ -14,9 +14,10 @@ export default function EmergencyButton() {
     try {
       const locations = readSupport(patient).records.filter(row => row.kind === "location");
       const last = locations.sort((a, b) => b.updatedAt - a.updatedAt)[0];
-      putSupport(patient, "sos", { requestedAt: Date.now(), location: last?.data ?? null });
+      const consent = readSupport(patient).records.find(row => row.id === "location-consent")?.data;
+      const alert = putSupport(patient, "sos", { requestedAt: Date.now(), location: consent?.sync ? last?.data ?? null : null });
       setMessage("Help request saved. Trying to reach your caregiver…");
-      void syncSupport(patient).then(() => setMessage("Your help request reached the caregiver account.")).catch(() => setMessage("Your request is saved on this device but has NOT reached your caregiver. Please call them or ask someone nearby for help.")).finally(() => { sending.current = false; setRemaining(null); });
+      void syncSupport(patient).then(() => { if (readSupport(patient).pending[alert.id]) throw new Error("Still queued"); setMessage("Your help request reached the caregiver account. Please call if you need immediate help."); }).catch(() => setMessage("Your request is saved on this device but has NOT reached your caregiver. Please call them or ask someone nearby for help.")).finally(() => { sending.current = false; setRemaining(null); });
     } catch { setMessage("Could not save or send your request. Please call your caregiver or ask someone nearby for help."); sending.current = false; setRemaining(null); }
   }, [remaining]);
   return <div data-voice-ignore className="fixed right-3 top-3 z-[110] max-w-sm print:hidden">

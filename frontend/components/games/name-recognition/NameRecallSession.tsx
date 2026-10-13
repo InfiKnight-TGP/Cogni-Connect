@@ -101,7 +101,8 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
   const choose = (person: Person, input: AnswerInput = { method: "tap", responseMs: null }) => {
     const round = rounds[roundIndex];
     if (!round || reinforcement || feedbackActive.current) return;
-    logAnswer(person.id === round.target.id, input);
+    if (revealed && person.id !== round.target.id) return;
+    if (!revealed) logAnswer(person.id === round.target.id, input);
     if (person.id !== round.target.id) {
       if (revealed) return;
       setShakingId(person.id);

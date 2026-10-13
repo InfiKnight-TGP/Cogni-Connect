@@ -1,10 +1,10 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { crossword, type PersonalWord } from "@/lib/interaction/content";
 import VoiceQuestion from "@/components/interaction/VoiceQuestion";
 import { useAnswerLog } from "@/components/interaction/useAnswerLog";
 import { readSkill } from "@/lib/interaction/events";
-import { readSupport } from "@/lib/interaction/support-store";
+import { putSupport, readSupport } from "@/lib/interaction/support-store";
 
 export default function PersonalCrossword() {
   const [words, setWords] = useState<PersonalWord[]>([]);
@@ -13,6 +13,23 @@ export default function PersonalCrossword() {
   const [solved, setSolved] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
   const [knob, setKnob] = useState(2);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    try {
+      const patient = localStorage.getItem("cogni:patient") || "local-patient";
+      const saved = readSupport(patient).records.find(row => row.id === "crossword-current")?.data;
+      if (saved && Array.isArray(saved.words) && Array.isArray(saved.solved)) {
+        setWords(saved.words as PersonalWord[]); setSolved(saved.solved as string[]);
+        setIndex(Number(saved.index) || 0); setKnob(Number(saved.knob) || 2);
+      }
+    } catch { setNotice("The saved puzzle could not be opened. You can make a new one."); }
+    setLoaded(true);
+  }, []);
+  useEffect(() => {
+    if (!loaded || !words.length) return;
+    try { putSupport(localStorage.getItem("cogni:patient") || "local-patient", "crossword", { words, solved, index, knob }, "crossword-current"); }
+    catch { setNotice("Your puzzle could not be saved. Keep this screen open."); }
+  }, [loaded, words, solved, index, knob]);
   const puzzle = useMemo(() => crossword(words.filter(word => word.answer.length <= 6 + knob * 2)), [words, knob]);
   const word = puzzle.words[index];
   const logAnswer = useAnswerLog("personal-crossword", "Memory", String(index), knob);

@@ -61,3 +61,27 @@ class PlatformTests(unittest.TestCase):
         consent = {**self.record('consent'), 'id': 'location-consent', 'data': {'sync': True}}
         self.assertEqual(self.post('/records', {'records': [consent]}).status_code, 200)
         self.assertEqual(self.post('/records', {'records': [self.record('location')]}).status_code, 200)
+
+    def test_private_media_requires_login_and_known_format(self):
+        self.assertEqual(self.client.get('/platform/media/test').status_code, 401)
+        self.login()
+        self.assertEqual(self.client.post('/platform/media/test', data=b'hello', content_type='text/html', headers=self.headers).status_code, 400)
+        self.assertEqual(self.client.post('/platform/media/test', data=b'SIMULATED_WEBM', content_type='audio/webm', headers=self.headers).status_code, 200)
+        response = self.client.get('/platform/media/test')
+        self.assertEqual(response.data, b'SIMULATED_WEBM')
+        self.assertEqual(response.headers['Cache-Control'], 'private, no-store')
+        response.close()
+        self.post('/auth/logout', {})
+        self.assertEqual(self.client.get('/platform/media/test').status_code, 401)
+
+    def test_location_revocation_blocks_embedded_sos_coordinates(self):
+        self.login('caregiver')
+        stamp = time.time() * 1000
+        consent = {'id': 'location-consent', 'kind': 'consent', 'updatedAt': stamp, 'data': {'tracking': True, 'sync': True}}
+        self.post('/records', {'records': [consent]})
+        revoked = {**consent, 'updatedAt': stamp + 1, 'data': {'tracking': False, 'sync': False}}
+        self.post('/records', {'records': [revoked]})
+        alert = {**self.record('sos'), 'data': {'location': {'latitude': 26, 'longitude': 91}}}
+        self.assertEqual(self.post('/records', {'records': [alert]}).status_code, 403)
+        alert['data']['location'] = None
+        self.assertEqual(self.post('/records', {'records': [alert]}).status_code, 200)

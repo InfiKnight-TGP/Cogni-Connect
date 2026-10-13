@@ -18,6 +18,28 @@ export default function VoiceQuestion({ prompt, options, onAnswer, disabled = fa
   const provider = useRef(new BrowserSpeechProvider());
   const current = useRef({ options, onAnswer, disabled });
   current.current = { options, onAnswer, disabled };
+  const confirmCandidate = () => {
+    if (!candidate || current.current.disabled) return;
+    if (candidate.option.id === "__sos") window.dispatchEvent(new Event("cogni:sos"));
+    else current.current.onAnswer(candidate.option.id, { method: "voice", responseMs: candidate.responseMs, recognitionConfirmed: true });
+    setCandidate(null);
+  };
+  const confirmByVoice = async () => {
+    if (!candidate) return;
+    const control = new AbortController(); controller.current = control; setBusy(true);
+    try {
+      setStatus(locale.speaking);
+      await provider.current.speak(`${locale.confirm} ${candidate.option.label}? ${locale.yes}, ${locale.no}`, locale.speechLanguage, control.signal);
+      setStatus(locale.listening);
+      const result = await provider.current.listen(locale.speechLanguage, control.signal);
+      const match = matchAnswer(result.text, [{ id: "yes", label: locale.yes }, { id: "no", label: locale.no }], result.confidence);
+      if (!control.signal.aborted && match.kind === "accept") {
+        if (match.option.id === "yes") confirmCandidate();
+        else { setCandidate(null); setStatus(locale.retry); }
+      } else setStatus(locale.retry);
+    } catch { if (!control.signal.aborted) setStatus(locale.retry); }
+    finally { if (!control.signal.aborted) setBusy(false); }
+  };
   const speak = async (listen: boolean) => {
     controller.current?.abort();
     const control = new AbortController(); controller.current = control;
@@ -50,10 +72,11 @@ export default function VoiceQuestion({ prompt, options, onAnswer, disabled = fa
     } finally { if (!control.signal.aborted) setBusy(false); }
   };
   useEffect(() => {
+    const speechProvider = provider.current;
     setCandidate(null); setHeard(""); setStatus(""); setBusy(false);
     // Read mode never starts recognition. Auto-listening only follows the explicit voice preference.
     if (ready && auto && preferences.mode === "voice" && !voiceFallback && !disabled) void speak(true);
-    return () => { controller.current?.abort(); provider.current.cancel(); };
+    return () => { controller.current?.abort(); speechProvider.cancel(); };
     // Callbacks/options may change without changing the question. current keeps those fresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prompt, preferences.mode, locale.code, ready, disabled, auto, voiceFallback]);
@@ -68,9 +91,10 @@ export default function VoiceQuestion({ prompt, options, onAnswer, disabled = fa
     {candidate && <div className="rounded-xl border-2 p-4 text-xl">
       <p>{locale.confirm} “{candidate.option.label}”?</p>
       <div className="mt-3 flex gap-3">
-        <button type="button" className="min-h-14 rounded-lg bg-primary px-6 text-primary-foreground" onClick={() => { if (candidate.option.id === "__sos") window.dispatchEvent(new Event("cogni:sos")); else current.current.onAnswer(candidate.option.id, { method: "voice", responseMs: candidate.responseMs, recognitionConfirmed: true }); setCandidate(null); }}>{locale.yes}</button>
+        <button type="button" className="min-h-14 rounded-lg bg-primary px-6 text-primary-foreground" onClick={confirmCandidate}>{locale.yes}</button>
         <button type="button" className="min-h-14 rounded-lg border-2 px-6" onClick={() => void speak(true)}>{locale.no}</button>
       </div>
+      <button type="button" disabled={busy} className="mt-3 min-h-14 rounded-lg border-2 px-4" onClick={() => void confirmByVoice()}><Mic className="mr-2 inline h-7 w-7" />{locale.mic}: {locale.yes} / {locale.no}</button>
     </div>}
   </div>;
 }

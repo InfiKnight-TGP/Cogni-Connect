@@ -7,9 +7,10 @@ import { useInteraction } from "@/components/interaction/InteractionProvider";
 import { BrowserSpeechProvider } from "@/lib/interaction/speech";
 import { platformRequest, putSupport, readSupport, syncSupport, saveMedia, loadMedia, type Account } from "@/lib/interaction/support-store";
 import type { SupportRecord } from "@/lib/interaction/sync";
-import { summarize, clusterVisits, distance, type Visit } from "@/lib/interaction/content";
+import { summarize, clusterVisits, type Visit } from "@/lib/interaction/content";
 import { dayKey } from "@/lib/progress";
 import { declineAlert, type SessionEvent } from "@/lib/interaction/adaptive";
+import { cognitiveTrendIndex, routineDeviation, sessionScores } from "@/lib/interaction/trends";
 import PersonalCrossword from "./PersonalCrossword";
 
 const button = "min-h-14 rounded-xl border-2 border-primary px-5 py-3 text-xl font-semibold";
@@ -25,6 +26,10 @@ export default function SupportWorkspace() {
   const [pending, setPending] = useState(0);
   const refresh = (patient: string) => { const state = readSupport(patient); setRows(state.records); setPending(Object.keys(state.pending).length); };
   useEffect(() => {
+    if (!navigator.onLine) {
+      try { const cached = JSON.parse(localStorage.getItem("cogni:offline-account") || "null"); if (cached?.role === "patient") { setAccount(cached); setNotice("Offline. Your saved activities are available on this device."); } } catch {}
+      return;
+    }
     platformRequest("/auth/me").then((value: Account) => { setAccount(value); localStorage.setItem("cogni:patient", value.patient); localStorage.setItem("cogni:role", value.role); window.dispatchEvent(new Event("cogni:patient-change")); }).catch(() => {});
   }, []);
   useEffect(() => {
@@ -36,9 +41,9 @@ export default function SupportWorkspace() {
     return () => { clearInterval(timer); window.removeEventListener("cogni:support", changed); window.removeEventListener("online", sync); };
   }, [account]);
   const save = (kind: string, data: Record<string, unknown>, id?: string) => {
-    if (!account) return;
-    try { putSupport(account.patient, kind, data, id); refresh(account.patient); setNotice("Saved on this device. It will sync when connected."); }
-    catch { setNotice("Could not save. Device storage may be full. Please keep this screen open and ask for help."); }
+    if (!account) return false;
+    try { putSupport(account.patient, kind, data, id); refresh(account.patient); setNotice("Saved on this device. It will sync when connected."); return true; }
+    catch { setNotice("Could not save. Device storage may be full. Please keep this screen open and ask for help."); return false; }
   };
   const authenticate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget));
@@ -46,6 +51,8 @@ export default function SupportWorkspace() {
       if (setup) { await platformRequest("/auth/setup", data); setSetup(false); setNotice("Accounts created. Sign in with either account."); return; }
       const value: Account = await platformRequest("/auth/login", data);
       setAccount(value); localStorage.setItem("cogni:patient", value.patient); localStorage.setItem("cogni:role", value.role);
+      if (value.role === "patient") localStorage.setItem("cogni:offline-account", JSON.stringify(value));
+      else localStorage.removeItem("cogni:offline-account");
       window.dispatchEvent(new Event("cogni:patient-change")); setNotice("");
     } catch (error) { setNotice((error as Error).message); }
   };
@@ -64,7 +71,7 @@ export default function SupportWorkspace() {
       </form>
       <button className={button} onClick={() => setSetup(!setup)}>{setup ? "Back to sign in" : "Set up with a caregiver"}</button>
     </section> : <>
-      <div className="flex flex-wrap gap-3"><span>{account.username} · {pending ? `${pending} waiting to sync` : "All changes synced"}</span><button className={button} onClick={() => void syncSupport(account.patient).then(() => setNotice("Sync complete")).catch(error => setNotice(error.message))}>Sync now</button><button className={button} onClick={() => void platformRequest("/auth/logout", {}).then(() => { setAccount(null); localStorage.removeItem("cogni:role"); localStorage.removeItem("cogni:patient"); window.dispatchEvent(new Event("cogni:patient-change")); }).catch(error => setNotice(error.message))}>Sign out</button></div>
+      <div className="flex flex-wrap gap-3"><span>{account.username} · {pending ? `${pending} waiting to sync` : "All changes synced"}</span><button className={button} onClick={() => void syncSupport(account.patient).then(() => setNotice("Sync complete")).catch(error => setNotice(error.message))}>Sync now</button><button className={button} onClick={() => void platformRequest("/auth/logout", {}).then(() => { setAccount(null); localStorage.removeItem("cogni:offline-account"); localStorage.removeItem("cogni:role"); localStorage.removeItem("cogni:patient"); window.dispatchEvent(new Event("cogni:patient-change")); }).catch(error => setNotice(error.message))}>Sign out</button></div>
       <nav className="flex flex-wrap gap-3" aria-label="Support activities">{sections.map(name => <button key={name} className={button} aria-current={section === name ? "page" : undefined} onClick={() => setSection(name)}>{name}</button>)}</nav>
       <VoiceQuestion auto={false} prompt="Choose an activity" options={sections.map(label => ({ id: label, label }))} onAnswer={setSection} />
       {section === "Journal" && <Journal rows={rows} save={save} patient={account.patient} notify={setNotice} />}
@@ -73,16 +80,17 @@ export default function SupportWorkspace() {
       {section === "Places" && <Places rows={rows} save={save} caregiver={account.role === "caregiver"} notify={setNotice} patient={account.patient} />}
       {section === "Crossword" && <PersonalCrossword />}
       {section === "Dashboard" && account.role === "caregiver" && <Dashboard rows={rows} save={save} />}
-      <Link className={button + " inline-block"} href="/games">Play a game</Link>
+      <Link className={button + " inline-block"} href="/play">Play a game</Link>
     </>}
   </main></>;
 }
 
-type Save = (kind: string, data: Record<string, unknown>, id?: string) => void;
+type Save = (kind: string, data: Record<string, unknown>, id?: string) => boolean;
 function MediaPlayback({ id, video }: { id: string; video: boolean }) {
   const [url, setUrl] = useState("");
   useEffect(() => { let active = true, objectUrl = ""; void loadMedia(id).then(blob => { if (blob && active) { objectUrl = URL.createObjectURL(blob); setUrl(objectUrl); } }); return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); }; }, [id]);
-  return url ? video ? <video controls src={url} className="max-h-72 w-full" /> : <audio controls src={url} className="w-full" /> : <p>Recording is stored only on the device that made it.</p>;
+  const source = url || `/platform-api/media/${encodeURIComponent(id)}`;
+  return video ? <video controls src={source} className="max-h-72 w-full" /> : <audio controls src={source} className="w-full" />;
 }
 function Journal({ rows, save, patient, notify }: { rows: SupportRecord[]; save: Save; patient: string; notify: (message: string) => void }) {
   const [draft, setDraft] = useState("");
@@ -113,7 +121,7 @@ function Journal({ rows, save, patient, notify }: { rows: SupportRecord[]; save:
     <div className="flex flex-wrap gap-3">{recording ? <button className={button} onClick={() => { recorder.current?.stop(); speech.current.cancel(); }}>Stop recording</button> : <><button className={button} onClick={() => void record(false)}>Record audio</button><button className={button} onClick={() => void record(true)}>Record video</button></>}</div>
     {recording && <p role="status">Recording… Stop when you are ready.</p>}
     {media && <MediaPlayback id={media.id} video={media.video} />}
-    <button className={button} disabled={recording || (!draft.trim() && !media)} onClick={() => { const today = dayKey(new Date()); save("journal", { text: draft, summary: summarize(draft), day: today, media, locationIds: rows.filter(row => row.kind === "location" && row.data.day === today).map(row => row.id) }); setDraft(""); setMedia(null); }}>Save memory</button>
+    <button className={button} disabled={recording || (!draft.trim() && !media)} onClick={() => { const today = dayKey(new Date()); if (save("journal", { text: draft, summary: summarize(draft), day: today, media, locationIds: rows.filter(row => row.kind === "location" && row.data.day === today).map(row => row.id) })) { setDraft(""); setMedia(null); } }}>Save memory</button>
     <h3 className="text-xl font-bold">How are you feeling?</h3>
     <div className="flex flex-wrap gap-3">{["🙂 Happy", "😐 Okay", "😔 Sad"].map(mood => <button key={mood} className={button} onClick={() => save("mood", { mood, day: dayKey(new Date()) })}>{mood}</button>)}</div>
     <VoiceQuestion prompt="How are you feeling?" auto={false} options={[{ id: "Happy", label: "Happy" }, { id: "Okay", label: "Okay" }, { id: "Sad", label: "Sad" }]} onAnswer={mood => save("mood", { mood, day: dayKey(new Date()) })} />
@@ -140,6 +148,7 @@ function Family({ rows, save, caregiver }: { rows: SupportRecord[]; save: Save; 
 
 function Places({ rows, save, caregiver, notify, patient }: { rows: SupportRecord[]; save: Save; caregiver: boolean; notify: (message: string) => void; patient: string }) {
   const [tracking, setTracking] = useState(false);
+  const [localVisits, setLocalVisits] = useState<Visit[]>(() => { try { return JSON.parse(localStorage.getItem(`cogni:local-locations:${patient}`) || "[]"); } catch { return []; } });
   const watch = useRef<number | null>(null);
   const consent = rows.find(row => row.id === "location-consent")?.data;
   const pause = () => { if (watch.current !== null) navigator.geolocation.clearWatch(watch.current); watch.current = null; setTracking(false); };
@@ -153,17 +162,17 @@ function Places({ rows, save, caregiver, notify, patient }: { rows: SupportRecor
       if (Date.now() - previous < 60000) return; previous = Date.now();
       const visit = { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: Date.now(), day: dayKey(new Date()) };
       if (consent.sync) save("location", visit);
-      else { const key = `cogni:local-locations:${patient}`; const local = JSON.parse(localStorage.getItem(key) || "[]"); localStorage.setItem(key, JSON.stringify([...local, visit])); notify("Location saved on this device only."); }
+      else { const key = `cogni:local-locations:${patient}`; const local = JSON.parse(localStorage.getItem(key) || "[]"); localStorage.setItem(key, JSON.stringify([...local, visit])); setLocalVisits([...local, visit]); notify("Location saved on this device only."); }
     }, () => { pause(); notify("Location could not be read. You can keep using the app."); }, { enableHighAccuracy: false, maximumAge: 60000, timeout: 15000 });
   };
   const visits = rows.filter(row => row.kind === "location").map(row => row.data as unknown as Visit);
-  const clusters = clusterVisits(visits);
+  const clusters = clusterVisits([...visits, ...localVisits]);
   return <section className="space-y-4 rounded-2xl border-2 p-6"><h2 className="text-2xl font-bold">My places</h2>
     <p>Location is optional. While this screen is open, it can remember places you visit. You can pause at any time.</p>
     {caregiver && <form className="space-y-4" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); const value = { tracking: data.get("tracking") === "on", sync: data.get("sync") === "on", confirmedAt: Date.now() }; save("consent", value, "location-consent"); save("consent", { ...value, action: "consent-change" }); }}><label className="block text-xl"><input type="checkbox" name="tracking" className="mr-3 h-6 w-6" defaultChecked={Boolean(consent?.tracking)} /> I am the caregiver and confirm location collection with the patient.</label><label className="block text-xl"><input type="checkbox" name="sync" className="mr-3 h-6 w-6" defaultChecked={Boolean(consent?.sync)} /> Also allow location sync to the caregiver account.</label><button className={button}>Save consent</button></form>}
     {consent?.tracking ? <button className={button} onClick={tracking ? pause : start}>{tracking ? "Pause tracking" : "Start remembering places"}</button> : <p>A caregiver must confirm consent before location is used.</p>}
     <p role="status">{tracking ? "Location is on while this screen stays open." : "Location is paused."}</p>
-    {clusters.map((cluster, index) => <form key={index} className="space-y-3 rounded-xl border p-4" onSubmit={e => { e.preventDefault(); save("place", { name: new FormData(e.currentTarget).get("name"), ...cluster.center, favourite: true }); }}><p>Visited place {index + 1} · {cluster.visits} recorded visits</p><label>Favourite place name<input name="name" required maxLength={80} className={inputClass} /></label><button className={button}>Save favourite</button></form>)}
+    {clusters.map((cluster, index) => <form key={index} className="space-y-3 rounded-xl border p-4" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); save("place", { name: data.get("name"), ...(consent?.sync ? cluster.center : {}), favourite: true, home: consent?.sync && data.get("home") === "on" }); }}><p>Visited place {index + 1} · {cluster.visits} recorded visits</p><label>Favourite place name<input name="name" required maxLength={80} className={inputClass} /></label><label className="block"><input type="checkbox" name="home" className="mr-3 h-6 w-6" disabled={!consent?.sync} /> This is home (requires location sharing)</label><button className={button}>Save favourite</button></form>)}
     {rows.filter(row => row.kind === "place").map(row => <p key={row.id}>★ {text(row.data.name)}</p>)}
   </section>;
 }
@@ -171,12 +180,12 @@ function Places({ rows, save, caregiver, notify, patient }: { rows: SupportRecor
 function Dashboard({ rows, save }: { rows: SupportRecord[]; save: Save }) {
   const events = rows.filter(row => row.kind === "event").map(row => row.data as unknown as SessionEvent);
   const domains = ["Memory", "Attention", "Executive Function", "Recognition & Orientation"];
-  const scoresFor = (domain: string) => {
-    const sessions = new Map<string, { sum: number; count: number }>();
-    events.filter(event => event.domain === domain && event.correct !== null && !["recognition", "silence"].includes(event.errorType)).sort((a, b) => a.timestamp - b.timestamp).forEach(event => { const session = sessions.get(event.session) || { sum: 0, count: 0 }; session.sum += Number(event.correct); session.count++; sessions.set(event.session, session); });
-    return Array.from(sessions.values()).map(s => Math.round(s.sum / s.count * 100));
-  };
+  const scoresFor = (domain: string) => sessionScores(events, domain);
+  const index = cognitiveTrendIndex(rows);
   return <section className="space-y-5 rounded-2xl border-2 p-6"><h2 className="text-2xl font-bold">Caregiver overview</h2><p>Engagement observations only. This does not diagnose or treat dementia.</p>
+    {rows.some(row => row.data.simulated === true) && <p className="rounded-xl border-2 p-4 text-xl font-bold">SIMULATED DEMO DATA</p>}
+    <article className="space-y-3 rounded-xl border-2 p-4"><h3 className="text-2xl font-bold">Cognitive Trend Index: {index.score === null ? "Not enough data" : `${index.score} / 100`}</h3><p>Experimental engagement summary for the last seven days. Missing measurements are excluded.</p>{index.components.map(component => <p key={component.label}><strong>{component.label}:</strong> {component.explanation}</p>)}</article>
+    {routineDeviation(rows) && <p role="alert" className="rounded-xl border-2 p-4">The latest consented location is over 1 km from the marked home at night. Check the location accuracy and contact the patient.</p>}
     <p>Journal entries: {rows.filter(r => r.kind === "journal").length} · Completed reminders: {rows.filter(r => r.kind === "adherence").length} · Answer events: {events.length}</p>
     <label>Default interaction style<select className={inputClass} defaultValue={text(rows.find(r => r.id === "interaction-default")?.data.mode) || "read"} onChange={e => save("default", { mode: e.target.value, override: false }, "interaction-default")}><option value="read">Read and tap</option><option value="voice">Listen and speak</option><option value="mixed">Mixed</option></select></label><p>Patient overrides take precedence.</p>
     {domains.map(domain => { const scores = scoresFor(domain).slice(-8); return <article key={domain} className="rounded-xl border p-4"><h3 className="text-xl font-bold">{domain}</h3>{scores.length ? <><svg viewBox="0 0 400 120" role="img" aria-label={`${domain} scores: ${scores.join(', ')}`} className="h-32 w-full"><polyline fill="none" stroke="currentColor" strokeWidth="3" points={scores.map((score, i) => `${10 + i * 380 / Math.max(1, scores.length - 1)},${110 - score}`).join(" ")} /></svg><p>{scores.join(" → ")}</p></> : <p>No sessions recorded yet.</p>}{declineAlert(scores) && <p role="alert" className="text-xl font-bold text-amber-700">Scores have fallen across several sessions. Check in with the patient and review the context.</p>}</article>; })}

@@ -118,6 +118,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
 
       {phase === "read" ? (
         <section aria-labelledby="story-title">
+          <VoiceQuestion prompt={`${story.title}. ${story.sentences.join(" ")}. Say ready when you want to remember.`} options={[{ id: "ready", label: "Ready", synonyms: ["I am ready", "remember"] }]} onAnswer={() => { stopSpeech(); setPhase("recall"); }} />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="story-title" className="text-2xl font-semibold">
               {story.title}

@@ -16,6 +16,8 @@ import { format } from "date-fns";
 import { Separator } from "../ui/separator";
 import { Badge } from "../ui/badge";
 import { API_URL } from "@/lib/api";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
 
 interface KnownFace {
   name: string;
@@ -52,6 +54,7 @@ export default function PersonSelect({
     correct: boolean;
   } | null>(null);
   const [finalScore, setFinalScore] = useState(0);
+  const log = useAnswerLog("face-recognition", "Recognition & Orientation", `${loading}:${detectedNames.join()}`, 1);
 
   // Fetch data on date change
   useEffect(() => {
@@ -124,7 +127,9 @@ export default function PersonSelect({
     )
     .filter((index) => index !== -1);
 
-  const onSubmit = () => {
+  const onSubmit = (input?: AnswerInput) => {
+    if (revealed || submitted?.correct) return;
+    log(selected.length === correctIndices.length && selected.every(i => correctIndices.includes(i)), input);
     if (selected.length === 0) {
       setSubmitted({ correct: false });
       setFinalScore(0);
@@ -205,6 +210,7 @@ export default function PersonSelect({
         </div>
       ) : (
         <>
+          <VoiceQuestion prompt="Who did you talk to? Say a name to select or remove it, then say Check." options={[...allFacesForQuiz.map((person, i) => ({ id: String(i), label: person.name })), { id: "check", label: "Check" }, { id: "next", label: "Next" }]} onAnswer={(id, input) => { if (id === "check") onSubmit(input); else if (id === "next" && submitted) advance(); else if (!revealed && !submitted?.correct && /^\d+$/.test(id)) { const i = Number(id); setSelected(old => old.includes(i) ? old.filter(n => n !== i) : [...old, i]); } }} />
           <div className="mt-8 flex w-full flex-wrap">
             {allFacesForQuiz.map((person, index) => (
               <PersonCard
@@ -231,7 +237,7 @@ export default function PersonSelect({
             <Button
               disabled={revealed || submitted?.correct}
               size="lg"
-              onClick={onSubmit}
+              onClick={() => onSubmit()}
               className="min-h-[48px] text-lg font-medium transition-all"
             >
               Check My Response <FileCheck className="ml-3 h-5 w-5" />

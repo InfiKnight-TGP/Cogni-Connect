@@ -17,6 +17,9 @@ graphify-out/
 *.tsbuildinfo
 *.log
 backend/platform-data/
+frontend/public/sw-assets.json
+frontend/test-results/
+frontend/playwright-report/
 
 # Python
 .venv/

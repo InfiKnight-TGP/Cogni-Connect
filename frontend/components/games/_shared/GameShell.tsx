@@ -146,6 +146,7 @@ export default function GameShell({
       {/* Screen 3: Finish Screen */}
       {finished && (
         <div className="flex flex-col items-center justify-center py-10 text-center space-y-5">
+          <VoiceQuestion prompt="Would you like to play again?" options={[{ id: "again", label: "Play Again", synonyms: ["again", "restart"] }]} onAnswer={handleRestart} />
           <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-950/60 flex items-center justify-center text-green-600 dark:text-green-400">
             <Award className="h-10 w-10" />
           </div>

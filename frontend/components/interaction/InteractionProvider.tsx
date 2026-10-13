@@ -6,6 +6,7 @@ import type { Locale } from "@/lib/interaction/locale";
 import { BrowserSpeechProvider } from "@/lib/interaction/speech";
 import { defaultPreferences, mergePreferences, readPreferences, writePreferences, type Preferences } from "@/lib/interaction/preferences";
 import EmergencyButton from "@/components/support/EmergencyButton";
+import OfflineSetup from "./OfflineSetup";
 import { putSupport, readSupport, syncSupport } from "@/lib/interaction/support-store";
 
 type Interaction = { preferences: Preferences; locale: Locale; ready: boolean; voiceFallback: boolean; fallback: () => void; update: (value: Partial<Preferences>) => void };
@@ -66,6 +67,7 @@ export function InteractionProvider({ locales, children }: { locales: Locale[]; 
   return <Context.Provider value={{ preferences, locale, ready, update, voiceFallback, fallback: () => { setVoiceFallback(true); setNotice(locale.fallback); } }}>
     {children}
     <EmergencyButton />
+    <OfflineSetup />
     <div data-voice-ignore className="fixed bottom-20 right-3 z-50 max-w-[calc(100vw-1.5rem)] print:hidden lg:bottom-4">
       <button className="min-h-14 rounded-xl border-2 bg-background px-5 text-lg font-bold shadow-lg" onClick={() => setOpen(!open)} aria-expanded={open}><Eye className="mr-2 inline h-7 w-7" />{locale[preferences.mode]}</button>
       {voiceFallback && <p role="status" className="max-w-sm rounded-xl border-2 bg-background p-3">{locale.fallback}</p>}

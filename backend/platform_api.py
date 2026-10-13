@@ -12,11 +12,11 @@ import secrets
 import sqlite3
 import time
 from contextlib import contextmanager
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request, send_file
 from werkzeug.security import check_password_hash, generate_password_hash
 
 platform = Blueprint("platform", __name__, url_prefix="/platform")
-KINDS = {"preference", "default", "event", "journal", "reminder", "adherence", "sos", "message", "reply", "consent", "location", "place", "mood"}
+KINDS = {"preference", "default", "event", "score", "journal", "reminder", "adherence", "sos", "message", "reply", "consent", "location", "place", "mood", "crossword"}
 CAREGIVER_ONLY = {"default", "reminder", "message", "consent"}
 
 
@@ -31,6 +31,7 @@ def connect():
       CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, username TEXT NOT NULL, expires REAL NOT NULL);
       CREATE TABLE IF NOT EXISTS records(patient TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, updated REAL NOT NULL, body TEXT NOT NULL, PRIMARY KEY(patient,id));
       CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY, count INTEGER NOT NULL, until REAL NOT NULL);
+      CREATE TABLE IF NOT EXISTS media(patient TEXT NOT NULL, id TEXT NOT NULL, mime TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY(patient,id));
     """)
     try:
         with db:
@@ -55,7 +56,8 @@ def invalid(error):
 def authorize():
     if request.method == "OPTIONS":
         return None
-    if request.content_length and request.content_length > 2_000_000:
+    limit = 50_000_000 if request.path.startswith('/platform/media/') else 2_000_000
+    if request.content_length and request.content_length > limit:
         return jsonify(error="Request is too large"), 413
     # Custom header blocks cross-site form CSRF; deploy through the same-origin Next rewrite.
     if request.method != "GET" and request.headers.get("X-Cogni-Request") != "1":
@@ -162,7 +164,7 @@ def records():
                 existing = db.execute("SELECT kind FROM records WHERE patient=? AND id=?", (patient, row["id"])).fetchone()
                 if existing and existing["kind"] != row["kind"]:
                     raise ValueError("A record's kind cannot change")
-                if row["kind"] == "location":
+                if row["kind"] == "location" or (row["kind"] == "sos" and row["data"].get("location")) or (row["kind"] == "place" and "latitude" in row["data"]):
                     consent = db.execute("SELECT body FROM records WHERE patient=? AND id='location-consent' AND kind='consent'", (patient,)).fetchone()
                     if not consent or not json.loads(consent["body"]).get("sync"):
                         return jsonify(error="Caregiver location sync consent required"), 403
@@ -170,6 +172,39 @@ def records():
                 db.execute("INSERT INTO records VALUES(?,?,?,?,?) ON CONFLICT(patient,id) DO UPDATE SET updated=excluded.updated, body=excluded.body WHERE excluded.updated>records.updated", (patient, row["id"], row["kind"], row["updatedAt"], json.dumps(row["data"], ensure_ascii=False)))
         rows = db.execute("SELECT * FROM records WHERE patient=? ORDER BY updated,id", (patient,)).fetchall()
     return jsonify(records=[{"id": row["id"], "kind": row["kind"], "updatedAt": row["updated"], "data": json.loads(row["body"])} for row in rows])
+
+
+@platform.route('/media/<media_id>', methods=['GET', 'POST'])
+def media(media_id):
+    if len(media_id) > 120:
+        raise ValueError('Invalid media ID')
+    patient = g.account['patient']
+    with connect() as db:
+        existing = db.execute('SELECT * FROM media WHERE patient=? AND id=?', (patient, media_id)).fetchone()
+        if request.method == 'GET':
+            if not existing:
+                return jsonify(error='Recording not found'), 404
+            response = send_file(existing['path'], mimetype=existing['mime'], conditional=True)
+            response.headers['Cache-Control'] = 'private, no-store'
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            return response
+        if existing:
+            return jsonify(ok=True)
+        mime = (request.content_type or '').split(';')[0]
+        if mime not in {'audio/webm', 'audio/ogg', 'audio/mp4', 'video/webm', 'video/mp4'}:
+            raise ValueError('Unsupported recording format')
+        payload = request.get_data()
+        if not payload:
+            raise ValueError('Recording is empty')
+        directory = Path(current_app.config.get('PLATFORM_DB', 'platform-data/platform.sqlite3')).resolve().parent / 'media'
+        directory.mkdir(parents=True, exist_ok=True)
+        filename = hashlib.sha256(f'{patient}:{media_id}'.encode()).hexdigest()
+        destination = directory / filename
+        temporary = directory / (filename + '.' + secrets.token_hex(8) + '.tmp')
+        temporary.write_bytes(payload)
+        temporary.replace(destination)
+        db.execute('INSERT INTO media VALUES(?,?,?,?)', (patient, media_id, mime, str(destination)))
+    return jsonify(ok=True)
 
 
 def register_platform(api):
