@@ -11,6 +11,7 @@ from pathlib import Path
 import secrets
 import sqlite3
 import time
+from contextlib import contextmanager
 from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -19,6 +20,7 @@ KINDS = {"preference", "default", "event", "journal", "reminder", "adherence", "
 CAREGIVER_ONLY = {"default", "reminder", "message", "consent"}
 
 
+@contextmanager
 def connect():
     path = Path(current_app.config.get("PLATFORM_DB", "platform-data/platform.sqlite3"))
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -30,7 +32,11 @@ def connect():
       CREATE TABLE IF NOT EXISTS records(patient TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, updated REAL NOT NULL, body TEXT NOT NULL, PRIMARY KEY(patient,id));
       CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY, count INTEGER NOT NULL, until REAL NOT NULL);
     """)
-    return db
+    try:
+        with db:
+            yield db
+    finally:
+        db.close()
 
 
 def body():
@@ -132,7 +138,7 @@ def logout():
 def validate_record(row):
     if not isinstance(row, dict) or set(row) != {"id", "kind", "updatedAt", "data"}:
         raise ValueError("Each record needs id, kind, updatedAt and data")
-    if not isinstance(row["id"], str) or not 1 <= len(row["id"]) <= 100 or row["kind"] not in KINDS:
+    if not isinstance(row["id"], str) or not 1 <= len(row["id"]) <= 100 or not isinstance(row["kind"], str) or row["kind"] not in KINDS:
         raise ValueError("Invalid record identity")
     timestamp = row["updatedAt"]
     if isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)) or not math.isfinite(timestamp) or not 0 < timestamp <= time.time() * 1000 + 300_000:

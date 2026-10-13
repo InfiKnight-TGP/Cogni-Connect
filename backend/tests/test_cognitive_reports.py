@@ -62,8 +62,9 @@ class CognitiveReportTests(unittest.TestCase):
         self.assertEqual(normalize_domain("Recognition & Orientation"), "Recognition & Orientation")
 
     def test_registry_marks_unimplemented_games_unavailable(self):
-        for game_id in ("word-association", "odd-one-out", "whack-a-mole"):
+        for game_id in ("word-association", "whack-a-mole"):
             self.assertFalse(GAME_REGISTRY[game_id]["playable"])
+        self.assertTrue(GAME_REGISTRY["odd-one-out"]["playable"])
         self.assertEqual(GAME_REGISTRY["story-builder"]["primary_domain"], "Memory")
         self.assertEqual(GAME_REGISTRY["face-recognition"]["primary_domain"], "Recognition & Orientation")
         self.assertEqual(GAME_REGISTRY["attention-hunt"]["primary_domain"], "Attention")
