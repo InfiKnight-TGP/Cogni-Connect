@@ -6,7 +6,6 @@ import RightColumn from "@/components/rightColumn";
 import TodayPath from "@/components/todayPath";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/lib/api";
-import { format } from "date-fns";
 import {
   BookOpen,
   Brain,
@@ -22,16 +21,11 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useState } from "react";
+import { dayKey, toEntries } from "@/lib/progress";
 
 interface Activity {
   id: string;
   level: 1 | 2 | 3;
-}
-
-interface ScoreEntry {
-  date: string;
-  score: number;
-  game_id?: string;
 }
 
 interface ActivityMeta {
@@ -93,9 +87,24 @@ export default function TodayPage() {
       const perf = perfRes.ok ? await perfRes.json() : {};
       const scores: Record<string, number> = {};
       const add = (id: string, score: number) => (scores[id] = Math.max(scores[id] ?? 0, score));
-      // Daily Recall lives in "scores" (older entries have no game_id), the games in "game_scores"
-      (perf.scores ?? []).forEach((s: ScoreEntry) => s.date === day && add("daily_recall", s.score));
-      (perf.game_scores ?? []).forEach((s: ScoreEntry) => s.date === day && s.game_id && add(s.game_id, s.score));
+      const dayEntries = toEntries(perf).filter((entry) => entry.day === day && entry.level !== undefined);
+      const recallParts: Record<string, number> = {};
+      let legacyRecall: number | undefined;
+      dayEntries.forEach((entry) => {
+        if (["face-recognition", "name-recognition", "context-recall"].includes(entry.gameId)) {
+          recallParts[entry.gameId] = Math.max(recallParts[entry.gameId] ?? 0, entry.score);
+        } else if (entry.gameId === "daily_recall") {
+          legacyRecall = Math.max(legacyRecall ?? 0, entry.score);
+        } else {
+          add(entry.gameId, entry.score);
+        }
+      });
+      const recallIds = ["face-recognition", "name-recognition", "context-recall"];
+      if (legacyRecall !== undefined) {
+        add("daily_recall", legacyRecall);
+      } else if (recallIds.every((id) => recallParts[id] !== undefined)) {
+        add("daily_recall", Math.round(recallIds.reduce((sum, id) => sum + recallParts[id], 0) / recallIds.length));
+      }
       setBest(scores);
       setFailed(false);
     } catch {
@@ -104,7 +113,7 @@ export default function TodayPage() {
   }, []);
 
   useEffect(() => {
-    const day = format(new Date(), "yyyy-MM-dd");
+    const day = dayKey(new Date());
     setHello(greeting());
     setToday(day);
     load(day);

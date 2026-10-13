@@ -16,6 +16,9 @@ const GAME_AREA: Record<string, Area> = {
   "plan-the-day": "Executive Function",
   "sorting-station": "Executive Function",
   "map-navigator": "Recognition & Orientation",
+  "face-recognition": "Recognition & Orientation",
+  "name-recognition": "Recognition & Orientation",
+  "context-recall": "Memory",
 };
 
 const SKILL_AREA: Record<string, Area> = {
@@ -156,14 +159,41 @@ export function patientStatsFromEntries(entries: Entry[], now: Date): PatientSta
 
   const monday = addDays(now, -((now.getDay() + 6) % 7));
   const week = new Set(Array.from({ length: 7 }, (_, i) => dayKey(addDays(monday, i))));
+  const bundledIds = new Set(["face-recognition", "name-recognition", "context-recall"]);
   const bestByGameDay = new Map<string, number>();
+  const recallPartsByDay = new Map<string, Map<string, number>>();
+  const legacyRecallByDay = new Map<string, number>();
   for (const entry of results) {
     if (!week.has(entry.day)) continue;
+    if (bundledIds.has(entry.gameId)) {
+      const parts = recallPartsByDay.get(entry.day) ?? new Map<string, number>();
+      parts.set(entry.gameId, Math.max(parts.get(entry.gameId) ?? -Infinity, entry.score));
+      recallPartsByDay.set(entry.day, parts);
+      continue;
+    }
     const key = `${entry.day}|${entry.gameId}`;
     bestByGameDay.set(key, Math.max(bestByGameDay.get(key) ?? -Infinity, entry.score));
+    if (entry.gameId === "daily_recall") {
+      legacyRecallByDay.set(entry.day, Math.max(legacyRecallByDay.get(entry.day) ?? -Infinity, entry.score));
+    }
+  }
+  for (const day of Array.from(week)) {
+    const legacyScore = legacyRecallByDay.get(day);
+    const parts = recallPartsByDay.get(day);
+    if (legacyScore !== undefined) {
+      bestByGameDay.set(`${day}|daily_recall`, legacyScore);
+    } else if (parts && ["face-recognition", "name-recognition", "context-recall"].every((id) => parts.has(id))) {
+      const averageScore = Math.round(Array.from(parts.values()).reduce((sum, score) => sum + score, 0) / 3);
+      bestByGameDay.set(`${day}|daily_recall`, averageScore);
+    }
   }
   const starsThisWeek = Array.from(bestByGameDay.values()).reduce((sum, score) => sum + starsFor(score), 0);
-  const doneToday = new Set(results.filter((entry) => entry.day === today).map((entry) => entry.gameId)).size;
+  const todayIds = new Set(results.filter((entry) => entry.day === today && !bundledIds.has(entry.gameId)).map((entry) => entry.gameId));
+  const todayParts = recallPartsByDay.get(today);
+  if (legacyRecallByDay.has(today) || (todayParts && ["face-recognition", "name-recognition", "context-recall"].every((id) => todayParts.has(id)))) {
+    todayIds.add("daily_recall");
+  }
+  const doneToday = todayIds.size;
 
   return { streak, starsThisWeek, doneToday };
 }

@@ -1,11 +1,12 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import { saveScore } from "./saveScore";
 import { Button } from "@/components/ui/button";
 import { Award, Play, RotateCcw } from "lucide-react";
 import { useCaregiver } from "@/lib/mode";
 import { LEVEL_NAMES, gameArea } from "@/lib/progress";
+import { localDateKey } from "./date";
 
 /** True on the caregiver's All Games page: games can be tried without saving a score. */
 export const PreviewContext = createContext(false);
@@ -16,11 +17,12 @@ export interface GameShellProps {
   instructions: string;
   level: 1 | 2 | 3;
   skill: string;
-  date: string;
+  date?: string;
+  saveResult?: boolean;
   onFinish?: (score: number) => void;
   children:
     | React.ReactNode
-    | ((handleFinish: (score: number) => void) => React.ReactNode);
+    | ((handleFinish: (score: number) => void, date: string) => React.ReactNode);
 }
 
 export default function GameShell({
@@ -30,14 +32,20 @@ export default function GameShell({
   level,
   skill,
   date,
+  saveResult = true,
   onFinish,
   children,
 }: GameShellProps) {
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
   const [score, setScore] = useState<number | null>(null);
+  const [selectedDate, setSelectedDate] = useState(date ?? localDateKey());
   const [caregiver] = useCaregiver(); // patients never see level or skill names
   const preview = useContext(PreviewContext);
+
+  useEffect(() => {
+    if (date) setSelectedDate(date);
+  }, [date]);
 
   const handleFinish = async (finalScore: number) => {
     const clampedScore = Math.max(0, Math.min(100, Math.round(finalScore)));
@@ -46,8 +54,8 @@ export default function GameShell({
     setStarted(false);
 
     // Previews from All Games must not count as the patient's scores
-    if (!preview) await saveScore({
-      date,
+    if (!preview && saveResult) await saveScore({
+      date: selectedDate,
       game_id: gameId,
       level,
       skill,
@@ -97,6 +105,17 @@ export default function GameShell({
               Click Start to launch {title}.{caregiver && level === 1 && " No timers apply in Easy mode."}
             </p>
           </div>
+          {caregiver && preview && (
+            <label className="flex items-center gap-3 text-sm text-muted-foreground">
+              <span>Preview date</span>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(event) => setSelectedDate(event.target.value)}
+                className="min-h-11 rounded-md border border-input bg-background px-3 text-base text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </label>
+          )}
           <Button
             size="lg"
             className="min-h-[48px] px-8 py-6 text-lg font-bold shadow-lg hover:scale-105 transition-transform"
@@ -111,7 +130,7 @@ export default function GameShell({
       {started && !finished && (
         <div className="py-4">
           {typeof children === "function"
-            ? children(handleFinish)
+            ? children(handleFinish, selectedDate)
             : React.isValidElement(children)
             ? React.cloneElement(children as React.ReactElement, {
                 onFinish: handleFinish,

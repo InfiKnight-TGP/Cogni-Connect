@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import Nav from "@/components/nav";
 import { CaregiverOnly } from "@/components/caregiver";
-import { getGameById, GameRegistryEntry } from "@/components/games/registry";
+import { GAME_REGISTRY, getGameById, GameRegistryEntry } from "@/components/games/registry";
 import { PreviewContext } from "@/components/games/_shared/GameShell";
 import { Button } from "@/components/ui/button";
 import { LEVEL_NAMES, Level } from "@/lib/progress";
@@ -42,6 +41,7 @@ function AllGames() {
   const storyBuilder = getGameById("story-builder")!;
   const wordAssociation = getGameById("word-association")!;
   const molePath = getGameById("mole-path")!;
+  const contextRecall = getGameById("context-recall")!;
 
   const oddOneOut = getGameById("odd-one-out")!;
   const whackAMole = getGameById("whack-a-mole")!;
@@ -52,12 +52,11 @@ function AllGames() {
   const pillBoxPlanner = getGameById("pill-box-planner")!;
 
   const mapNavigator = getGameById("map-navigator")!;
+  const faceRecognition = getGameById("face-recognition")!;
+  const nameRecognition = getGameById("name-recognition")!;
 
-  // Count built vs coming soon
-  // 9 Built: storyBuilder, molePath, Personal Memory (bonus), attentionHunt, planTheDay, sortingStation, Face Recognition, Name Recall, mapNavigator
-  // 4 Coming soon: wordAssociation, oddOneOut, whackAMole, pillBoxPlanner
-  const builtCount = 9;
-  const comingSoonCount = 4;
+  const builtCount = GAME_REGISTRY.filter((game) => !game.comingSoon).length;
+  const comingSoonCount = GAME_REGISTRY.filter((game) => game.comingSoon).length;
 
   return (
     <main className="mx-auto max-w-screen-lg space-y-10 px-4 pb-16 pt-24 lg:pt-8">
@@ -115,21 +114,16 @@ function AllGames() {
             </Button>
           </GameCard>
 
-          {/* Bonus card under Memory */}
           <GameCard
-            emoji="💭"
-            name="Personal Memory Questions"
-            trains="Recall details from personal video memories in open responses (Daily Recall part 3)"
-            level={1}
-            comingSoon={false}
-            isBonus
-            bonusLabel="Bonus"
+            emoji={contextRecall.emoji}
+            name={contextRecall.name}
+            trains={contextRecall.trains}
+            level={contextRecall.levels[0]}
+            comingSoon={contextRecall.comingSoon}
           >
-            <Link href="/quiz">
-              <Button variant="outline" className="w-full">
-                Open in quiz
-              </Button>
-            </Link>
+            <Button variant="outline" className="w-full" onClick={() => setActive({ game: contextRecall, level: contextRecall.levels[0] })}>
+              Preview
+            </Button>
           </GameCard>
         </div>
       </section>
@@ -223,31 +217,27 @@ function AllGames() {
         <h2 className="text-2xl font-bold text-foreground">Recognition &amp; Orientation</h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           <GameCard
-            emoji="👤"
-            name="Face Recognition"
-            trains="Select familiar faces seen in a personal video (Daily Recall part 1)"
-            level={1}
-            comingSoon={false}
+            emoji={faceRecognition.emoji}
+            name={faceRecognition.name}
+            trains={faceRecognition.trains}
+            level={faceRecognition.levels[0]}
+            comingSoon={faceRecognition.comingSoon}
           >
-            <Link href="/quiz">
-              <Button variant="outline" className="w-full">
-                Open in quiz
-              </Button>
-            </Link>
+            <Button variant="outline" className="w-full" onClick={() => setActive({ game: faceRecognition, level: faceRecognition.levels[0] })}>
+              Preview
+            </Button>
           </GameCard>
 
           <GameCard
-            emoji="🏷️"
-            name="Name Recall"
-            trains="Match a familiar name to the pictured person (Daily Recall part 2)"
-            level={1}
-            comingSoon={false}
+            emoji={nameRecognition.emoji}
+            name={nameRecognition.name}
+            trains={nameRecognition.trains}
+            level={nameRecognition.levels[0]}
+            comingSoon={nameRecognition.comingSoon}
           >
-            <Link href="/quiz">
-              <Button variant="outline" className="w-full">
-                Open in quiz
-              </Button>
-            </Link>
+            <Button variant="outline" className="w-full" onClick={() => setActive({ game: nameRecognition, level: nameRecognition.levels[0] })}>
+              Preview
+            </Button>
           </GameCard>
 
           <GameCard
@@ -277,8 +267,6 @@ function GameCard({
   trains,
   level,
   comingSoon,
-  isBonus,
-  bonusLabel,
   children,
 }: {
   emoji: string;
@@ -286,26 +274,17 @@ function GameCard({
   trains: string;
   level?: Level;
   comingSoon?: boolean;
-  isBonus?: boolean;
-  bonusLabel?: string;
   children?: React.ReactNode;
 }) {
   const levelName = level ? LEVEL_NAMES[level] : "Easy";
   return (
     <div
-      className={`flex flex-col justify-between gap-4 rounded-2xl border bg-card p-5 shadow-sm transition-all ${
-        isBonus ? "border-dashed border-primary/50 bg-primary/5" : ""
-      }`}
+      className="flex flex-col justify-between gap-4 rounded-2xl border bg-card p-5 shadow-sm transition-all"
     >
       <div>
         <div className="mb-3 flex items-center justify-between">
           <span className="text-4xl" aria-hidden>{emoji}</span>
           <div className="flex items-center gap-2">
-            {isBonus && (
-              <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-0.5 text-xs font-semibold text-blue-700 dark:text-blue-400">
-                {bonusLabel ?? "Bonus"}
-              </span>
-            )}
             {level && (
               <span
                 className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${

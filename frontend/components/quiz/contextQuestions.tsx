@@ -17,23 +17,28 @@ export default function ContextQuestions({
   setProgress,
   date,
   myDay = false,
+  standalone = false,
   activityScores,
   setActivityScore,
+  onComplete,
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
   myDay?: boolean; // "My Day" from the Today page: no date, "Part X of 3"
+  standalone?: boolean;
   activityScores?: {
     activity1: number | null;
     activity2: number | null;
     activity3: number | null;
   };
   setActivityScore?: (score: number) => void;
+  onComplete?: (score: number) => void;
 }) {
   const [tab, setTab] = useState("1");
   const [feedback, setFeedback] = useState<{submitted: boolean; feedback: number}[]>([]);
   const [quizCompleted, setQuizCompleted] = useState(false);
   const [canProceed, setCanProceed] = useState(false);
+  const [computedScore, setComputedScore] = useState(0);
 
   // Load questions from backend
   const [data, setData] = useState<
@@ -91,8 +96,14 @@ export default function ContextQuestions({
       const activity3Score = (totalScore / data.length) * 10; // Convert to percentage
       
       // Report Activity 3 score
+      const finalScore = Math.round(activity3Score);
+      setComputedScore(finalScore);
       if (setActivityScore) {
-        setActivityScore(Math.round(activity3Score));
+        setActivityScore(finalScore);
+      }
+
+      if (standalone) {
+        return;
       }
       
       // Calculate combined score from all non-null activity scores
@@ -126,7 +137,7 @@ export default function ContextQuestions({
         }).catch(err => console.error("Error saving performance:", err));
       }
     }
-  }, [feedback, quizCompleted, date, data.length, activityScores, setActivityScore]);
+  }, [feedback, quizCompleted, date, data.length, activityScores, setActivityScore, standalone, onComplete]);
 
   // Commented out the API fetch since we're using dummy data
   /*
@@ -155,7 +166,7 @@ export default function ContextQuestions({
           setOpen={setOpen}
         />
       ) : null}
-      <div className="flex w-full items-center justify-start">
+      {!standalone && <div className="flex w-full items-center justify-start">
         <Button
           variant="secondary"
           onClick={() => setProgress(-1)}
@@ -176,7 +187,7 @@ export default function ContextQuestions({
           )}
         </div>
         <Badge className="ml-4 h-8 px-4">{myDay ? "Part 3 of 3" : "Part 3"}</Badge>
-      </div>
+      </div>}
 
       {loading ? (
         <div className="mt-8 text-center text-muted-foreground">
@@ -189,7 +200,7 @@ export default function ContextQuestions({
           </p>
           <Button
             size="lg"
-            onClick={() => setProgress(-1)}
+            onClick={() => standalone ? onComplete?.(0) : setProgress(-1)}
             className="text-lg font-medium transition-all"
           >
             Finish <ArrowRight className="ml-3 h-4 w-4" />
@@ -242,7 +253,7 @@ export default function ContextQuestions({
           {canProceed && (
             <div className="mt-8 flex justify-center">
               <Button
-                onClick={() => setProgress(-1)}
+                onClick={() => standalone ? onComplete?.(computedScore) : setProgress(-1)}
                 size="lg"
                 className="min-h-[48px] px-6 text-lg font-medium"
               >

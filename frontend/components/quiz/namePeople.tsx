@@ -19,14 +19,19 @@ export default function NamePeople({
   setProgress,
   date,
   myDay = false,
+  standalone = false,
   setActivityScore,
+  onComplete,
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
   myDay?: boolean; // "My Day" from the Today page: no date, "Part X of 3"
+  standalone?: boolean;
   setActivityScore?: (score: number) => void;
+  onComplete?: (score: number) => void;
 }) {
   const [clicked, setClicked] = useState(false);
+  const [finalScore, setFinalScore] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const [target, setTarget] = useState<KnownFace | null>(null);
@@ -109,12 +114,14 @@ export default function NamePeople({
     setClicked(true);
     // Scoring: 100 minus 25 per wrong click before the correct one (minimum 0).
     const score = Math.max(0, 100 - wrongCount * 25);
+    setFinalScore(score);
     if (setActivityScore) setActivityScore(score);
   };
+  const advance = () => onComplete ? onComplete(finalScore) : setProgress((prev) => prev + 1);
 
   return (
     <>
-      <div className="flex w-full items-center justify-start">
+      {!standalone && <div className="flex w-full items-center justify-start">
         <Button
           variant="secondary"
           onClick={() => setProgress(-1)}
@@ -135,7 +142,7 @@ export default function NamePeople({
           )}
         </div>
         <Badge className="ml-4 h-8 px-4">{myDay ? "Part 2 of 3" : "Part 2"}</Badge>
-      </div>
+      </div>}
 
       <div className="mt-12 text-2xl font-medium">
         Can you identify who this is?
@@ -152,10 +159,10 @@ export default function NamePeople({
           </p>
           <Button
             size="lg"
-            onClick={() => setProgress((prev) => prev + 1)}
+            onClick={advance}
             className="min-h-[48px] text-lg font-medium transition-all"
           >
-            Continue to Part 3 <ArrowRight className="ml-3 h-4 w-4" />
+            {onComplete ? "Finish Game" : "Continue to Part 3"} <ArrowRight className="ml-3 h-4 w-4" />
           </Button>
         </div>
       ) : (
@@ -170,10 +177,10 @@ export default function NamePeople({
             <div className="mt-6 flex justify-center w-full">
               <Button
                 size="lg"
-                onClick={() => setProgress((prev) => prev + 1)}
+                onClick={advance}
                 className="min-h-[48px] text-lg font-medium transition-all"
               >
-                Continue to Part 3 <ArrowRight className="ml-3 h-4 w-4" />
+                {onComplete ? "Finish Game" : "Continue to Part 3"} <ArrowRight className="ml-3 h-4 w-4" />
               </Button>
             </div>
           ) : null}

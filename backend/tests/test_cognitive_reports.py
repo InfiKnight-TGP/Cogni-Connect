@@ -28,6 +28,9 @@ class CognitiveReportTests(unittest.TestCase):
             json.dumps({
                 "games": [
                     {"id": "daily_recall", "levels": [1], "status": "ready", "area": "Recognition & Orientation / Memory"},
+                    {"id": "face-recognition", "levels": [1], "status": "ready", "area": "Recognition & Orientation", "bundle": "daily_recall"},
+                    {"id": "name-recognition", "levels": [1], "status": "ready", "area": "Recognition & Orientation", "bundle": "daily_recall"},
+                    {"id": "context-recall", "levels": [1], "status": "ready", "area": "Memory", "bundle": "daily_recall"},
                     {"id": "story-builder", "levels": [1], "status": "ready", "area": "Memory"},
                     {"id": "plan-the-day", "levels": [1], "status": "ready", "area": "Executive Function"},
                     {"id": "word-association", "levels": [1], "status": "coming_soon", "area": "Memory"},
@@ -146,6 +149,51 @@ class CognitiveReportTests(unittest.TestCase):
         self.assertIn("Face Recognition", names)
         self.assertIn("Name Recall", names)
         self.assertIn("Personal Memory Questions", names)
+
+    def test_daily_plan_never_selects_bundled_activities_as_extra_easy_game(self):
+        bundled = {"face-recognition", "name-recognition", "context-recall"}
+        for day in range(1, 25):
+            date_str = f"2026-11-{day:02d}"
+            plan = build_daily_plan(date_str, games_file=self.games_path, plans_file=self.plans_path)
+            self.assertEqual(plan["level1"][0], "daily_recall")
+            self.assertEqual(len(plan["level1"]), 2)
+            self.assertFalse(bundled.intersection(plan["level1"][1:]))
+
+    def test_new_daily_recall_games_count_individually_and_match_progress_area_score(self):
+        perf = {
+            "scores": [],
+            "game_scores": [
+                {"game_id": "face-recognition", "score": 80, "level": 1, "date": "2026-10-11"},
+                {"game_id": "name-recognition", "score": 90, "level": 1, "date": "2026-10-11"},
+                {"game_id": "context-recall", "score": 70, "level": 1, "date": "2026-10-11"},
+                {"game_id": "map-navigator", "score": 60, "level": 3, "date": "2026-10-11"},
+            ],
+        }
+        report = build_day_report(perf, "2026-10-11", games_file=self.games_path, plans_file=self.plans_path)
+        self.assertEqual(report["domains"]["Recognition & Orientation"]["score"], 77)
+        self.assertEqual(report["domains"]["Recognition & Orientation"]["game_count"], 3)
+        self.assertEqual(report["domains"]["Memory"]["score"], 70)
+
+    def test_daily_recall_bundle_requires_all_three_new_games(self):
+        date_str = "2026-10-11"
+        partial = {
+            "scores": [],
+            "game_scores": [
+                {"game_id": "face-recognition", "score": 80, "level": 1, "date": date_str},
+                {"game_id": "name-recognition", "score": 90, "level": 1, "date": date_str},
+            ],
+        }
+        partial_report = build_day_report(partial, date_str, games_file=self.games_path, plans_file=self.plans_path)
+        self.assertIn("daily_recall", partial_report["missing_games"])
+
+        complete = {
+            "scores": [],
+            "game_scores": partial["game_scores"] + [
+                {"game_id": "context-recall", "score": 70, "level": 1, "date": date_str},
+            ],
+        }
+        complete_report = build_day_report(complete, date_str, games_file=self.games_path, plans_file=self.plans_path)
+        self.assertNotIn("daily_recall", complete_report["missing_games"])
 
     def test_missing_games_tracked_from_daily_plan_not_entire_registry(self):
         # Determine that day's plan

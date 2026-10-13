@@ -127,8 +127,8 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
         "domain_weights": {"Recognition & Orientation": 1.0},
     },
     "context-recall": {
-        "name": "Personal Memory Questions",
-        "description": "Recall details from personal video memories in open responses.",
+        "name": "Relive Memories",
+        "description": "Recall details of the day's videos in your own words.",
         "primary_domain": "Memory",
         "secondary_domains": [],
         "playable": True,
@@ -241,7 +241,10 @@ def build_daily_plan(
         pool = [
             g["id"]
             for g in games_list
-            if lvl in g.get("levels", []) and g.get("status") == "ready" and g["id"] != "daily_recall"
+            if lvl in g.get("levels", [])
+            and g.get("status") == "ready"
+            and g["id"] != "daily_recall"
+            and not g.get("bundle")
         ]
         plan[f"level{lvl}"] = rng.sample(pool, min(count, len(pool)))
     plan["level1"].insert(0, "daily_recall")
@@ -466,7 +469,7 @@ def build_day_report(
             return (
                 "daily_recall" in completed_parent_ids
                 or "daily_recall" in completed_game_ids
-                or bool({"face-recognition", "name-recognition", "context-recall"} & completed_game_ids)
+                or {"face-recognition", "name-recognition", "context-recall"}.issubset(completed_game_ids)
             )
         return planned_id in completed_game_ids or planned_id in completed_parent_ids
 
@@ -488,19 +491,20 @@ def build_day_report(
             continue
 
         if domain == "Recognition & Orientation":
-            recall_ro = [
+            # Historical Daily Recall breakdown rows remain one combined RO contribution.
+            # New standalone face/name games each count as their own game.
+            legacy_recall = [
                 r for r in domain_games
-                if r.get("parent_game_id") == "daily_recall"
-                or r["game_id"] in ("face-recognition", "name-recognition", "daily_recall")
+                if r.get("parent_game_id") == "daily_recall" or r["game_id"] == "daily_recall"
             ]
-            other_ro = [r for r in domain_games if r not in recall_ro]
+            standalone_ro = [r for r in domain_games if r not in legacy_recall]
             contributions: list[float] = []
             contrib_ids: list[str] = []
-            if recall_ro:
-                recall_avg = round(sum(float(r["score"]) for r in recall_ro) / len(recall_ro))
+            if legacy_recall:
+                recall_avg = round(sum(float(r["score"]) for r in legacy_recall) / len(legacy_recall))
                 contributions.append(float(recall_avg))
                 contrib_ids.append("daily_recall")
-            for r in other_ro:
+            for r in standalone_ro:
                 contributions.append(float(r["score"]))
                 contrib_ids.append(r["game_id"])
 
