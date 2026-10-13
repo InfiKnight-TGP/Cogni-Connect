@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import { matchAnswer, normalizeAnswer } from './matching.ts';
+import { readPreferences, writePreferences, mergePreferences, defaultPreferences } from './preferences.ts';
+import { recognitionFailure, BrowserSpeechProvider } from './speech.ts';
+
+const options = [{ id: 'tea', label: 'Tea', synonyms: ['chai', 'चाय', 'চাহ'] }, { id: 'rice', label: 'Rice' }];
+assert.equal(matchAnswer(' TEA! ', options, .95).kind, 'accept');
+assert.equal(matchAnswer('chai', options, .95).option.id, 'tea');
+assert.equal(matchAnswer('चाय', options, .95).option.id, 'tea');
+assert.equal(normalizeAnswer('চাহ'), 'চাহ');
+assert.equal(matchAnswer('rice', options, .95).option.id, 'rice'); // wrong choices still map to themselves
+assert.equal(matchAnswer('rce', options, .95).kind, 'confirm');
+assert.equal(matchAnswer('tea', options, .2).kind, 'confirm');
+assert.equal(matchAnswer('', options, 1).kind, 'retry');
+assert.equal(matchAnswer('something unrelated', options, 1).kind, 'retry');
+assert.equal(matchAnswer('Ann', [{ id: '1', label: 'Ann' }, { id: '2', label: 'Ann' }], 1).kind, 'confirm');
+const values = new Map();
+const storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+assert.equal(readPreferences(storage, 'a').mode, 'read');
+const patient = { ...defaultPreferences, mode: 'mixed', updatedAt: 10, override: true };
+writePreferences(storage, 'a', patient);
+assert.deepEqual(readPreferences(storage, 'a'), patient);
+assert.equal(readPreferences(storage, 'b').mode, 'read');
+assert.deepEqual(mergePreferences(patient, { ...defaultPreferences, mode: 'voice', updatedAt: 20 }), patient);
+assert.equal(mergePreferences(defaultPreferences, { ...patient, override: false }).mode, 'mixed');
+assert.equal(readPreferences({ getItem() { throw Error('denied'); } }, 'a').mode, 'read');
+for (const [code, expected] of [['not-allowed', 'permission'], ['audio-capture', 'microphone'], ['network', 'offline'], ['no-speech', 'silence'], ['language-not-supported', 'language']]) assert.equal(recognitionFailure(code), expected);
+Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+await assert.rejects(new BrowserSpeechProvider().listen('en'), { reason: 'offline' });
+Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
+globalThis.window = {};
+await assert.rejects(new BrowserSpeechProvider().listen('en'), { reason: 'unsupported' });
+await assert.rejects(new BrowserSpeechProvider().speak('Hello', 'en'), { reason: 'unsupported' });
+console.log('interaction checks passed: matching, patient isolation, persistence, override and speech fallbacks');

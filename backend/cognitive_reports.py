@@ -67,7 +67,7 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
         "description": "Find the item that doesn't belong in the group.",
         "primary_domain": "Attention",
         "secondary_domains": [],
-        "playable": False,
+        "playable": True,
         "domain_weights": {"Attention": 1.0},
     },
     "whack-a-mole": {

@@ -84,7 +84,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     area: "Attention",
     levels: [1],
     component: OddOneOut,
-    comingSoon: true,
+    comingSoon: false,
     emoji: "🔍",
     description: "Find the item that doesn't belong in the group.",
     trains: "Selective attention and categorising",

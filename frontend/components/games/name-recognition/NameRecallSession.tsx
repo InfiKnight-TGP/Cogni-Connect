@@ -5,6 +5,8 @@ import { Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
 
 type Person = {
   id: string;
@@ -55,6 +57,7 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
   const [loadError, setLoadError] = useState(false);
   const nextRoundTimer = useRef<number | null>(null);
   const feedbackActive = useRef(false);
+  const logAnswer = useAnswerLog("name-recognition", "Recognition & Orientation", `${roundIndex}:${loading}`, 1);
 
   useEffect(() => {
     let active = true;
@@ -95,9 +98,10 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
     window.speechSynthesis.speak(utterance);
   }, []);
 
-  const choose = (person: Person) => {
+  const choose = (person: Person, input: AnswerInput = { method: "tap", responseMs: null }) => {
     const round = rounds[roundIndex];
     if (!round || reinforcement || feedbackActive.current) return;
+    logAnswer(person.id === round.target.id, input);
     if (person.id !== round.target.id) {
       if (revealed) return;
       setShakingId(person.id);
@@ -146,6 +150,7 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
     : round.target.name;
 
   return <section className="space-y-6 text-center" aria-live="polite">
+    <VoiceQuestion prompt={prompt} options={round.options.map(person => ({ id: person.id, label: person.name }))} onAnswer={(id, input) => { const person = round.options.find(p => p.id === id); if (person) choose(person, input); }} disabled={reinforcement} />
     <style>{`@keyframes nameRecallShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }`}</style>
     <div>
       <p className="text-base font-semibold uppercase tracking-wide text-muted-foreground">Round {roundIndex + 1} of 3</p>

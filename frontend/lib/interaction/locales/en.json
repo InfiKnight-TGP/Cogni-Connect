@@ -1,0 +1,11 @@
+{
+  "code": "en", "speechLanguage": "en-IN", "name": "English",
+  "read": "Read and tap", "voice": "Listen and speak", "mixed": "Mixed",
+  "choose": "How would you like to use the app?", "mic": "Speak an answer", "replay": "Hear the question",
+  "listening": "Listening…", "speaking": "Reading the question…", "retry": "I did not catch that. Please try once more, or tap your answer.",
+  "fallback": "Voice is not available here. You can still read and tap every answer.",
+  "confirm": "Did you mean", "yes": "Yes", "no": "Try again", "heard": "I heard",
+  "saved": "Saved on this device", "storageError": "This device could not save your choice. Please ask your caregiver to check storage.",
+  "help": ["help", "help me", "SOS"],
+  "synonyms": { "Tea": ["chai"], "Rice": ["chawal", "bhaat"], "Start Game": ["start", "begin"], "Next": ["continue"], "Done": ["finished", "complete"] }
+}

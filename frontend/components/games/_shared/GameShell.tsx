@@ -7,6 +7,7 @@ import { Award, Play, RotateCcw } from "lucide-react";
 import { useCaregiver } from "@/lib/mode";
 import { LEVEL_NAMES, gameArea } from "@/lib/progress";
 import { localDateKey } from "./date";
+import VoiceQuestion from "@/components/interaction/VoiceQuestion";
 
 /** True on the caregiver's All Games page: games can be tried without saving a score. */
 export const PreviewContext = createContext(false);
@@ -98,6 +99,7 @@ export default function GameShell({
       {/* Screen 1: Start Screen */}
       {!started && !finished && (
         <div className="flex flex-col items-center justify-center py-12 text-center space-y-6">
+          <VoiceQuestion prompt={`${title}. ${instructions}`} options={[{ id: "start", label: "Start Game", synonyms: ["start", "begin"] }]} onAnswer={() => setStarted(true)} />
           <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center text-primary text-3xl">
             🎮
           </div>
