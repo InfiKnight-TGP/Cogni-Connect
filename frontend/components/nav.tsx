@@ -19,7 +19,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import React, { useState } from "react";
 import { PinDialog } from "./caregiver";
-import { ThemeToggle } from "./theme-toggle";
 import { lockCaregiver, useCaregiver } from "@/lib/mode";
 
 interface NavItem {
@@ -79,12 +78,11 @@ export default function Nav() {
 
   return (
     <>
-      {/* Phone: slim top bar with the logo and theme toggle */}
-      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-border bg-background px-4 print:hidden lg:hidden">
+      {/* Phone: slim top bar with the logo */}
+      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center border-b border-border bg-background px-4 print:hidden lg:hidden">
         <Link href={caregiver ? "/caregiver" : "/"} className="flex min-h-12 items-center text-xl font-bold">
           <BrainCircuit className="me-2 h-7 w-7 text-primary" /> Cogni Connect
         </Link>
-        <ThemeToggle />
       </header>
 
       {/* Desktop: left sidebar */}
@@ -119,9 +117,6 @@ export default function Nav() {
             <ModeIcon className="h-8 w-8 shrink-0 text-muted-foreground" />
             <span>{modeButton.label}</span>
           </button>
-          <div className="px-2">
-            <ThemeToggle />
-          </div>
         </div>
       </aside>
 

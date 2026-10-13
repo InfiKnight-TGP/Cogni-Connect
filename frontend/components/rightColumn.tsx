@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { usePatientStats } from "@/lib/stats";
+import { RightColumnSiteLinks } from "@/components/siteLinks";
 
 const GOAL = 3;
 
@@ -14,18 +14,16 @@ export default function RightColumn() {
 
   return (
     <aside className="sticky top-24 hidden w-80 shrink-0 space-y-6 self-start xl:block" aria-label="Your stats">
-      <div className="flex gap-3">
-        <div className="flex flex-1 items-center gap-2 rounded-2xl border-2 border-border bg-card p-4 text-lg font-bold">
-          <span aria-hidden className="text-2xl">🔥</span>
-          <span>
-            {streak} {streak === 1 ? "day" : "days"} in a row
-          </span>
+      <div className="space-y-3">
+        <div className="flex w-full items-center gap-2 rounded-2xl border-2 border-border bg-card p-4 font-bold">
+          <span aria-hidden="true" className="text-2xl">🔥</span>
+          <span className="text-3xl leading-none">{streak}</span>
+          <span className="whitespace-nowrap text-base">{streak === 1 ? "day in a row" : "days in a row"}</span>
         </div>
-        <div className="flex flex-1 items-center gap-2 rounded-2xl border-2 border-border bg-card p-4 text-lg font-bold">
-          <span aria-hidden className="text-2xl">⭐</span>
-          <span>
-            {stars} {stars === 1 ? "star" : "stars"} this week
-          </span>
+        <div className="flex w-full items-center gap-2 rounded-2xl border-2 border-border bg-card p-4 font-bold">
+          <span aria-hidden="true" className="text-2xl">⭐</span>
+          <span className="text-3xl leading-none">{stars}</span>
+          <span className="whitespace-nowrap text-base">{stars === 1 ? "star this week" : "stars this week"}</span>
         </div>
       </div>
 
@@ -53,11 +51,7 @@ export default function RightColumn() {
         </p>
       </div>
 
-      <nav className="flex flex-wrap justify-center gap-x-4 text-base text-muted-foreground" aria-label="Information">
-        <Link href="/about" className="flex min-h-12 items-center hover:text-foreground hover:underline">About</Link>
-        <Link href="/terms" className="flex min-h-12 items-center hover:text-foreground hover:underline">Terms</Link>
-        <Link href="/privacy" className="flex min-h-12 items-center hover:text-foreground hover:underline">Privacy</Link>
-      </nav>
+      <RightColumnSiteLinks />
     </aside>
   );
 }

@@ -49,7 +49,7 @@ for _path, _default in {
     'performance_data.json': {"scores": [], "game_scores": []},
     'video_journals.json': {},
     'routines.json': {"steps": []},
-    'settings.json': {"pin": "1234", "patient_name": ""},
+    'settings.json': {"pin": "1234", "patient_name": "", "language": "en"},
 }.items():
     if not os.path.exists(_path):
         with open(_path, 'w', encoding='utf-8') as _f:
@@ -804,11 +804,17 @@ def serve_frame(filepath):
 
 
 SETTINGS_PATH = 'settings.json'
+SUPPORTED_LANGUAGES = {
+    'en', 'hi', 'bn', 'mr', 'te', 'ta', 'gu', 'ur', 'kn', 'or', 'ml', 'pa', 'as', 'ne', 'mni-Mtei',
+}
 
 
 def _load_settings():
     with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
-        return {"pin": "1234", "patient_name": "", **json.load(f)}
+        settings = {"pin": "1234", "patient_name": "", "language": "en", **json.load(f)}
+    if not isinstance(settings.get('language'), str) or settings['language'] not in SUPPORTED_LANGUAGES:
+        settings['language'] = 'en'
+    return settings
 
 
 @api.route('/caregiver/unlock', methods=['POST'])
@@ -825,20 +831,32 @@ def caregiver_unlock():
 @api.route('/settings', methods=['GET'])
 def get_settings():
     """Settings the app may show (never the PIN)."""
-    return jsonify({"patient_name": _load_settings()['patient_name']})
+    settings = _load_settings()
+    return jsonify({"patient_name": settings['patient_name'], "language": settings['language']})
 
 
 @api.route('/settings', methods=['POST'])
 def save_settings():
-    """{"patient_name": "..."}; the PIN is changed by editing settings.json."""
-    name = (request.get_json(silent=True) or {}).get('patient_name')
-    if not isinstance(name, str) or len(name.strip()) > 60:
+    """Save patient-facing preferences; the PIN is changed by editing settings.json."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not ({'patient_name', 'language'} & payload.keys()):
+        return jsonify({"error": "Provide patient_name or language"}), 400
+
+    name = payload.get('patient_name')
+    if 'patient_name' in payload and (not isinstance(name, str) or len(name.strip()) > 60):
         return jsonify({"error": "patient_name must be text, up to 60 characters"}), 400
+    language = payload.get('language')
+    if 'language' in payload and (not isinstance(language, str) or language not in SUPPORTED_LANGUAGES):
+        return jsonify({"error": "language must be one of the supported language codes"}), 400
+
     settings = _load_settings()
-    settings['patient_name'] = name.strip()
+    if 'patient_name' in payload:
+        settings['patient_name'] = name.strip()
+    if 'language' in payload:
+        settings['language'] = language
     with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
         json.dump(settings, f, indent=2, ensure_ascii=False)
-    return jsonify({"patient_name": settings['patient_name']})
+    return jsonify({"patient_name": settings['patient_name'], "language": settings['language']})
 
 
 ROUTINES_PATH = 'routines.json'
