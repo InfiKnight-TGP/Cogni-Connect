@@ -13,6 +13,11 @@ import NameRecognition from "./name-recognition";
 import ContextRecall from "./context-recall";
 import { GameProps } from "./_shared/types";
 import { Area } from "@/lib/progress";
+import MemoryCards from "./memory-cards";
+import SoundTap from "./sound-tap";
+import PatternCompletion from "./pattern-completion";
+import ObjectNaming from "./object-naming";
+import YesterdayQuiz from "./yesterday-quiz";
 
 export interface GameRegistryEntry {
   id: string;
@@ -29,6 +34,11 @@ export interface GameRegistryEntry {
 }
 
 export const GAME_REGISTRY: GameRegistryEntry[] = [
+  { id: "memory-cards", name: "Matching pictures", skill: "working memory", area: "Memory", levels: [1], component: MemoryCards, comingSoon: false, emoji: "🃏", description: "Find matching familiar pictures.", trains: "Remember where matching pictures are" },
+  { id: "sound-tap", name: "Listen to the beats", skill: "attention", area: "Attention", levels: [1], component: SoundTap, comingSoon: false, emoji: "🥁", description: "Count beats or use the visual alternative.", trains: "Attention to a short sequence" },
+  { id: "pattern-completion", name: "Finish the pattern", skill: "spatial", area: "Recognition & Orientation", levels: [1], component: PatternCompletion, comingSoon: false, emoji: "🔷", description: "Choose the next picture.", trains: "Recognize a repeating pattern" },
+  { id: "object-naming", name: "Name the picture", skill: "spatial", area: "Recognition & Orientation", levels: [1], component: ObjectNaming, comingSoon: false, emoji: "☂️", description: "Name a familiar everyday object.", trains: "Recognize familiar objects" },
+  { id: "yesterday-quiz", name: "Remember yesterday", skill: "personal memory", area: "Memory", levels: [1], component: YesterdayQuiz, comingSoon: false, emoji: "💭", description: "Recall a real saved journal memory.", trains: "Recall personal experiences" },
   {
     id: "story-builder",
     name: "Story Builder",

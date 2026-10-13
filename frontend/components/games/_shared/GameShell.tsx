@@ -77,7 +77,7 @@ export default function GameShell({
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto border border-border bg-card rounded-2xl p-6 md:p-8 shadow-md">
+    <div data-game-id={gameId} className="w-full max-w-2xl mx-auto border border-border bg-card rounded-2xl p-6 md:p-8 shadow-md">
       {/* Header Info */}
       <div className="flex items-center justify-between border-b border-border pb-4 mb-6">
         <div>

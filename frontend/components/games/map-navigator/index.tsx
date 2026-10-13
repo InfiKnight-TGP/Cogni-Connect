@@ -5,6 +5,9 @@ import GameShell from "../_shared/GameShell";
 import { GameProps } from "../_shared/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
+import { localDateKey } from "../_shared/date";
 import {
   JUNCTIONS,
   LANDMARK_POOL,
@@ -14,12 +17,11 @@ import {
   getBFSDistance,
 } from "./data";
 
-const MEMORISE_SECONDS = 15;
 const HINT_FLASH_MS = 2000;
 const GOAL_REACHED_MS = 1200;
 
 export default function MapNavigator({
-  date = new Date().toISOString().split("T")[0],
+  date = localDateKey(),
   onFinish,
 }: GameProps) {
   return (
@@ -44,7 +46,6 @@ interface MapNavigatorGameProps {
 function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
   const [roundIdx, setRoundIdx] = useState(0); // 0, 1, 2, 3 (Rounds 1 to 4)
   const [phase, setPhase] = useState<"memorise" | "navigate" | "round_end">("memorise");
-  const [timer, setTimer] = useState(MEMORISE_SECONDS);
 
   const [setup, setSetup] = useState<RoundSetup | null>(null);
   const [targetSequence, setTargetSequence] = useState<string[]>([]);
@@ -61,6 +62,7 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
   const [goalReachedMsg, setGoalReachedMsg] = useState<string | null>(null);
 
   const [roundEfficiencies, setRoundEfficiencies] = useState<number[]>([]);
+  const log = useAnswerLog("map-navigator", "Recognition & Orientation", `${roundIdx}:${phase}:${playerPos}`, 3);
 
   const onDoneRef = useRef(onDone);
   useEffect(() => {
@@ -85,25 +87,11 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
     setActiveGoalIdx(0);
 
     setPhase("memorise");
-    setTimer(MEMORISE_SECONDS);
     setOffTrackMoves(0);
     setRoundHints(0);
     setHintingLandmarkKey(null);
     setGoalReachedMsg(null);
   }, [roundIdx]);
-
-  // Countdown timer for memorise phase
-  useEffect(() => {
-    if (phase !== "memorise") return;
-    if (timer <= 0) {
-      setPhase("navigate");
-      return;
-    }
-    const interval = setInterval(() => {
-      setTimer((prev) => prev - 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [phase, timer]);
 
   if (!setup) return null;
 
@@ -118,13 +106,14 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
     setPhase("navigate");
   };
 
-  const handleMoveTo = (nextPos: number) => {
+  const handleMoveTo = (nextPos: number, input?: AnswerInput) => {
     if (phase !== "navigate" || !currentTargetKey) return;
     if (!adjacentJunctions.includes(nextPos)) return;
 
     const targetNode = setup.landmarkPos[currentTargetKey];
     const prevDist = getBFSDistance(setup.graph, playerPos, targetNode);
     const newDist = getBFSDistance(setup.graph, nextPos, targetNode);
+    log(newDist < prevDist, input);
 
     const newPath = [...pathWalked, nextPos];
     setPathWalked(newPath);
@@ -211,13 +200,14 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
 
   return (
     <div className="flex flex-col items-center gap-4 select-none w-full max-w-lg mx-auto">
+      <VoiceQuestion key={`${roundIdx}:${phase}:${playerPos}`} prompt={phase === "memorise" ? "Remember the places. Say ready when you want to begin." : `Go to ${LANDMARK_POOL.find(l => l.key === currentTargetKey)?.name || "the next place"}. Choose a direction.`} disabled={phase === "round_end"} options={phase === "memorise" ? [{ id: "ready", label: "Ready", synonyms: ["start"] }] : adjacentJunctions.map(id => ({ id: String(id), label: id < playerPos - 1 ? "Up" : id > playerPos + 1 ? "Down" : id < playerPos ? "Left" : "Right" }))} onAnswer={(id, input) => { if (id === "ready") handleStartNavigating(); else handleMoveTo(Number(id), input); }} />
       {/* Header Info */}
       <div className="w-full flex items-center justify-between px-2">
         <span className="text-sm font-semibold text-muted-foreground">
           Round {roundIdx + 1} of 4
         </span>
         <span className="text-sm font-medium text-muted-foreground">
-          {phase === "memorise" ? `Memorise: ${timer}s` : `Hints: ${sessionHints}`}
+          {phase === "memorise" ? "Take your time" : `Hints: ${sessionHints}`}
         </span>
       </div>
 

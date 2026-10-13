@@ -1,5 +1,10 @@
 {
   "games": [
+    { "id": "memory-cards", "levels": [1], "status": "ready", "area": "Memory" },
+    { "id": "sound-tap", "levels": [1], "status": "ready", "area": "Attention" },
+    { "id": "pattern-completion", "levels": [1], "status": "ready", "area": "Recognition & Orientation" },
+    { "id": "object-naming", "levels": [1], "status": "ready", "area": "Recognition & Orientation" },
+    { "id": "yesterday-quiz", "levels": [1], "status": "ready", "area": "Memory" },
     { "id": "daily_recall", "levels": [1], "status": "ready", "area": "Recognition & Orientation / Memory" },
     { "id": "face-recognition", "levels": [1], "status": "ready", "area": "Recognition & Orientation", "bundle": "daily_recall" },
     { "id": "name-recognition", "levels": [1], "status": "ready", "area": "Recognition & Orientation" },

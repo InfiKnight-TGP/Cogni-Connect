@@ -146,6 +146,16 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
 
 LEVEL_NAMES: dict[int, str] = {1: "Easy", 2: "Medium", 3: "Hard"}
 
+for _id, _name, _domain in (
+    ("memory-cards", "Matching pictures", "Memory"),
+    ("sound-tap", "Listen to the beats", "Attention"),
+    ("pattern-completion", "Finish the pattern", "Recognition & Orientation"),
+    ("object-naming", "Name the picture", "Recognition & Orientation"),
+    ("yesterday-quiz", "Remember yesterday", "Memory"),
+):
+    GAME_REGISTRY[_id] = {"name": _name, "description": _name, "primary_domain": _domain,
+                          "secondary_domains": [], "playable": True, "domain_weights": {_domain: 1.0}}
+
 
 def parse_iso(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value.strip():

@@ -31,6 +31,7 @@ interface NavItem {
 }
 
 const PATIENT_LINKS: NavItem[] = [
+  { href: "/play", label: "Play", short: "Play", icon: Gamepad2, color: "text-amber-500" },
   { href: "/support", label: "My Support", short: "Support", icon: CalendarCheck, color: "text-teal-600" },
   { href: "/", label: "Home", short: "Home", icon: Home, color: "text-orange-500" },
   { href: "/today", label: "Today", short: "Today", icon: CalendarCheck, color: "text-green-600 dark:text-green-500" },

@@ -8,6 +8,8 @@ import { GameProps } from "../_shared/types";
 import { Button } from "@/components/ui/button";
 import { moleLevel2Config } from "./data";
 import { makePath } from "./logic";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
 
 function MolePathSession({ onDone }: { onDone: (score: number) => void }) {
   const [roundIndex, setRoundIndex] = useState(0); // 0 to 4 (5 rounds)
@@ -21,6 +23,7 @@ function MolePathSession({ onDone }: { onDone: (score: number) => void }) {
   const [selected, setSelected] = useState<number[]>([]);
   const [path, setPath] = useState<number[]>(() => makePath(moleLevel2Config.gridSize, 3));
   const [feedback, setFeedback] = useState("");
+  const log = useAnswerLog("mole-path", "Memory", `${roundIndex}:${phase}:${selected.length}`, currentPathLength);
 
   // Preview timing: 800ms ON, 400ms OFF
   useEffect(() => {
@@ -106,8 +109,9 @@ function MolePathSession({ onDone }: { onDone: (score: number) => void }) {
     }
   };
 
-  const chooseHole = (hole: number) => {
+  const chooseHole = (hole: number, input?: AnswerInput) => {
     if (phase !== "playing") return;
+    log(path[selected.length] === hole, input);
     const next = [...selected, hole];
     if (path[selected.length] !== hole) {
       setRoundSuccess(false);
@@ -127,10 +131,11 @@ function MolePathSession({ onDone }: { onDone: (score: number) => void }) {
 
   return (
     <div className="mx-auto max-w-lg">
+      <VoiceQuestion key={`${roundIndex}:${phase}:${selected.length}`} prompt="Repeat the path. Say the row and column." disabled={phase !== "playing"} options={Array.from({ length: 9 }, (_, i) => ({ id: String(i), label: `Row ${Math.floor(i / 3) + 1} column ${i % 3 + 1}` }))} onAnswer={(id, input) => chooseHole(Number(id), input)} />
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-primary">
-            Level 2 · Round {roundIndex + 1} of 5
+            Round {roundIndex + 1} of 5
           </p>
           <h2 className="mt-1 text-xl font-semibold">Remember {currentPathLength} circles</h2>
           <p className="mt-1 text-sm text-muted-foreground" aria-live="polite">

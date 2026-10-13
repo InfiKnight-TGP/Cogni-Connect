@@ -53,3 +53,7 @@ requested flows. Keep README and architecture aligned with measured behavior.
 The original GitHub push failed with HTTP 403 for account `akash3772`. The resumed
 checkout now contains `origin/feature/voice-ai-journal-platform`; subsequent
 pushes must still be checked for actual success.
+
+## Game expansion checkpoint
+
+Added Matching Pictures, Sound Tap (with visual alternative), Pattern Completion, Object Naming, and journal-sourced Yesterday Quiz to both catalogs. Added the patient /play page. Extended voice controls to path, map, routine steps and attention questions; removed countdown penalties from map/attention. Catalog levels and the four existing domains remain unchanged. TypeScript, seven frontend check suites and 27 backend tests pass. Browser acceptance remains pending. Push of stabilization commit 4135b9d succeeded.
