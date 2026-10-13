@@ -11,7 +11,6 @@ import {
   Tooltip,
 } from "chart.js";
 import { Radar } from "react-chartjs-2";
-import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { AREAS, buildRadarChartData, type Area } from "@/lib/progress";
 
@@ -27,29 +26,21 @@ const LIGHT: Palette = {
   muted: "hsl(215.4 16.3% 46.9%)",
   border: "hsl(214.3 31.8% 91.4%)",
 };
-
-function readPalette(): Palette {
-  const styles = getComputedStyle(document.documentElement);
-  const variable = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
-  const primaryValue = variable("--primary", "221.2 83.2% 53.3%");
-  return {
-    primary: `hsl(${primaryValue})`,
-    fill: `hsl(${primaryValue} / 0.2)`,
-    foreground: `hsl(${variable("--foreground", "222.2 84% 4.9%")})`,
-    muted: `hsl(${variable("--muted-foreground", "215.4 16.3% 46.9%")})`,
-    border: `hsl(${variable("--border", "214.3 31.8% 91.4%")})`,
-  };
-}
+const DARK: Palette = {
+  primary: "hsl(217.2 91.2% 59.8%)",
+  fill: "hsl(217.2 91.2% 59.8% / 0.2)",
+  foreground: "hsl(210 40% 98%)",
+  muted: "hsl(215 20.2% 65.1%)",
+  border: "hsl(217 16% 48%)",
+};
 
 export default function RadarChart({ scores, forceLight = false }: { scores: Record<Area, number | null>; forceLight?: boolean }) {
   const { resolvedTheme } = useTheme();
-  const [palette, setPalette] = useState<Palette>(LIGHT);
-  useEffect(() => {
-    if (!forceLight) setPalette(readPalette());
-  }, [resolvedTheme, forceLight]);
 
   const chartData = buildRadarChartData(scores);
-  const colors = forceLight ? LIGHT : palette;
+  // Mirror the app's CSS theme variables and select them directly from next-themes,
+  // so chart colors stay in sync when the app switches between light and dark.
+  const colors = forceLight ? LIGHT : resolvedTheme === "dark" ? DARK : LIGHT;
   const dataset = chartData.datasets[0];
   dataset.backgroundColor = colors.fill;
   dataset.borderColor = colors.primary;
@@ -89,7 +80,7 @@ export default function RadarChart({ scores, forceLight = false }: { scores: Rec
               grid: { color: colors.border },
               angleLines: { color: colors.border },
               ticks: { stepSize: 20, color: colors.muted, showLabelBackdrop: false, callback: (value) => Number(value) === 0 ? "" : `${value}%` },
-              pointLabels: { color: colors.foreground, font: { size: 14 } },
+              pointLabels: { color: colors.foreground, font: { size: 14 }, centerPointLabels: true },
             },
           },
         }}
