@@ -22,6 +22,8 @@ load_dotenv()
 
 api = Flask(__name__)
 CORS(api)
+from platform_api import register_platform
+register_platform(api)
 
 # Configuration for file uploads
 UPLOAD_FOLDER = 'content'

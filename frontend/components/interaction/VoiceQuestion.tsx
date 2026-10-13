@@ -6,10 +6,10 @@ import { BrowserSpeechProvider, SpeechError } from "@/lib/interaction/speech";
 import { matchAnswer, type AnswerOption } from "@/lib/interaction/matching";
 
 export type AnswerInput = { method: "tap" | "typed" | "voice"; responseMs: number | null; recognitionConfirmed?: boolean };
-export default function VoiceQuestion({ prompt, options, onAnswer, disabled = false, auto = true }: {
-  prompt: string; options: AnswerOption[]; onAnswer: (id: string, input: AnswerInput) => void; disabled?: boolean; auto?: boolean;
+export default function VoiceQuestion({ prompt, options, onAnswer, disabled = false, auto = true, freeText = false }: {
+  prompt: string; options: AnswerOption[]; onAnswer: (id: string, input: AnswerInput) => void; disabled?: boolean; auto?: boolean; freeText?: boolean;
 }) {
-  const { preferences, locale, ready } = useInteraction();
+  const { preferences, locale, ready, voiceFallback, fallback } = useInteraction();
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [heard, setHeard] = useState("");
@@ -33,10 +33,12 @@ export default function VoiceQuestion({ prompt, options, onAnswer, disabled = fa
           if (control.signal.aborted || current.current.disabled) return;
           setHeard(result.text);
           const choices = current.current.options.map(option => ({ ...option, synonyms: [...(option.synonyms ?? []), ...(locale.synonyms[option.label] ?? [])] }));
+          choices.push({ id: "__sos", label: "Help", synonyms: locale.help });
           const match = matchAnswer(result.text, choices, result.confidence);
           const responseMs = result.speechStartedAt === null ? null : Math.max(0, result.speechStartedAt - endedAt);
-          if (match.kind === "accept") { current.current.onAnswer(match.option.id, { method: "voice", responseMs }); setStatus(""); break; }
+          if (match.kind === "accept") { if (match.option.id === "__sos") window.dispatchEvent(new Event("cogni:sos")); else current.current.onAnswer(match.option.id, { method: "voice", responseMs }); setStatus(""); break; }
           if (match.kind === "confirm") { setCandidate({ option: match.option, responseMs }); setStatus(""); break; }
+          if (freeText && result.text.trim()) { setCandidate({ option: { id: result.text, label: result.text }, responseMs }); setStatus(""); break; }
           if (attempt === 1) setStatus(locale.retry);
         } catch (error) {
           if (!(error instanceof SpeechError) || error.reason !== "silence") throw error;
@@ -44,17 +46,17 @@ export default function VoiceQuestion({ prompt, options, onAnswer, disabled = fa
         }
       }
     } catch (error) {
-      if (!control.signal.aborted) setStatus(error instanceof SpeechError && error.reason === "cancelled" ? "" : locale.fallback);
+      if (!control.signal.aborted) { setStatus(error instanceof SpeechError && error.reason === "cancelled" ? "" : locale.fallback); if (!(error instanceof SpeechError) || error.reason !== "cancelled") fallback(); }
     } finally { if (!control.signal.aborted) setBusy(false); }
   };
   useEffect(() => {
     setCandidate(null); setHeard(""); setStatus(""); setBusy(false);
     // Read mode never starts recognition. Auto-listening only follows the explicit voice preference.
-    if (ready && auto && preferences.mode === "voice" && !disabled) void speak(true);
+    if (ready && auto && preferences.mode === "voice" && !voiceFallback && !disabled) void speak(true);
     return () => { controller.current?.abort(); provider.current.cancel(); };
     // Callbacks/options may change without changing the question. current keeps those fresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prompt, preferences.mode, locale.code, ready, disabled, auto]);
+  }, [prompt, preferences.mode, locale.code, ready, disabled, auto, voiceFallback]);
   return <div data-voice-ignore className="my-4 space-y-3">
     <div className="flex flex-wrap gap-3">
       <button type="button" disabled={disabled || busy} onClick={() => void speak(true)} className="min-h-14 rounded-xl border-2 border-primary bg-primary/10 px-4 text-lg font-semibold"><Mic className="mr-2 inline h-7 w-7" />{locale.mic}</button>
@@ -66,7 +68,7 @@ export default function VoiceQuestion({ prompt, options, onAnswer, disabled = fa
     {candidate && <div className="rounded-xl border-2 p-4 text-xl">
       <p>{locale.confirm} “{candidate.option.label}”?</p>
       <div className="mt-3 flex gap-3">
-        <button type="button" className="min-h-14 rounded-lg bg-primary px-6 text-primary-foreground" onClick={() => { current.current.onAnswer(candidate.option.id, { method: "voice", responseMs: candidate.responseMs, recognitionConfirmed: true }); setCandidate(null); }}>{locale.yes}</button>
+        <button type="button" className="min-h-14 rounded-lg bg-primary px-6 text-primary-foreground" onClick={() => { if (candidate.option.id === "__sos") window.dispatchEvent(new Event("cogni:sos")); else current.current.onAnswer(candidate.option.id, { method: "voice", responseMs: candidate.responseMs, recognitionConfirmed: true }); setCandidate(null); }}>{locale.yes}</button>
         <button type="button" className="min-h-14 rounded-lg border-2 px-6" onClick={() => void speak(true)}>{locale.no}</button>
       </div>
     </div>}

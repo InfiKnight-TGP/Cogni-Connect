@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import { enqueue, acknowledge } from './sync.ts';
+const a = { id: 'a', kind: 'journal', data: { text: 'first' }, updatedAt: 1 };
+const b = { ...a, data: { text: 'second' }, updatedAt: 2 };
+let state = enqueue({ records: [], pending: {} }, a);
+state = enqueue(state, b);
+state = acknowledge(state, [a], [a]);
+assert.equal(state.pending.a, 2);
+assert.equal(state.records[0].data.text, 'second');
+state = acknowledge(state, [b], [b]);
+assert.equal(Object.keys(state.pending).length, 0);
+assert.equal(state.records.length, 1);
+assert.equal(enqueue(state, a), state);
+state = acknowledge(state, [{ ...b, updatedAt: 3 }], []);
+assert.equal(state.records[0].updatedAt, 3);
+console.log('sync checks passed: idempotence, LWW and in-flight edit retention');

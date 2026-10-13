@@ -25,6 +25,7 @@ const nextConfig = {
   },
   async rewrites() {
     return [
+      { source: '/platform-api/:path*', destination: 'http://127.0.0.1:5000/platform/:path*' },
       {
         source: '/video_chunks/:path*',
         destination: 'http://127.0.0.1:5000/video_chunks/:path*',

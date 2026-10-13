@@ -20,6 +20,7 @@ import { usePathname, useRouter } from "next/navigation";
 import React, { useState } from "react";
 import { PinDialog } from "./caregiver";
 import { lockCaregiver, useCaregiver } from "@/lib/mode";
+import VoiceQuestion from "@/components/interaction/VoiceQuestion";
 
 interface NavItem {
   href: string;
@@ -30,6 +31,7 @@ interface NavItem {
 }
 
 const PATIENT_LINKS: NavItem[] = [
+  { href: "/support", label: "My Support", short: "Support", icon: CalendarCheck, color: "text-teal-600" },
   { href: "/", label: "Home", short: "Home", icon: Home, color: "text-orange-500" },
   { href: "/today", label: "Today", short: "Today", icon: CalendarCheck, color: "text-green-600 dark:text-green-500" },
   { href: "/explore", label: "My Memories", short: "Memories", icon: ImageIcon, color: "text-sky-500" },
@@ -38,6 +40,7 @@ const PATIENT_LINKS: NavItem[] = [
 ];
 
 const CAREGIVER_LINKS: NavItem[] = [
+  { href: "/support", label: "Support Accounts", short: "Support", icon: CalendarCheck, color: "text-teal-600" },
   { href: "/caregiver", label: "Home", short: "Home", icon: Home, color: "text-orange-500" },
   { href: "/progress", label: "Progress & Reports", short: "Progress", icon: TrendingUp, color: "text-green-600 dark:text-green-500" },
   { href: "/upload", label: "Add Videos", short: "Videos", icon: Upload, color: "text-violet-500" },
@@ -154,6 +157,7 @@ export default function Nav() {
       </nav>
 
       <PinDialog open={pinOpen} onOpenChange={setPinOpen} onUnlocked={() => router.push("/caregiver")} />
+      <div className="fixed bottom-20 left-3 z-40 max-w-xs rounded-xl bg-background p-2 print:hidden lg:bottom-0"><VoiceQuestion auto={false} prompt="Where would you like to go?" options={links.map(link => ({ id: link.href, label: link.label }))} onAnswer={href => router.push(href)} /></div>
     </>
   );
 }
