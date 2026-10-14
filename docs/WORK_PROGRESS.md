@@ -149,3 +149,21 @@ branch only. Git Credential Manager waited for interactive sign-in; a retry with
 `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never` failed with "could not read
 Username". GitHub HTTPS authentication must be restored before these new commits
 can be uploaded. No reset, force push, merge, or main-branch modification occurred.
+
+## Personal recall milestone - 14 October 2026
+
+Re-audited at `160633a`: feature branch, clean tree, two local commits ahead of
+origin. No new uncommitted Copilot changes. Re-ran the baseline: 31 backend tests,
+Flask import, TypeScript and nine frontend check scripts passed.
+
+A new regression test reproduced truthful yesterday memories being offered as
+incorrect distractors. The fix preserves Copilot's adaptive choice count and
+rotation, but uses dated older history for distractors and excludes summaries
+repeated anywhere on the target day. Invalid/missing dates and future entries
+are excluded. With insufficient history the quiz offers fewer choices. Added a
+browser scenario that completes two yesterday memories without false errors.
+All nine frontend check scripts and TypeScript passed. Production build passed
+with the five pre-existing image warnings. All nine production browser tests
+passed, including both yesterday memories scoring correctly. `git diff --check`
+passed. Next milestone: isolated caregiver/patient browser integration tests for
+seeded decline, reminder adherence, SOS delivery, journal sync and crossword restore.

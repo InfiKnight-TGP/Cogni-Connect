@@ -124,3 +124,28 @@ test('mixed mode accepts an uncertain answer only after spoken confirmation', as
   await expect(game.getByText('Well done!')).toBeVisible();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cogni:events:local-patient') || '[]'))).toHaveLength(1);
 });
+
+test('Yesterday Quiz uses older distractors and accepts each yesterday memory', async ({ page }) => {
+  await page.evaluate(() => {
+    const day = (offset: number) => { const value = new Date(); value.setDate(value.getDate() + offset); return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`; };
+    const memories = [
+      ['tea', 'Tea with my family', -1], ['garden', 'Visited the garden', -1],
+      ['old-tea', 'TEA with my family!', -2], ['music', 'Listened to music', -2],
+    ];
+    localStorage.setItem('cogni:support:local-patient', JSON.stringify({ records: memories.map(([id, summary, offset]) => ({ id, kind: 'journal', updatedAt: Date.now(), data: { day: day(Number(offset)), summary } })), pending: {} }));
+  });
+  await page.getByRole('button', { name: /Remember yesterday Recall/ }).click();
+  const game = page.locator('[data-game-id="yesterday-quiz"]');
+  await game.getByRole('button', { name: 'Start Game', exact: true }).click();
+  await expect(game.getByRole('button', { name: 'Visited the garden', exact: true })).toHaveCount(0);
+  await expect(game.getByRole('button', { name: 'TEA with my family!', exact: true })).toHaveCount(0);
+  await expect(game.getByRole('button', { name: 'Listened to music', exact: true })).toBeVisible();
+  await game.getByRole('button', { name: 'Tea with my family', exact: true }).click();
+  await expect(game.getByText('Well done!')).toBeVisible();
+  await game.getByRole('button', { name: 'Next', exact: true }).click();
+  await game.getByRole('button', { name: 'Visited the garden', exact: true }).click();
+  await expect(game.getByText('Well done!')).toBeVisible();
+  const events = await page.evaluate(() => JSON.parse(localStorage.getItem('cogni:events:local-patient') || '[]'));
+  expect(events).toHaveLength(2);
+  expect(events.every((event: { correct: boolean }) => event.correct)).toBe(true);
+});

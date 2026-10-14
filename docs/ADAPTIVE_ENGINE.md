@@ -27,9 +27,16 @@ correctness and cannot update skill or baselines. Fuzzy / low-confidence
 matches require explicit confirmation before invoking the game's normal
 answer handler. Missing timing does not penalize the patient.
 
-Odd One Out applies its knob to the number of choices at the next question;
-catalog level remains 1. Other instrumented games currently log events but
-retain their existing mechanics. The event schema reserves hesitation and
+Odd One Out and Object Naming apply their knobs to choice count at the next
+question. Matching Pictures chooses pair count at session start; Sound Tap
+adjusts beat range, and Pattern Completion switches between two- and three-item
+patterns. Yesterday Quiz adds up to three older journal memories as distractors,
+excluding every target-day memory and normalized summaries repeated on that day.
+When there is insufficient safe history it uses fewer choices rather than inventing
+memories. Its answer positions still rotate. Crossword uses word length and given
+letters at puzzle creation. Catalog levels remain unchanged. Other instrumented
+legacy games log events but retain their existing mechanics.
+The event schema reserves hesitation and
 touch duration, but those signals are not yet measured or used. Do not claim
 that this version detects pauses, tremor or cognitive decline from speech.
 
