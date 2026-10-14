@@ -90,9 +90,18 @@ export default function SupportWorkspace() {
 
 type Save = (kind: string, data: Record<string, unknown>, id?: string) => boolean;
 function MediaPlayback({ id, video }: { id: string; video: boolean }) {
-  const [url, setUrl] = useState("");
-  useEffect(() => { let active = true, objectUrl = ""; void loadMedia(id).then(blob => { if (blob && active) { objectUrl = URL.createObjectURL(blob); setUrl(objectUrl); } }); return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); }; }, [id]);
-  const source = url || `/platform-api/media/${encodeURIComponent(id)}`;
+  const [resource, setResource] = useState<{ id: string; source: string } | null>(null);
+  useEffect(() => {
+    let active = true, objectUrl = "";
+    const fallback = `/platform-api/media/${encodeURIComponent(id)}`;
+    void loadMedia(id).then(blob => {
+      if (!active) return;
+      if (blob) objectUrl = URL.createObjectURL(blob);
+      setResource({ id, source: objectUrl || fallback });
+    }).catch(() => { if (active) setResource({ id, source: fallback }); });
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [id]);
+  const source = resource?.id === id ? resource.source : undefined;
   return video ? <video controls src={source} className="max-h-72 w-full" /> : <audio controls src={source} className="w-full" />;
 }
 function Journal({ rows, save, patient, notify }: { rows: SupportRecord[]; save: Save; patient: string; notify: (message: string) => void }) {

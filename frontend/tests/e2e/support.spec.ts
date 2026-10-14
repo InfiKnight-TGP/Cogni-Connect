@@ -97,6 +97,49 @@ test('patient journal sync and SOS reach the caregiver inbox', async ({ page, de
   await expect(page.getByText(/Help requested/)).toBeVisible();
 });
 
+test('empty journal audio is rejected and a valid retry can be saved', async ({ page, demo }) => {
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } });
+    let recordings = 0;
+    class MockRecorder {
+      state = 'inactive'; mimeType = 'audio/webm'; ondataavailable: ((event: { data: Blob }) => void) | null = null; onstop: (() => void) | null = null;
+      start() { this.state = 'recording'; recordings++; }
+      stop() {
+        const body = recordings === 1 ? new Blob([], { type: this.mimeType }) : new Blob(['valid journal audio'], { type: this.mimeType });
+        this.ondataavailable?.({ data: body }); this.state = 'inactive'; this.onstop?.();
+      }
+    }
+    Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: MockRecorder });
+  });
+  await login(page, demo.patient, demo.password);
+  await page.getByRole('button', { name: 'Journal', exact: true }).click();
+  const journalIdsBeforeRecording = await page.evaluate(() => {
+    const patient = localStorage.getItem('cogni:patient') || 'local-patient';
+    return JSON.parse(localStorage.getItem(`cogni:support:${patient}`) || '{"records":[]}').records
+      .filter((row: { kind: string }) => row.kind === 'journal').map((row: { id: string }) => row.id).sort();
+  });
+
+  await page.getByRole('button', { name: 'Record audio', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
+  await expect(page.getByText('No audio was captured. You can try again or leave a written message.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save memory', exact: true })).toBeDisabled();
+  const localJournals = await page.evaluate(() => {
+    const patient = localStorage.getItem('cogni:patient') || 'local-patient';
+    return JSON.parse(localStorage.getItem(`cogni:support:${patient}`) || '{"records":[]}').records
+      .filter((row: { kind: string }) => row.kind === 'journal');
+  });
+  expect(localJournals.map((row: { id: string }) => row.id).sort()).toEqual(journalIdsBeforeRecording);
+
+  await page.getByRole('button', { name: 'Record audio', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
+  await expect(page.getByText('Recording saved on this device. Review the transcript before saving your entry.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Save memory', exact: true }).click();
+  await sync(page);
+  const journals = (await records(page)).filter((row: { kind: string; data: { media?: unknown } }) => row.kind === 'journal' && row.data.media);
+  expect(journals).toHaveLength(1);
+  expect(journals[0].data.media).toMatchObject({ video: false });
+});
+
 test('caregiver voice message is saved, synced and playable in the patient account', async ({ page, demo }) => {
   await page.evaluate(() => {
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } });
@@ -115,6 +158,7 @@ test('caregiver voice message is saved, synced and playable in the patient accou
   await page.getByRole('button', { name: 'Record a voice message', exact: true }).click();
   await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
   await expect(page.getByText('Voice message recorded. Save it to share it with the patient.')).toBeVisible();
+  await expect(page.locator('audio').last()).toHaveAttribute('src', /^blob:/);
   await page.getByRole('button', { name: 'Share with patient', exact: true }).click();
   await sync(page);
   expect((await records(page)).filter((row: { kind: string; data: { media?: unknown } }) => row.kind === 'message' && row.data.media)).toHaveLength(1);
