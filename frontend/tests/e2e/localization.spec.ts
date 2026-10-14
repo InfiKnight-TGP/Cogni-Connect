@@ -31,6 +31,27 @@ for (const locale of [
     await expect(shell.getByRole('button', { name: /উত্তৰ কওক|जवाब बोलें/ })).toBeVisible();
   });
 
+  test(`${locale.code} people page translates call and caregiver edit actions`, async ({ page }) => {
+    await installSpeechMock(page);
+    await page.addInitScript((code) => {
+      localStorage.setItem('cogni:preferences:local-patient', JSON.stringify({
+        mode: 'read', language: code, textSize: 'large', updatedAt: 1, override: true,
+      }));
+    }, locale.code);
+    await page.route('**/people', route => route.request().resourceType() === 'document'
+      ? route.continue()
+      : route.fulfill({ json: [
+        { id: 'person-1', name: 'Meera', relation: 'Daughter', phone: '1234567890', photo: 'meera.jpg' },
+      ] }));
+    await page.goto('/people');
+    await expect(page.locator('html')).toHaveAttribute('lang', locale.lang);
+    await expect(page.getByRole('link', { name: new RegExp(localeUi[locale.code].Call) })).toBeVisible();
+    await page.evaluate(() => sessionStorage.setItem('caregiver', '1'));
+    await page.reload();
+    await expect(page.getByRole('button', { name: localeUi[locale.code].Edit, exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: localeUi[locale.code].Delete, exact: true })).toBeVisible();
+  });
+
   test(`${locale.code} location guidance follows the saved language and remains paused without consent`, async ({ page }) => {
     await installSpeechMock(page);
     await page.addInitScript((code) => {

@@ -70,7 +70,7 @@ export default function PeoplePage() {
           {loadError ? (
             <p className="text-xl">{tr("Sorry, we could not load the people right now.")}</p>
           ) : people === null ? (
-            <p className="text-xl">Loading…</p>
+            <p className="text-xl">{tr("Loading…")}</p>
           ) : caregiver ? (
             <ManagePeople people={people} photoUrl={photoUrl} reload={load} />
           ) : people.length === 0 ? (
@@ -98,7 +98,7 @@ export default function PeoplePage() {
                         href={`tel:${p.phone.replace(/\s/g, "")}`}
                         className="flex h-16 w-full items-center justify-center rounded-xl bg-green-600 px-6 text-2xl font-bold text-white transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-green-500 shadow-sm"
                       >
-                        📞 Call
+                        📞 {tr("Call")}
                       </a>
                     )}
                   </div>
@@ -156,7 +156,7 @@ function ManagePeople({
             <div className="min-w-0 flex-1">
               <p className="truncate text-lg font-semibold">{p.name}</p>
               <p className="text-sm text-muted-foreground">{p.relation ? tr(p.relation) : tr("No relation set")}</p>
-              <p className="text-sm text-muted-foreground">{p.phone || "No phone"}</p>
+              <p className="text-sm text-muted-foreground">{p.phone || tr("No phone")}</p>
               <div className="mt-2 flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => setEditing(p)}>
                   {tr("Edit")}

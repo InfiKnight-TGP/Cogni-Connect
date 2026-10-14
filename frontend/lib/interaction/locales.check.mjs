@@ -60,7 +60,7 @@ const required = [
   'Mon','Tue','Wed','Thu','Fri','Sat','Sun','Stars Earned This Week','star','stars',
   'Earned from your completed daily activities.','Your Best This Week','Play an activity today to see your best!',
   'Your top performance across this week’s games.','My People','People','No people added yet.','No relation set','No phone',
-  'Name *','Relation','Phone','Photo *','Photo (leave empty to keep the current one)',
+  'Name *','Relation','Phone','Photo *','Photo (leave empty to keep the current one)','Call','Edit','Delete',
   'Use a clear photo of the face. It is also used to recognise this person in videos.',
   'Add a person','Add person','Save changes','Remove {name}? Their photo will be deleted too.','Edit {name}',
   'Could not remove this person. Please try again.','Could not reach the server. Please try again.',
