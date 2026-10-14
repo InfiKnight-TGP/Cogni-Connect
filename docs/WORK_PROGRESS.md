@@ -202,3 +202,60 @@ Push preflight on 14 October still failed because GitHub HTTPS credentials are
 unavailable. The changes are ready for a feature-branch commit and upload after
 authentication. Next milestone: verify caregiver mode defaults versus patient
 overrides, then extend voice navigation coverage without duplicating working games.
+
+## Voice accessibility task branch - 14 October 2026
+
+The clean integration tip `207e52e` was checked out as
+`feature/dinesh-voice-accessibility`, tracking
+`origin/feature/voice-ai-journal-platform`. The branch begins at the fetched
+integration tip; the requested feature branch did not previously exist locally
+or remotely. The outer workspace's untracked backup and JSON files are outside
+this nested Git checkout and were preserved.
+
+Audit file map and prioritized checklist:
+
+1. **Complete family voice-note workflow:** `frontend/components/support/SupportWorkspace.tsx`
+   already used `saveMedia` / `loadMedia` for journal recordings, but Family
+   allowed only text. Reuse those helpers and the existing message record sync;
+   verify caregiver recording, patient playback, and storage/microphone failures.
+2. **Cover patient voice controls:** `frontend/components/nav.tsx`,
+   `frontend/components/interaction/VoiceQuestion.tsx`,
+   `frontend/components/games/_shared/GameShell.tsx`,
+   `frontend/app/play/page.tsx`, and support sections already expose spoken
+   navigation, question replay, answer, confirmation, reminder, and SOS flows.
+   Extend tests around integration gaps without adding parallel speech logic.
+3. **Preserve speech lifecycle and safe fallbacks:**
+   `frontend/lib/interaction/speech.ts`,
+   `frontend/lib/interaction/preferences.ts`,
+   `frontend/components/interaction/InteractionProvider.tsx`, and
+   `frontend/tests/e2e/speech-mock.ts` cover cancellation, empty/silent input,
+   permission failures, retry, and saved mode/language preferences.
+4. **Language and accessibility acceptance:** `frontend/lib/interaction/locales/`,
+   `frontend/lib/interaction/locale.ts`, `frontend/components/nav.tsx`,
+   `frontend/app/globals.css`, and `frontend/tests/e2e/accessibility.spec.ts`.
+   English, Hindi, and Assamese control strings exist; broader game/support copy
+   remains English. No fourth language will be advertised without inspecting
+   actual browser voices and checking translated task content.
+5. **Device/browser acceptance:** `frontend/tests/e2e/` mocks browser speech and
+   microphone APIs. Repeat automated flow tests, then record that physical
+   microphone and installed speech-voice behavior are unverified unless tested
+   directly in a supported browser/device.
+
+This branch adds audio recording and playback for caregiver family messages.
+Messages use the existing patient-scoped media key, IndexedDB media store,
+support-record synchronization and HTML audio playback. Caregiver messages remain
+caregiver-authored records; patient replies retain existing tap/voice options.
+Automated tests mock microphone hardware, so they verify workflow behavior rather
+than physical device access. Browser-provided Hindi, Assamese or candidate fourth
+language voices and full end-to-end translated game prompts remain unverified.
+
+Validation on this task branch: TypeScript `--noEmit` and all nine frontend unit
+check scripts passed. The support Playwright suite ran against the already-running
+port-3001 production server: the three pre-existing tests passed, but the new
+voice-message test could not find its control because that server serves an older
+production bundle. Two attempts to run the focused test against a temporary dev
+server stalled before Playwright produced a result, so the new end-to-end media
+flow is not yet verified. A full browser-suite attempt on port 3001 also timed out
+in `beforeEach` because its expected first-use “Yes” prompt was absent. No physical
+microphone or actual installed speech voices were inspected; no fourth locale is
+claimed. Build was not run while the pre-existing production server was active.

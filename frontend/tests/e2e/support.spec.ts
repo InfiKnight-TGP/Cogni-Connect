@@ -17,7 +17,7 @@ test.beforeEach(async ({ page }) => {
     const response = await route.fetch({ url: `http://127.0.0.1:5031${path}` });
     await route.fulfill({ response });
   });
-  await page.goto('/support');
+  await page.goto('/support', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Yes', exact: true }).click();
 });
 
@@ -85,6 +85,32 @@ test('patient journal sync and SOS reach the caregiver inbox', async ({ page, de
   await expect(page.getByText('SIMULATED: I enjoyed tea with my sister.', { exact: true }).first()).toBeVisible();
   await page.getByRole('button', { name: 'Dashboard', exact: true }).click();
   await expect(page.getByText(/Help requested/)).toBeVisible();
+});
+
+test('caregiver voice message is saved, synced and playable in the patient account', async ({ page, demo }) => {
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } });
+    class MockRecorder {
+      state = 'inactive'; mimeType = 'audio/webm'; ondataavailable: ((event: { data: Blob }) => void) | null = null; onstop: (() => void) | null = null;
+      start() { this.state = 'recording'; }
+      stop() { this.ondataavailable?.({ data: new Blob(['mock family voice note'], { type: this.mimeType }) }); this.state = 'inactive'; this.onstop?.(); }
+    }
+    Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: MockRecorder });
+  });
+  await login(page, demo.caregiver, demo.password);
+  await page.getByRole('button', { name: 'Family', exact: true }).click();
+  await page.getByRole('button', { name: 'Record a voice message', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
+  await expect(page.getByText('Voice message recorded. Save it to share it with the patient.')).toBeVisible();
+  await page.getByRole('button', { name: 'Share with patient', exact: true }).click();
+  await sync(page);
+  expect((await records(page)).filter((row: { kind: string; data: { media?: unknown } }) => row.kind === 'message' && row.data.media)).toHaveLength(1);
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await login(page, demo.patient, demo.password);
+  await page.getByRole('button', { name: 'Family', exact: true }).click();
+  const player = page.locator('article audio');
+  await expect(player).toBeVisible();
+  await expect(player).toHaveAttribute('src', /platform-api\/media|blob:/);
 });
 
 test('personal crossword progress survives navigation and is patient scoped', async ({ page, demo, request }) => {

@@ -76,7 +76,7 @@ export default function SupportWorkspace() {
       <VoiceQuestion auto={false} prompt="Choose an activity" options={sections.map(label => ({ id: label, label }))} onAnswer={setSection} />
       {section === "Journal" && <Journal rows={rows} save={save} patient={account.patient} notify={setNotice} />}
       {section === "Reminders" && <Reminders rows={rows} save={save} caregiver={account.role === "caregiver"} />}
-      {section === "Family" && <Family rows={rows} save={save} caregiver={account.role === "caregiver"} />}
+      {section === "Family" && <Family rows={rows} save={save} caregiver={account.role === "caregiver"} patient={account.patient} notify={setNotice} />}
       {section === "Places" && <Places rows={rows} save={save} caregiver={account.role === "caregiver"} notify={setNotice} patient={account.patient} />}
       {section === "Crossword" && <PersonalCrossword />}
       {section === "Dashboard" && account.role === "caregiver" && <Dashboard rows={rows} save={save} />}
@@ -139,10 +139,47 @@ function Reminders({ rows, save, caregiver }: { rows: SupportRecord[]; save: Sav
   </section>;
 }
 
-function Family({ rows, save, caregiver }: { rows: SupportRecord[]; save: Save; caregiver: boolean }) {
+function Family({ rows, save, caregiver, patient, notify }: { rows: SupportRecord[]; save: Save; caregiver: boolean; patient: string; notify: (message: string) => void }) {
+  const [draft, setDraft] = useState("");
+  const [recording, setRecording] = useState(false);
+  const [media, setMedia] = useState<{ id: string; video: false } | null>(null);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const stream = useRef<MediaStream | null>(null);
+  useEffect(() => () => { if (recorder.current?.state === "recording") recorder.current.stop(); stream.current?.getTracks().forEach(track => track.stop()); }, []);
+  const startRecording = async () => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") throw new Error("Audio recording is unavailable. You can leave a written message instead.");
+      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.current = audioStream;
+      const capture = new MediaRecorder(audioStream);
+      recorder.current = capture;
+      const chunks: BlobPart[] = [], id = `${patient}:${crypto.randomUUID()}`;
+      capture.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+      capture.onstop = () => {
+        audioStream.getTracks().forEach(track => track.stop());
+        stream.current = null;
+        setRecording(false);
+        const blob = new Blob(chunks, { type: capture.mimeType || "audio/webm" });
+        if (!blob.size) { notify("No audio was captured. You can try again or leave a written message."); return; }
+        void saveMedia(id, blob)
+          .then(() => { setMedia({ id, video: false }); notify("Voice message recorded. Save it to share it with the patient."); })
+          .catch(() => notify("Voice message could not be saved. You can leave a written message instead."));
+      };
+      capture.start();
+      setRecording(true);
+    } catch (error) {
+      stream.current?.getTracks().forEach(track => track.stop());
+      stream.current = null;
+      notify((error as Error).message || "Microphone unavailable. You can leave a written message instead.");
+    }
+  };
+  const saveMessage = () => {
+    if (save("message", { text: draft.trim(), ...(media ? { media } : {}) })) { setDraft(""); setMedia(null); }
+  };
   return <section className="space-y-4 rounded-2xl border-2 p-6"><h2 className="text-2xl font-bold">Family messages</h2>
-    {caregiver && <form onSubmit={e => { e.preventDefault(); const form = e.currentTarget; save("message", { text: new FormData(form).get("message") }); form.reset(); }}><label>Your message<textarea name="message" required maxLength={2000} className={inputClass} /></label><button className={button}>Leave message</button></form>}
-    {rows.filter(row => row.kind === "message").slice(-10).map(row => <article key={row.id} className="space-y-3 rounded-xl border-2 p-4"><p className="text-2xl">{text(row.data.text)}</p><VoiceQuestion auto={false} prompt={text(row.data.text)} options={[{ id: "Thank you", label: "Thank you" }, { id: "Please call me", label: "Please call me" }]} onAnswer={reply => save("reply", { messageId: row.id, text: reply, method: "voice" })} /><div className="flex flex-wrap gap-3">{["Thank you", "Please call me"].map(reply => <button key={reply} className={button} onClick={() => save("reply", { messageId: row.id, text: reply, method: "tap" })}>{reply}</button>)}</div>{rows.filter(r => r.kind === "reply" && r.data.messageId === row.id).map(reply => <p key={reply.id}>↳ {text(reply.data.text)}</p>)}</article>)}
+    {caregiver && <div className="space-y-3"><label>Your written or spoken message<textarea value={draft} onChange={event => setDraft(event.target.value)} maxLength={2000} className={inputClass} /></label>{recording ? <button type="button" className={button} onClick={() => recorder.current?.stop()}>Stop recording</button> : <button type="button" className={button} onClick={() => void startRecording()}>Record a voice message</button>}{recording && <p role="status">Recording… Stop when you are ready.</p>}{media && <MediaPlayback id={media.id} video={false} />}<button type="button" className={button} disabled={recording || (!draft.trim() && !media)} onClick={saveMessage}>Share with patient</button></div>}
+    {rows.filter(row => row.kind === "message").slice(-10).reverse().map(row => <article key={row.id} className="space-y-3 rounded-xl border-2 p-4">{text(row.data.text) && <p className="text-2xl">{text(row.data.text)}</p>}{typeof row.data.media === "object" && row.data.media !== null && <MediaPlayback id={text((row.data.media as { id: string }).id)} video={false} />}<VoiceQuestion auto={false} prompt={text(row.data.text) || "Family voice message"} options={[{ id: "Thank you", label: "Thank you" }, { id: "Please call me", label: "Please call me" }]} onAnswer={reply => save("reply", { messageId: row.id, text: reply, method: "voice" })} /><div className="flex flex-wrap gap-3">{["Thank you", "Please call me"].map(reply => <button key={reply} className={button} onClick={() => save("reply", { messageId: row.id, text: reply, method: "tap" })}>{reply}</button>)}</div>{rows.filter(r => r.kind === "reply" && r.data.messageId === row.id).map(reply => <p key={reply.id}>↳ {text(reply.data.text)}</p>)}</article>)}
+    {!rows.some(row => row.kind === "message") && <p>No family messages yet.</p>}
   </section>;
 }
 
