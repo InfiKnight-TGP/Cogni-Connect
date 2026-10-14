@@ -259,3 +259,28 @@ flow is not yet verified. A full browser-suite attempt on port 3001 also timed o
 in `beforeEach` because its expected first-use “Yes” prompt was absent. No physical
 microphone or actual installed speech voices were inspected; no fourth locale is
 claimed. Build was not run while the pre-existing production server was active.
+
+
+## Akash voice accessibility continuation — 2026-10-14
+
+Branch: `feature/akash-voice-accessibility`, based on `d13be6e`. Work remains local pending commit/push.
+
+### Completed in this continuation
+
+- Family voice recording now has explicit stop, cancel, and record-again controls. A synchronous start guard prevents duplicate recorder creation, cancelled takes are discarded, and the existing zero-byte rejection remains. The deterministic Playwright recorder test now checks cancel then retry before sharing and patient playback.
+- The support browser proxy fixture now forwards a deterministic audio payload to the isolated Flask test database. The browser stores a real Blob in IndexedDB, while Playwright request interception cannot expose Chromium's streamed Blob body through `postDataBuffer`; this test therefore validates the application record flow and backend upload with a matching fixture, not raw hardware encoding.
+- Hindi and Assamese use the existing locale dictionaries via a shared `translate(locale, phrase)` helper with English fallback. Added coverage for patient navigation, common preference controls, key journal/reminder/family actions, and SOS text. The remaining support flows, most game content/feedback, saved-place prompts, and several account/error messages still need localization. Translation quality has not been reviewed by a native speaker.
+- Offline asset generation now uses `NEXT_DIST_DIR` consistently with Next build configuration. A default `.next` directory can otherwise leak stale paths into a separately built production artifact and prevent service-worker preparation.
+
+### Checks performed
+
+- Frontend TypeScript: `node node_modules/typescript/bin/tsc --noEmit` — passed after current localization edits.
+- Frontend unit scripts: `npm run test:unit` — all nine passed after the final SOS/support locale edits.
+- Support browser suite: `node node_modules/@playwright/test/cli.js test --config playwright.support.config.ts` — 4/4 passed against the final production build, including family message cancel/retry/share/playback. Uses the isolated Flask test API on 5031.
+- Main browser suite on the development server: 8 passed; the offline case cannot run in dev because service-worker setup is production-only. An initial production run found the isolated build manifest referenced a stale missing asset; after fixing manifest selection and preparing assets in bounded batches, the full production browser suite passed 9/9. Earlier connection refusals were from the short-lived temporary dev process, not application assertions.
+- Production frontend build: `npm run build` — passed using `NEXT_DIST_DIR=.next-akash-verification`; existing `<img>` lint warnings remain. Build output was isolated from the pre-existing server.
+- Actual microphone permission, recording hardware, playback audio, and browser Hindi/Assamese recognition/synthesis voices were not verified. Playwright speech and recording are mocked; this is not evidence of device compatibility.
+
+### Reproduction
+
+In `frontend`: `npx tsc --noEmit`; `npm run test:unit`; `node node_modules/@playwright/test/cli.js test --config playwright.support.config.ts`; set `PLAYWRIGHT_BASE_URL=http://127.0.0.1:3002` and run `node node_modules/@playwright/test/cli.js test --config playwright.config.ts` against the isolated production server. For the isolated build, set `NEXT_DIST_DIR=.next-akash-verification` for both `npm run build` and `next start`.

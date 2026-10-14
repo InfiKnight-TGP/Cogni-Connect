@@ -24,18 +24,20 @@ export default function OfflineSetup() {
       const cache = await caches.open(`cogni-patient-${manifest.version}`);
       const assets = [...manifest.assets, "/play", "/support"];
       const cachedPaths = new Set((await cache.keys()).map(request => new URL(request.url).pathname));
-      for (const asset of assets) {
-        if (cachedPaths.has(new URL(asset, location.origin).pathname)) continue;
-        try {
-          const response = await fetch(asset, { cache: "reload" });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const body = await response.arrayBuffer();
-          await cache.put(asset, new Response(body, {
-            headers: { "Content-Type": response.headers.get("Content-Type") ?? "application/octet-stream" },
-          }));
-        } catch (error) {
-          throw new Error(`Could not prepare offline resource ${asset}: ${String(error)}`, { cause: error });
-        }
+      for (let start = 0; start < assets.length; start += 8) {
+        const batch = assets.slice(start, start + 8).filter(asset => !cachedPaths.has(new URL(asset, location.origin).pathname));
+        await Promise.all(batch.map(async asset => {
+          try {
+            const response = await fetch(asset, { cache: "reload" });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const body = await response.arrayBuffer();
+            await cache.put(asset, new Response(body, {
+              headers: { "Content-Type": response.headers.get("Content-Type") ?? "application/octet-stream" },
+            }));
+          } catch (error) {
+            throw new Error(`Could not prepare offline resource ${asset}: ${String(error)}`, { cause: error });
+          }
+        }));
       }
       await navigator.serviceWorker.register("/sw.js");
     };
