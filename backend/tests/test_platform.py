@@ -85,3 +85,15 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(self.post('/records', {'records': [alert]}).status_code, 403)
         alert['data']['location'] = None
         self.assertEqual(self.post('/records', {'records': [alert]}).status_code, 200)
+
+    def test_inflight_request_cannot_cross_patient_after_account_switch(self):
+        old_patient = self.login().get_json()['patient']
+        self.post('/auth/logout', {})
+        self.post('/auth/setup', {'username': 'second-care', 'password': 'long-second-care-pass', 'patient_username': 'second-patient', 'patient_password': 'long-second-patient-pass'})
+        self.post('/auth/login', {'username': 'second-patient', 'password': 'long-second-patient-pass'})
+        headers = {**self.headers, 'X-Cogni-Patient': old_patient}
+        response = self.client.post('/platform/records', json={'records': [self.record()]}, headers=headers)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.client.get('/platform/records', headers=headers).status_code, 409)
+        self.assertEqual(self.client.post('/platform/media/old-recording', data=b'SIMULATED', content_type='audio/webm', headers=headers).status_code, 409)
+        self.assertEqual(self.client.get('/platform/records').get_json()['records'], [])

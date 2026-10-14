@@ -2,7 +2,8 @@
 
 ## Baseline and scope
 
-This document describes the existing application inspected on 13 October 2026.
+The baseline sections describe the application inspected on 13 October 2026.
+The feature-branch extension below describes the current additions and boundaries.
 It is a Next.js 14 App Router / React 18 / TypeScript frontend with a Flask
 backend whose application object is `api`. Tailwind, Radix primitives and
 Chart.js provide the interface. There is no database server: the baseline
@@ -121,3 +122,84 @@ cross-game speech-answer interface. JSON writes are not a transactional
 multi-user database. Public media copies are unsuitable for sensitive production
 uploads. README claims about security or offline operation must be assessed
 against these actual code paths.
+
+## Current feature-branch extension
+
+The original Flask/Next stack and legacy routes are retained. The new support
+workspace uses a separate SQLite store; it does not turn the legacy JSON API
+into a multi-tenant service. `/play` lists playable registry entries without
+caregiver level/domain labels. `/support` has explicit patient/caregiver accounts.
+
+| Path | Responsibility |
+| --- | --- |
+| `backend/platform_api.py` | Scoped accounts, hashed passwords, session cookies, LWW records, private recordings |
+| `backend/seed_platform.py` | SIMULATED declining history through the actual auth/record API |
+| `frontend/components/interaction/` | Mode selector, speech question controls, event logging hook, offline preparation |
+| `frontend/lib/interaction/` | Speech interface, matching, preferences, adaptive engine, trends, content, queue and storage |
+| `frontend/lib/interaction/locales/` | Discovered en/hi/as interaction strings and answer variants; not complete game translations |
+| `frontend/components/support/` | Journal, reminders, messages, places, caregiver overview, crossword and persistent SOS |
+| `frontend/public/sw.js` | Patient shell/static-asset offline responses; never caches API or authentication responses |
+| `frontend/scripts/offline-assets.mjs` | Post-build static asset manifest |
+| `frontend/tests/e2e/` | Mocked-speech browser tests and isolated real-Flask support integration |
+
+```mermaid
+flowchart LR
+  UI[Patient games and support workspace] --> Speech[SpeechProvider and answer matcher]
+  Speech --> Answer[Existing game answer handler]
+  Answer --> Events[Per-profile events and adaptive state]
+  UI --> Local[LocalStorage records and pending queue]
+  Events --> Local
+  UI --> IDB[IndexedDB recordings]
+  Local --> Sync[Authenticated sync]
+  IDB --> Sync
+  Sync --> Proxy[Next platform-api rewrite]
+  Proxy --> Auth[Flask session and role checks]
+  Auth --> DB[Patient-scoped SQLite records]
+  Auth --> Media[Private hashed media paths]
+  DB --> Dashboard[Caregiver session trends and alerts]
+  Cache[Service worker patient cache] --> UI
+```
+
+`SpeechProvider` defaults to Web Speech. Questions read aloud before listening;
+unknown/fuzzy recognition asks for confirmation. Voice timing ends at speech
+start, not transcript delivery. Only the active provider owns cancellation;
+late callbacks are detached. No key is needed, but STT may require connectivity
+and a browser-provided language service. Read mode never automatically listens.
+
+Support records are keyed by patient and ID, with client millisecond timestamps.
+Sync pulls remote records, sends at most 100 eligible pending records, and merges
+last-write-wins responses without acknowledging edits made during upload. SOS
+records are prioritized. `X-Cogni-Patient` binds each sync read/write and media
+upload to its initiating profile; a changed session returns 409. Media blobs
+upload before their journal record. Consent checks gate location sync; old
+records retained locally after revocation are not deletion requests.
+
+Authenticated GameShell scores use scoped support records. Guest scores retain
+the legacy performance route and also have a local record. Legacy reports still
+read their original JSON data; the support dashboard reads scoped answer events.
+There is no automatic migration or combined multi-patient legacy dashboard.
+
+New or completed games retain one catalog level and one of the four domains:
+
+| ID | Domain; all catalog level 1 | Mechanics |
+| --- | --- | --- |
+| `odd-one-out` | Attention | Eight familiar-picture rounds; adaptive choice count; correct / 8 |
+| `memory-cards` | Memory | Two to five pairs selected at session start; explicit next-pair action; pairs / attempts |
+| `sound-tap` | Attention | Six beat-count rounds; optional visual dots; adaptive beat range; correct / 6 |
+| `pattern-completion` | Recognition & Orientation | Six repeating-picture rounds; two- or three-item patterns |
+| `object-naming` | Recognition & Orientation | Six object rounds; voice or choice tiles; adaptive choice count |
+| `yesterday-quiz` | Memory | Up to five actual yesterday journal summaries; only distinct older summaries can be distractors |
+
+Attention Hunt and Map Navigator no longer impose their old countdowns. Existing
+games reuse GameShell and their original routes/data. Personal crossword is a
+support activity: a 15x15 legal-intersection grid from entered personal words and
+saved place names, persisted solved words, typed/confirmed voice input, template
+clues and difficulty-dependent word length/given letters. Not every legacy game
+applies an adaptive knob yet; see `ADAPTIVE_ENGINE.md`.
+
+The caregiver view aggregates answer events into session percentages before
+fitting decline slopes. Its experimental index combines available accuracy,
+adherence, journal activity and personal voice timing evidence. Missing signals
+are omitted, not invented. SOS is a server inbox record, not an external emergency
+dispatch. Media/location hardware and native-language speech still need manual
+acceptance. See `WORK_PROGRESS.md` for executed tests and unresolved requirements.

@@ -9,7 +9,8 @@
     "test:unit": "node lib/progress.check.mjs && node components/games/plan-the-day/rules.check.mjs && node lib/interaction/interaction.check.mjs && node lib/interaction/speech.check.mjs && node lib/interaction/adaptive.check.mjs && node lib/interaction/content.check.mjs && node lib/interaction/yesterday-quiz.check.mjs && node lib/interaction/sync.check.mjs && node lib/interaction/trends.check.mjs",
     "test:e2e": "playwright test",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:e2e:support": "playwright test --config playwright.support.config.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.0.5",

@@ -28,6 +28,8 @@ npm run build
 npm run start -- --hostname 127.0.0.1
 # In another frontend terminal, against that production server:
 npm run test:e2e
+# Real support API tests in a temporary database (auto-starts Flask on 5031):
+npm run test:e2e:support
 cd ../backend
 .venv\Scripts\python.exe -m unittest discover -s tests
 .venv\Scripts\python.exe -c "import app"
@@ -36,6 +38,14 @@ cd ../backend
 Playwright requires Chromium (`npx playwright install chromium --no-shell`).
 Set `PLAYWRIGHT_BASE_URL` when using a different port. Browser speech tests use
 deterministic mocks; they do not validate a physical microphone or native voices.
+The support suite routes browser API requests to its isolated Flask test server;
+it does not populate the working patient database or verify the production proxy.
+
+To seed a local caregiver demo, run `.venv\Scripts\python.exe seed_platform.py`
+from `backend`.
+The script prompts for a password, labels all generated history SIMULATED, and
+refuses to overwrite existing usernames. It creates `simulated-caregiver` and
+`simulated-patient`; `--caregiver` and `--patient` select other demo usernames.
 
 ## Known limitations
 

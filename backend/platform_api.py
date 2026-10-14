@@ -69,6 +69,9 @@ def authorize():
         account = db.execute("SELECT a.* FROM sessions s JOIN accounts a ON a.username=s.username WHERE s.token=? AND s.expires>?", (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
     if not account:
         return jsonify(error="Please sign in"), 401
+    expected_patient = request.headers.get("X-Cogni-Patient")
+    if expected_patient is not None and expected_patient != account["patient"]:
+        return jsonify(error="The signed-in profile changed. This request was not applied."), 409
     g.account = dict(account)
 
 

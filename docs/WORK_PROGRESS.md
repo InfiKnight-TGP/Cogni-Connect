@@ -167,3 +167,38 @@ with the five pre-existing image warnings. All nine production browser tests
 passed, including both yesterday memories scoring correctly. `git diff --check`
 passed. Next milestone: isolated caregiver/patient browser integration tests for
 seeded decline, reminder adherence, SOS delivery, journal sync and crossword restore.
+
+The personal recall fix is committed as `e88fbd6`. Non-interactive push again
+failed because GitHub HTTPS credentials are unavailable; existing local work is
+preserved on the feature branch.
+
+## Caregiver integration milestone - 14 October 2026
+
+Added a Playwright support suite backed by an isolated Flask process on 5031 and
+a temporary SQLite/media directory. Browser requests are redirected to that real
+API; the existing working database is never seeded by these tests. The production
+Next proxy itself is outside this suite's coverage. Speech remains mocked.
+
+Extracted the existing seed script's reusable `seed_demo` function, preserving its
+CLI. Fixed simulated events to use their server-generated patient ID. A unit test
+verifies 320 events, the eight-session decline and non-overwrite behavior.
+
+A regression test reproduced an account-switch race: a request started for one
+patient could be accepted under a different session after login changed. Sync now
+binds record reads/writes and media uploads with `X-Cogni-Patient`; the API rejects
+mismatches with 409 before applying data. Backend discovery now passes 33 tests.
+The initial browser run verified seeded decline, role checks, voice reminder
+completion, journal sync and SOS inbox delivery. Crossword restore passed, but its
+logout assertion needed to wait for the asynchronous logout response. The final
+production build passed with the five existing image warnings. All nine frontend
+check scripts and all nine existing browser tests passed. The three support
+integration tests now pass with a clean exit, including crossword restoration
+and isolation after switching patients. Test teardown waits for in-flight sync
+routes; the two browser suites must run sequentially because they share an
+artifact directory. Speech remains mocked; native devices and the production
+proxy were not verified by this suite.
+
+Push preflight on 14 October still failed because GitHub HTTPS credentials are
+unavailable. The changes are ready for a feature-branch commit and upload after
+authentication. Next milestone: verify caregiver mode defaults versus patient
+overrides, then extend voice navigation coverage without duplicating working games.

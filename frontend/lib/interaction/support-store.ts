@@ -15,8 +15,8 @@ export function putSupport(patient: string, kind: string, data: Record<string, u
   save(patient, enqueue(readSupport(patient), record));
   return record;
 }
-export async function platformRequest(path: string, data?: unknown) {
-  const response = await fetch(`/platform-api${path}`, { method: data === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", "X-Cogni-Request": "1" }, credentials: "same-origin", body: data === undefined ? undefined : JSON.stringify(data) });
+export async function platformRequest(path: string, data?: unknown, patient?: string) {
+  const response = await fetch(`/platform-api${path}`, { method: data === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", "X-Cogni-Request": "1", ...(patient ? { "X-Cogni-Patient": patient } : {}) }, credentials: "same-origin", body: data === undefined ? undefined : JSON.stringify(data) });
   const value = await response.json();
   if (!response.ok) throw new Error(value.error || "Please try again when connected");
   return value;
@@ -28,7 +28,7 @@ export function syncSupport(patient: string): Promise<void> {
     // Verify the live account before sending any cached patient data.
     const account: Account = await platformRequest("/auth/me");
     if (account.patient !== patient) throw new Error("Sign in to this patient profile before syncing");
-    const remote = await platformRequest("/records");
+    const remote = await platformRequest("/records", undefined, patient);
     save(patient, acknowledge(readSupport(patient), remote.records, []));
     // Pull revocations before uploading. Keep excluded local records on the device.
     const consent = (remote.records as SupportRecord[]).find(row => row.id === "location-consent")?.data;
@@ -47,12 +47,12 @@ export function syncSupport(patient: string): Promise<void> {
       if (media?.id) {
         const blob = await loadMedia(media.id);
         if (blob) {
-          const response = await fetch(`/platform-api/media/${encodeURIComponent(media.id)}`, { method: "POST", headers: { "Content-Type": blob.type, "X-Cogni-Request": "1" }, credentials: "same-origin", body: blob });
+          const response = await fetch(`/platform-api/media/${encodeURIComponent(media.id)}`, { method: "POST", headers: { "Content-Type": blob.type, "X-Cogni-Request": "1", "X-Cogni-Patient": patient }, credentials: "same-origin", body: blob });
           if (!response.ok) throw new Error("Recording upload did not finish. It remains saved on this device.");
         }
       }
     }
-    const response = await platformRequest("/records", { records: sent });
+    const response = await platformRequest("/records", { records: sent }, patient);
     save(patient, acknowledge(readSupport(patient), response.records, sent));
   })().finally(() => inflight.delete(patient));
   inflight.set(patient, work); return work;
