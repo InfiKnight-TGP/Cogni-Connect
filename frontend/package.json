@@ -10,7 +10,8 @@
     "test:e2e": "playwright test",
     "start": "next start",
     "lint": "next lint",
-    "test:e2e:support": "playwright test --config playwright.support.config.ts"
+    "test:e2e:support": "playwright test --config playwright.support.config.ts",
+    "test:locales": "python lib/interaction/locales.check.py && node lib/interaction/locales.check.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.0.5",

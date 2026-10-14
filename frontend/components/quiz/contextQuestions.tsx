@@ -15,6 +15,8 @@ import { API_URL } from "@/lib/api";
 import { isCaregiverUnlocked } from "@/lib/mode";
 import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
 import { useAnswerLog } from "@/components/interaction/useAnswerLog";
+import { translate } from "@/lib/interaction/locale";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
 
 export default function ContextQuestions({
   setProgress,
@@ -37,6 +39,8 @@ export default function ContextQuestions({
   setActivityScore?: (score: number) => void;
   onComplete?: (score: number) => void;
 }) {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const [tab, setTab] = useState("1");
   const [feedback, setFeedback] = useState<{submitted: boolean; feedback: number}[]>([]);
   const [quizCompleted, setQuizCompleted] = useState(false);
@@ -176,38 +180,38 @@ export default function ContextQuestions({
           onClick={() => setProgress(-1)}
           className="mr-6 min-h-[48px] px-5 text-lg"
         >
-          <ArrowLeft className="mr-2 h-5 w-5" /> Back
+          <ArrowLeft className="mr-2 h-5 w-5" /> {tr("Back")}
         </Button>
         <div className="text-xl font-medium">
           {myDay ? (
-            "My Day"
+            tr("My Day")
           ) : (
             <>
-              Daily Recall —{" "}
+              {tr("Daily Recall")} —{" "}
               <span className="text-blue-600 dark:text-blue-400">
                 {format(date, "EEE d MMM yyyy")}
               </span>
             </>
           )}
         </div>
-        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 2 of 2" : "Part 3"}</Badge>
+        <Badge className="ml-4 h-8 px-4">{myDay ? tr("Part 2 of 2") : tr("Part 3")}</Badge>
       </div>}
 
       {loading ? (
         <div className="mt-8 text-center text-muted-foreground">
-          Loading questions...
+          {tr("Loading questions...")}
         </div>
       ) : data.length === 0 ? (
         <div className="mt-8 flex flex-col items-center justify-center space-y-4">
           <p className="text-center text-muted-foreground">
-            No videos recorded on this date
+            {tr("No videos recorded on this date")}
           </p>
           <Button
             size="lg"
             onClick={() => standalone ? onComplete?.(0) : setProgress(-1)}
             className="text-lg font-medium transition-all"
           >
-            Finish <ArrowRight className="ml-3 h-4 w-4" />
+            {tr("Finish")} <ArrowRight className="ml-3 h-4 w-4" />
           </Button>
         </div>
       ) : (
@@ -235,7 +239,7 @@ export default function ContextQuestions({
                     disabled={!isUnlocked}
                     className={!isUnlocked ? 'opacity-50 cursor-not-allowed' : ''}
                   >
-                    Question {index + 1}
+                    {translate(locale, "Question {number}", { number: index + 1 })}
                   </TabsTrigger>
                 );
               })}
@@ -298,6 +302,8 @@ function Question({
   totalQuestions: number;
   setTab: React.Dispatch<React.SetStateAction<string>>;
 }) {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
   const [input, setInput] = useState<AnswerInput>({ method: "typed", responseMs: null });
@@ -345,7 +351,7 @@ function Question({
   return (
     <>
       <div className="mt-8 text-2xl font-medium">
-        <span className="text-blue-600">Question {n}.</span> {data?.question}
+        <span className="text-blue-600">{translate(locale, "Question {number}.", { number: n })}</span> {data?.question}
       </div>
       <Textarea
         value={value}
@@ -353,10 +359,10 @@ function Question({
           setValue(e.target.value);
           setInput({ method: "typed", responseMs: null });
         }}
-        placeholder="Answer the question here."
+        placeholder={tr("Answer the question here.")}
         className="mt-8 h-12 max-h-36 w-full text-lg"
       />
-      <VoiceQuestion prompt={data.question} freeText options={[]} disabled={feedback[parseInt(n) - 1].submitted} onAnswer={(answer, spoken) => { setValue(answer); setInput(spoken); }} />
+      <VoiceQuestion prompt={data.question} translatePrompt={false} freeText options={[]} disabled={feedback[parseInt(n) - 1].submitted} onAnswer={(answer, spoken) => { setValue(answer); setInput(spoken); }} />
       {error && <p role="status">{error}</p>}
       <Button
         onClick={() => onSubmit()}
@@ -364,13 +370,13 @@ function Question({
         disabled={feedback[parseInt(n) - 1].submitted || value === ""}
         className="mt-8 text-lg font-medium"
       >
-        Submit <ArrowRight className="ml-3 h-4 w-4" />
+        {tr("Submit")} <ArrowRight className="ml-3 h-4 w-4" />
       </Button>
 
       {feedback[parseInt(n) - 1].submitted ? (
         <Card className="mt-6 w-full p-6">
           <div className="mb-4 text-lg">
-            Accuracy of your response:{" "}
+            {tr("Accuracy of your response:")}{" "}
             <span className="font-semibold">
               {feedback[parseInt(n) - 1].feedback}/10
             </span>
@@ -384,7 +390,7 @@ function Question({
               size="lg"
               variant="outline"
             >
-              <PlayCircle className="mr-3 h-4 w-4" /> Watch Memory
+              <PlayCircle className="mr-3 h-4 w-4" /> {tr("Watch Memory")}
             </Button>
             {parseInt(n) < totalQuestions && (
               <Button
@@ -392,7 +398,7 @@ function Question({
                 className="text-lg font-medium"
                 size="lg"
               >
-                Next Question <ArrowRight className="ml-3 h-4 w-4" />
+                {tr("Next Question")} <ArrowRight className="ml-3 h-4 w-4" />
               </Button>
             )}
           </div>

@@ -114,13 +114,13 @@ export default function Nav() {
                 className={itemClass(isActive(l.href))}
               >
                 <Icon className={`h-8 w-8 shrink-0 ${l.color}`} />
-                <span>{caregiver ? l.label : tr(l.label)}</span>
+                <span>{tr(l.label)}</span>
               </Link>
             );
           })}
         </nav>
         <div className="flex flex-col gap-2 border-t border-border pt-4">
-          {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={itemClass(isActive("/caregiver/settings"))}><Settings className="h-8 w-8 shrink-0 text-muted-foreground" /><span>Settings</span></Link>}
+          {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={itemClass(isActive("/caregiver/settings"))}><Settings className="h-8 w-8 shrink-0 text-muted-foreground" /><span>{tr("Settings")}</span></Link>}
           <button type="button" className={itemClass(false)} onClick={modeButton.onClick}>
             <ModeIcon className="h-8 w-8 shrink-0 text-muted-foreground" />
             <span>{modeButton.label}</span>
@@ -146,11 +146,11 @@ export default function Nav() {
               }`}
             >
               <Icon className={`h-7 w-7 ${l.color}`} />
-              <span className="whitespace-nowrap">{caregiver ? l.short : tr(l.short)}</span>
+              <span className="whitespace-nowrap">{tr(l.short)}</span>
             </Link>
           );
         })}
-        {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${isActive("/caregiver/settings") ? "border-primary text-primary" : "border-transparent text-foreground"}`}><Settings className="h-7 w-7" /><span className="whitespace-nowrap">Settings</span></Link>}
+        {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${isActive("/caregiver/settings") ? "border-primary text-primary" : "border-transparent text-foreground"}`}><Settings className="h-7 w-7" /><span className="whitespace-nowrap">{tr("Settings")}</span></Link>}
         <button
           type="button"
           onClick={modeButton.onClick}
@@ -162,7 +162,7 @@ export default function Nav() {
       </nav>
 
       <PinDialog open={pinOpen} onOpenChange={setPinOpen} onUnlocked={() => router.push("/caregiver")} />
-      <div className="fixed bottom-20 left-3 z-40 max-w-xs rounded-xl bg-background p-2 print:hidden lg:bottom-0"><VoiceQuestion auto={false} prompt={tr("Where would you like to go?")} options={links.map(link => ({ id: link.href, label: caregiver ? link.label : tr(link.label) }))} onAnswer={href => router.push(href)} /></div>
+      <div className="fixed bottom-20 left-3 z-40 max-w-xs rounded-xl bg-background p-2 print:hidden lg:bottom-0"><VoiceQuestion auto={false} prompt={tr("Where would you like to go?")} options={links.map(link => ({ id: link.href, label: tr(link.label) }))} onAnswer={href => router.push(href)} /></div>
     </>
   );
 }

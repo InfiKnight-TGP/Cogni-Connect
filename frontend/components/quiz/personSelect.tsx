@@ -18,6 +18,8 @@ import { Badge } from "../ui/badge";
 import { API_URL } from "@/lib/api";
 import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
 import { useAnswerLog } from "@/components/interaction/useAnswerLog";
+import { translate } from "@/lib/interaction/locale";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
 
 interface KnownFace {
   name: string;
@@ -40,6 +42,8 @@ export default function PersonSelect({
   setActivityScore?: (score: number) => void;
   onComplete?: (score: number) => void;
 }) {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const [selected, setSelected] = useState<number[]>([]);
   const [knownFaces, setKnownFaces] = useState<KnownFace[]>([]);
   const [detectedNames, setDetectedNames] = useState<string[]>([]);
@@ -170,47 +174,47 @@ export default function PersonSelect({
           onClick={() => setProgress(-1)}
           className="mr-6 min-h-[48px] px-5 text-lg"
         >
-          <ArrowLeft className="mr-2 h-5 w-5" /> Back
+          <ArrowLeft className="mr-2 h-5 w-5" /> {tr("Back")}
         </Button>
         <div className="text-xl font-medium">
           {myDay ? (
-            "My Day"
+            tr("My Day")
           ) : (
             <>
-              Daily Recall —{" "}
+              {tr("Daily Recall")} —{" "}
               <span className="text-blue-600 dark:text-blue-400">
                 {format(date, "EEE d MMM yyyy")}
               </span>
             </>
           )}
         </div>
-        <Badge className="ml-4 h-8 px-4">{myDay ? "Part 1 of 2" : "Part 1"}</Badge>
+        <Badge className="ml-4 h-8 px-4">{myDay ? tr("Part 1 of 2") : tr("Part 1")}</Badge>
       </div>}
 
       <div className="mt-12 text-xl font-medium">
-        On this day, who did you talk to? (Select all that apply)
+        {tr("On this day, who did you talk to? (Select all that apply)")}
       </div>
 
       {loading ? (
         <div className="mt-8 text-center text-muted-foreground">
-          Loading faces...
+          {tr("Loading faces...")}
         </div>
       ) : detectedNames.length === 0 ? (
         <div className="mt-8 flex flex-col items-center justify-center space-y-4">
           <p className="text-center text-muted-foreground">
-            No recognized people in videos from this date
+            {tr("No recognized people in videos from this date")}
           </p>
           <Button
             size="lg"
             onClick={advance}
             className="min-h-[48px] text-lg font-medium transition-all"
           >
-            {onComplete ? "Finish Game" : "Continue to Part 2"} <ArrowRight className="ml-3 h-4 w-4" />
+            {onComplete ? tr("Finish Game") : tr("Continue to Part 2")} <ArrowRight className="ml-3 h-4 w-4" />
           </Button>
         </div>
       ) : (
         <>
-          <VoiceQuestion prompt="Who did you talk to? Say a name to select or remove it, then say Check." options={[...allFacesForQuiz.map((person, i) => ({ id: String(i), label: person.name })), { id: "check", label: "Check" }, { id: "next", label: "Next" }]} onAnswer={(id, input) => { if (id === "check") onSubmit(input); else if (id === "next" && submitted) advance(); else if (!revealed && !submitted?.correct && /^\d+$/.test(id)) { const i = Number(id); setSelected(old => old.includes(i) ? old.filter(n => n !== i) : [...old, i]); } }} />
+          <VoiceQuestion prompt={tr("Who did you talk to? Say a name to select or remove it, then say Check.")} translateOptions={false} options={[...allFacesForQuiz.map((person, i) => ({ id: String(i), label: person.name })), { id: "check", label: tr("Check") }, { id: "next", label: tr("Next") }]} onAnswer={(id, input) => { if (id === "check") onSubmit(input); else if (id === "next" && submitted) advance(); else if (!revealed && !submitted?.correct && /^\d+$/.test(id)) { const i = Number(id); setSelected(old => old.includes(i) ? old.filter(n => n !== i) : [...old, i]); } }} />
           <div className="mt-8 flex w-full flex-wrap">
             {allFacesForQuiz.map((person, index) => (
               <PersonCard
@@ -240,7 +244,7 @@ export default function PersonSelect({
               onClick={() => onSubmit()}
               className="min-h-[48px] text-lg font-medium transition-all"
             >
-              Check My Response <FileCheck className="ml-3 h-5 w-5" />
+              {tr("Check My Response")} <FileCheck className="ml-3 h-5 w-5" />
             </Button>
             <Button
               onClick={() => setRevealed(true)}
@@ -249,7 +253,7 @@ export default function PersonSelect({
               size="lg"
               className="min-h-[48px] text-lg font-medium transition-all"
             >
-              See Correct Answer <BookOpenCheck className="ml-3 h-5 w-5" />
+              {tr("See Correct Answer")} <BookOpenCheck className="ml-3 h-5 w-5" />
             </Button>
           </div>
         </>
@@ -261,15 +265,14 @@ export default function PersonSelect({
             <div className="mt-8 flex items-center text-green-600">
               <Check className="mr-2 h-4 w-4" />
               <div className="font-medium">
-                Correct! You remembered everyone you talked to on this day.
+                {tr("Correct! You remembered everyone you talked to on this day.")}
               </div>
             </div>
           ) : (
             <div className="mt-8 flex items-center text-red-600">
               <X className="mr-2 h-4 w-4" />
               <div className="font-medium">
-                Your selection was incorrect. Try again, or choose to see the
-                correct answer.
+                {tr("Your selection was incorrect. Try again, or choose to see the correct answer.")}
               </div>
             </div>
           )}
@@ -285,7 +288,7 @@ export default function PersonSelect({
             onClick={advance}
             className="min-h-[48px] text-lg font-medium transition-all"
           >
-            {onComplete ? "Finish Game" : "Continue to Part 2"} <ArrowRight className="ml-3 h-4 w-4" />
+            {onComplete ? tr("Finish Game") : tr("Continue to Part 2")} <ArrowRight className="ml-3 h-4 w-4" />
           </Button>
         </>
       )}

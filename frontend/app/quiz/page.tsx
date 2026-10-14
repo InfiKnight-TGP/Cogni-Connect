@@ -5,8 +5,11 @@ import { useRouter } from "next/navigation";
 import Nav from "@/components/nav";
 import MyDayRunner from "@/components/quiz/myDayRunner";
 import { useCaregiver } from "@/lib/mode";
+import { translate } from "@/lib/interaction/locale";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
 
 export default function QuizPage() {
+  const { locale } = useInteraction();
   const router = useRouter();
   const [caregiver, ready] = useCaregiver();
   const [showMyDay, setShowMyDay] = useState(false);
@@ -29,7 +32,7 @@ export default function QuizPage() {
         <MyDayRunner />
       ) : (
         <main className="mx-auto max-w-screen-lg px-4 pb-16 pt-24 text-center text-lg text-muted-foreground lg:pt-8">
-          Getting your day ready…
+          {translate(locale, "Getting your day ready…")}
         </main>
       )}
     </>

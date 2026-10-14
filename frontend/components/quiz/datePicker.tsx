@@ -19,6 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { translate } from "@/lib/interaction/locale";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
 
 export function DatePickerWithPresets({
   date,
@@ -27,6 +29,8 @@ export function DatePickerWithPresets({
   date: Date;
   setDate: React.Dispatch<React.SetStateAction<Date>>;
 }) {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -38,7 +42,7 @@ export function DatePickerWithPresets({
           )}
         >
           <CalendarIcon className="mr-2 h-4 w-4" />
-          {date ? format(date, "PPP") : <span>Pick a date</span>}
+          {date ? format(date, "PPP") : <span>{tr("Pick a date")}</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="flex w-auto flex-col space-y-2 p-2">
@@ -48,11 +52,11 @@ export function DatePickerWithPresets({
           }
         >
           <SelectTrigger>
-            <SelectValue placeholder="Select" />
+            <SelectValue placeholder={tr("Select")} />
           </SelectTrigger>
           <SelectContent position="popper">
-            <SelectItem value="0">Today</SelectItem>
-            <SelectItem value="-1">Yesterday</SelectItem>
+            <SelectItem value="0">{tr("Today")}</SelectItem>
+            <SelectItem value="-1">{tr("Yesterday")}</SelectItem>
           </SelectContent>
         </Select>
         <div className="rounded-md border">

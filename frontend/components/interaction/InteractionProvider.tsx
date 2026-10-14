@@ -40,6 +40,7 @@ export function InteractionProvider({ locales, children }: { locales: Locale[]; 
     return () => { speaker.cancel(); window.removeEventListener("cogni:patient-change", load); window.removeEventListener("storage", load); };
   }, [speaker]);
   useEffect(() => { document.documentElement.style.fontSize = preferences.textSize === "larger" ? "22px" : "18px"; }, [preferences.textSize]);
+  useEffect(() => { document.documentElement.lang = locale.code; }, [locale.code]);
   useEffect(() => {
     if (!ready || patient === "local-patient") return;
     const mergeRemote = () => {

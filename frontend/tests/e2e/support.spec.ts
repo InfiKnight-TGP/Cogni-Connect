@@ -126,6 +126,25 @@ test('caregiver voice message is saved, synced and playable in the patient accou
   await expect(player).toHaveAttribute('src', /platform-api\/media|blob:/);
 });
 
+test('cancelling while microphone permission is pending stops the late stream without saving it', async ({ page, demo }) => {
+  await page.evaluate(() => {
+    const state = window as unknown as { resolvePermission: () => void; stoppedTracks: number };
+    state.stoppedTracks = 0;
+    let resolveStream: ((stream: MediaStream) => void) | undefined;
+    state.resolvePermission = () => resolveStream?.({ getTracks: () => [{ stop: () => { state.stoppedTracks++; } }] } as unknown as MediaStream);
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: () => new Promise<MediaStream>(resolve => { resolveStream = resolve; }) } });
+    Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: class { state = 'inactive'; } });
+  });
+  await login(page, demo.caregiver, demo.password);
+  await page.getByRole('button', { name: 'Family', exact: true }).click();
+  await page.getByRole('button', { name: 'Record a voice message', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel recording', exact: true }).click();
+  await page.evaluate(() => (window as unknown as { resolvePermission: () => void }).resolvePermission());
+  await expect.poll(() => page.evaluate(() => (window as unknown as { stoppedTracks: number }).stoppedTracks)).toBe(1);
+  await expect(page.getByText('Voice message recorded. Save it to share it with the patient.')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Record a voice message', exact: true })).toBeEnabled();
+});
+
 test('personal crossword progress survives navigation and is patient scoped', async ({ page, demo, request }) => {
   await login(page, demo.patient, demo.password);
   await page.getByRole('button', { name: 'Crossword', exact: true }).click();
@@ -147,4 +166,27 @@ test('personal crossword progress survives navigation and is patient scoped', as
   await login(page, other.patient, other.password);
   await page.getByRole('button', { name: 'Crossword', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Crossword answer', exact: true })).toHaveCount(0);
+});
+
+test('free-text voice candidate can be rejected and the next candidate confirmed', async ({ page, demo }) => {
+  await login(page, demo.patient, demo.password);
+  await page.getByRole('button', { name: 'Crossword', exact: true }).click();
+  await page.getByRole('textbox', { name: /Add familiar names/ }).fill('TEA: Your favourite warm drink');
+  await page.getByRole('button', { name: 'Make my crossword', exact: true }).click();
+  const crossword = page.getByRole('heading', { name: 'Words from my life' }).locator('..');
+  await expect(crossword.getByRole('heading', { name: /Your favourite warm drink/ })).toBeVisible();
+  await page.evaluate(() => { (window as unknown as { __answers: unknown[] }).__answers = [{ text: 'wrong' }, { text: 'tea' }]; });
+  await crossword.getByRole('button', { name: 'Speak an answer', exact: true }).click();
+  await expect(crossword.getByText('Did you mean “wrong”?')).toBeVisible();
+  await crossword.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(crossword.getByText('Did you mean “tea”?')).toBeVisible();
+  await crossword.getByRole('button', { name: 'Yes', exact: true }).click();
+  await expect(crossword.getByText('Well done!', { exact: true })).toBeVisible();
+  const events = await page.evaluate(() => {
+    const patient = localStorage.getItem('cogni:patient') || 'local-patient';
+    return JSON.parse(localStorage.getItem(`cogni:events:${patient}`) || '[]');
+  });
+  expect(events).toHaveLength(1);
+  expect(events[0].correct).toBe(true);
+  expect(events.every((event: { method: string }) => event.method === 'voice')).toBe(true);
 });

@@ -14,8 +14,12 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { translate } from "@/lib/interaction/locale";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
 
 export default function Page() {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const [value, setValue] = useState("");
   const [query, setQuery] = useState("");
 
@@ -118,7 +122,7 @@ export default function Page() {
         <div className="flex w-full justify-between">
           <Link href="/">
             <Button variant="secondary" className="h-12 min-h-[48px] px-5 text-lg">
-              <BrainCircuit className="mr-3 h-6 w-6" /> Back to Today
+              <BrainCircuit className="mr-3 h-6 w-6" /> {tr("Back to Today")}
             </Button>
           </Link>
           <Button
@@ -138,7 +142,7 @@ export default function Page() {
           <>
             <div className="mt-4 flex w-full space-x-4">
               <Input
-                placeholder="Search through your memories..."
+                placeholder={tr("Search through your memories...")}
                 className="h-12 grow bg-background text-lg text-foreground placeholder:text-muted-foreground"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
@@ -153,7 +157,7 @@ export default function Page() {
                   setValue("");
                 }}
               >
-                Search{" "}
+                {tr("Search")} {" "}
                 {loading ? (
                   <Loader2 className="ml-2 h-5 w-5 animate-spin" />
                 ) : (
@@ -164,13 +168,13 @@ export default function Page() {
             {query !== "" ? (
               <div className="mb-2 mt-4 text-center text-lg font-medium">
                 {results.length === 0 ? (
-                  <div className="text-muted-foreground text-lg">No matching memories found</div>
+                  <div className="text-muted-foreground text-lg">{tr("No matching memories found")}</div>
                 ) : (
                   <>
-                    Showing memories for: {query}
+                    {translate(locale, "Showing memories for: {query}", { query })}
                     {results[index] && metadata[results[index]]?.vision_answer && (
                       <div className="mt-3 rounded-lg border border-border bg-muted/70 p-4 text-left text-lg text-foreground">
-                        <div className="mb-1 font-semibold text-primary">About this memory:</div>
+                        <div className="mb-1 font-semibold text-primary">{tr("About this memory:")}</div>
                         {metadata[results[index]].vision_answer}
                       </div>
                     )}

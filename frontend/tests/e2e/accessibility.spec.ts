@@ -47,6 +47,18 @@ test('silence retries once without scoring an answer', async ({ page }) => {
   await expect(game.getByRole('button', { name: /Bus/ })).toBeEnabled();
 });
 
+test('Help after a silence retry opens SOS once without duplicating the Help choice', async ({ page }) => {
+  await page.getByRole('button', { name: /Odd One Out Find/ }).click();
+  const game = page.locator('[data-game-id="odd-one-out"]');
+  await game.getByRole('button', { name: 'Start Game', exact: true }).click();
+  await page.evaluate(() => { (window as unknown as { __answers: unknown[] }).__answers = [{ error: 'no-speech' }, { text: 'help' }]; });
+  await game.getByRole('button', { name: 'Speak an answer', exact: true }).click();
+  await expect(page.getByText(/Requesting help in/)).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { __speechStarts: number }).__speechStarts)).toBe(2);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cogni:events:local-patient') || '[]'))).toHaveLength(0);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+});
+
 test('SOS can be cancelled before a request is stored', async ({ page }) => {
   await page.getByRole('button', { name: 'SOS · Help', exact: true }).click();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
