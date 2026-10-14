@@ -21,6 +21,8 @@ import React, { useState } from "react";
 import { PinDialog } from "./caregiver";
 import { lockCaregiver, useCaregiver } from "@/lib/mode";
 import VoiceQuestion from "@/components/interaction/VoiceQuestion";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
+import { translate } from "@/lib/interaction/locale";
 
 interface NavItem {
   href: string;
@@ -60,6 +62,8 @@ const itemClass = (active: boolean) =>
 
 export default function Nav() {
   const [caregiver] = useCaregiver();
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const [pinOpen, setPinOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
@@ -76,7 +80,7 @@ export default function Nav() {
           router.push("/");
         },
       }
-    : { label: "Caregiver", short: "Caregiver", icon: Lock, onClick: () => setPinOpen(true) };
+    : { label: tr("Caregiver"), short: tr("Caregiver"), icon: Lock, onClick: () => setPinOpen(true) };
   const ModeIcon = modeButton.icon;
 
   return (
@@ -110,7 +114,7 @@ export default function Nav() {
                 className={itemClass(isActive(l.href))}
               >
                 <Icon className={`h-8 w-8 shrink-0 ${l.color}`} />
-                <span>{l.label}</span>
+                <span>{caregiver ? l.label : tr(l.label)}</span>
               </Link>
             );
           })}
@@ -142,7 +146,7 @@ export default function Nav() {
               }`}
             >
               <Icon className={`h-7 w-7 ${l.color}`} />
-              <span className="whitespace-nowrap">{l.short}</span>
+              <span className="whitespace-nowrap">{caregiver ? l.short : tr(l.short)}</span>
             </Link>
           );
         })}
@@ -158,7 +162,7 @@ export default function Nav() {
       </nav>
 
       <PinDialog open={pinOpen} onOpenChange={setPinOpen} onUnlocked={() => router.push("/caregiver")} />
-      <div className="fixed bottom-20 left-3 z-40 max-w-xs rounded-xl bg-background p-2 print:hidden lg:bottom-0"><VoiceQuestion auto={false} prompt="Where would you like to go?" options={links.map(link => ({ id: link.href, label: link.label }))} onAnswer={href => router.push(href)} /></div>
+      <div className="fixed bottom-20 left-3 z-40 max-w-xs rounded-xl bg-background p-2 print:hidden lg:bottom-0"><VoiceQuestion auto={false} prompt={tr("Where would you like to go?")} options={links.map(link => ({ id: link.href, label: caregiver ? link.label : tr(link.label) }))} onAnswer={href => router.push(href)} /></div>
     </>
   );
 }

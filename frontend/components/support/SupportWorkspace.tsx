@@ -75,15 +75,15 @@ export default function SupportWorkspace() {
       <button className={button} onClick={() => setSetup(!setup)}>{setup ? "Back to sign in" : "Set up with a caregiver"}</button>
     </section> : <>
       <div className="flex flex-wrap gap-3"><span>{account.username} · {pending ? `${pending} waiting to sync` : "All changes synced"}</span><button className={button} onClick={() => void syncSupport(account.patient).then(() => setNotice("Sync complete")).catch(error => setNotice(error.message))}>Sync now</button><button className={button} onClick={() => void platformRequest("/auth/logout", {}).then(() => { setAccount(null); localStorage.removeItem("cogni:offline-account"); localStorage.removeItem("cogni:role"); localStorage.removeItem("cogni:patient"); window.dispatchEvent(new Event("cogni:patient-change")); }).catch(error => setNotice(error.message))}>Sign out</button></div>
-      <nav className="flex flex-wrap gap-3" aria-label="Support activities">{sections.map(name => <button key={name} className={button} aria-current={section === name ? "page" : undefined} onClick={() => setSection(name)}>{name}</button>)}</nav>
-      <VoiceQuestion auto={false} prompt={tr("Choose an activity")} options={sections.map(label => ({ id: label, label }))} onAnswer={setSection} />
+      <nav className="flex flex-wrap gap-3" aria-label="Support activities">{sections.map(name => <button key={name} className={button} aria-current={section === name ? "page" : undefined} onClick={() => setSection(name)}>{tr(name)}</button>)}</nav>
+      <VoiceQuestion auto={false} prompt={tr("Choose an activity")} options={sections.map(label => ({ id: label, label: tr(label) }))} onAnswer={setSection} />
       {section === "Journal" && <Journal rows={rows} save={save} patient={account.patient} notify={setNotice} />}
       {section === "Reminders" && <Reminders rows={rows} save={save} caregiver={account.role === "caregiver"} />}
       {section === "Family" && <Family rows={rows} save={save} caregiver={account.role === "caregiver"} patient={account.patient} notify={setNotice} />}
       {section === "Places" && <Places rows={rows} save={save} caregiver={account.role === "caregiver"} notify={setNotice} patient={account.patient} />}
       {section === "Crossword" && <PersonalCrossword />}
       {section === "Dashboard" && account.role === "caregiver" && <Dashboard rows={rows} save={save} />}
-      <Link className={button + " inline-block"} href="/play">Play a game</Link>
+      <Link className={button + " inline-block"} href="/play">{tr("Play a game")}</Link>
     </>}
   </main></>;
 }
@@ -189,13 +189,14 @@ function Family({ rows, save, caregiver, patient, notify }: { rows: SupportRecor
     if (save("message", { text: draft.trim(), ...(media ? { media } : {}) })) { setDraft(""); setMedia(null); }
   };
   return <section className="space-y-4 rounded-2xl border-2 p-6"><h2 className="text-2xl font-bold">{tr("Family messages")}</h2>
-    {caregiver && <div className="space-y-3"><label>{tr("Your written or spoken message")}<textarea value={draft} onChange={event => setDraft(event.target.value)} maxLength={2000} className={inputClass} /></label>{recording ? <><button type="button" className={button} onClick={() => recorder.current?.stop()}>Stop recording</button><button type="button" className={button} onClick={cancelRecording}>{tr("Cancel recording")}</button></> : <button type="button" className={button} onClick={() => void startRecording()}>{tr("Record a voice message")}</button>}{recording && <p role="status">Recording… Stop when you are ready.</p>}{media && <><MediaPlayback id={media.id} video={false} /><button type="button" className={button} onClick={() => { setMedia(null); notify(tr("Voice message removed. You can record again or write a message.")); }}>{tr("Record again")}</button></>}<button type="button" className={button} disabled={recording || (!draft.trim() && !media)} onClick={saveMessage}>{tr("Share with patient")}</button></div>}
+    {caregiver && <div className="space-y-3"><label>{tr("Your written or spoken message")}<textarea value={draft} onChange={event => setDraft(event.target.value)} maxLength={2000} className={inputClass} /></label>{recording ? <><button type="button" className={button} onClick={() => recorder.current?.stop()}>{tr("Stop recording")}</button><button type="button" className={button} onClick={cancelRecording}>{tr("Cancel recording")}</button></> : <button type="button" className={button} onClick={() => void startRecording()}>{tr("Record a voice message")}</button>}{recording && <p role="status">{tr("Recording… Stop when you are ready.")}</p>}{media && <><MediaPlayback id={media.id} video={false} /><button type="button" className={button} onClick={() => { setMedia(null); notify(tr("Voice message removed. You can record again or write a message.")); }}>{tr("Record again")}</button></>}<button type="button" className={button} disabled={recording || (!draft.trim() && !media)} onClick={saveMessage}>{tr("Share with patient")}</button></div>}
     {rows.filter(row => row.kind === "message").slice(-10).reverse().map(row => <article key={row.id} className="space-y-3 rounded-xl border-2 p-4">{text(row.data.text) && <p className="text-2xl">{text(row.data.text)}</p>}{typeof row.data.media === "object" && row.data.media !== null && <MediaPlayback id={text((row.data.media as { id: string }).id)} video={false} />}<VoiceQuestion auto={false} prompt={text(row.data.text) || tr("Family voice message")} options={[{ id: "Thank you", label: tr("Thank you") }, { id: "Please call me", label: tr("Please call me") }]} onAnswer={reply => save("reply", { messageId: row.id, text: reply, method: "voice" })} /><div className="flex flex-wrap gap-3">{["Thank you", "Please call me"].map(reply => <button key={reply} className={button} onClick={() => save("reply", { messageId: row.id, text: reply, method: "tap" })}>{tr(reply)}</button>)}</div>{rows.filter(r => r.kind === "reply" && r.data.messageId === row.id).map(reply => <p key={reply.id}>↳ {text(reply.data.text)}</p>)}</article>)}
     {!rows.some(row => row.kind === "message") && <p>{tr("No family messages yet.")}</p>}
   </section>;
 }
 
 function Places({ rows, save, caregiver, notify, patient }: { rows: SupportRecord[]; save: Save; caregiver: boolean; notify: (message: string) => void; patient: string }) {
+  const { locale } = useInteraction(); const tr = (phrase: string) => translate(locale, phrase);
   const [tracking, setTracking] = useState(false);
   const [localVisits, setLocalVisits] = useState<Visit[]>(() => { try { return JSON.parse(localStorage.getItem(`cogni:local-locations:${patient}`) || "[]"); } catch { return []; } });
   const watch = useRef<number | null>(null);
@@ -216,10 +217,10 @@ function Places({ rows, save, caregiver, notify, patient }: { rows: SupportRecor
   };
   const visits = rows.filter(row => row.kind === "location").map(row => row.data as unknown as Visit);
   const clusters = clusterVisits([...visits, ...localVisits]);
-  return <section className="space-y-4 rounded-2xl border-2 p-6"><h2 className="text-2xl font-bold">My places</h2>
-    <p>Location is optional. While this screen is open, it can remember places you visit. You can pause at any time.</p>
+  return <section className="space-y-4 rounded-2xl border-2 p-6"><h2 className="text-2xl font-bold">{tr("My places")}</h2>
+    <p>{tr("Location is optional. While this screen is open, it can remember places you visit. You can pause at any time.")}</p>
     {caregiver && <form className="space-y-4" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); const value = { tracking: data.get("tracking") === "on", sync: data.get("sync") === "on", confirmedAt: Date.now() }; save("consent", value, "location-consent"); save("consent", { ...value, action: "consent-change" }); }}><label className="block text-xl"><input type="checkbox" name="tracking" className="mr-3 h-6 w-6" defaultChecked={Boolean(consent?.tracking)} /> I am the caregiver and confirm location collection with the patient.</label><label className="block text-xl"><input type="checkbox" name="sync" className="mr-3 h-6 w-6" defaultChecked={Boolean(consent?.sync)} /> Also allow location sync to the caregiver account.</label><button className={button}>Save consent</button></form>}
-    {consent?.tracking ? <button className={button} onClick={tracking ? pause : start}>{tracking ? "Pause tracking" : "Start remembering places"}</button> : <p>A caregiver must confirm consent before location is used.</p>}
+    {consent?.tracking ? <button className={button} onClick={tracking ? pause : start}>{tracking ? tr("Pause tracking") : tr("Start remembering places")}</button> : <p>A caregiver must confirm consent before location is used.</p>}
     <p role="status">{tracking ? "Location is on while this screen stays open." : "Location is paused."}</p>
     {clusters.map((cluster, index) => <form key={index} className="space-y-3 rounded-xl border p-4" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); save("place", { name: data.get("name"), ...(consent?.sync ? cluster.center : {}), favourite: true, home: consent?.sync && data.get("home") === "on" }); }}><p>Visited place {index + 1} · {cluster.visits} recorded visits</p><label>Favourite place name<input name="name" required maxLength={80} className={inputClass} /></label><label className="block"><input type="checkbox" name="home" className="mr-3 h-6 w-6" disabled={!consent?.sync} /> This is home (requires location sharing)</label><button className={button}>Save favourite</button></form>)}
     {rows.filter(row => row.kind === "place").map(row => <p key={row.id}>★ {text(row.data.name)}</p>)}
