@@ -4,6 +4,7 @@ import Link from "next/link";
 import Nav from "@/components/nav";
 import VoiceQuestion from "@/components/interaction/VoiceQuestion";
 import { useInteraction } from "@/components/interaction/InteractionProvider";
+import { translate } from "@/lib/interaction/locale";
 import { BrowserSpeechProvider } from "@/lib/interaction/speech";
 import { platformRequest, putSupport, readSupport, syncSupport, saveMedia, loadMedia, type Account } from "@/lib/interaction/support-store";
 import type { SupportRecord } from "@/lib/interaction/sync";
@@ -18,6 +19,8 @@ const inputClass = "min-h-14 w-full rounded-xl border-2 bg-background p-3 text-x
 const text = (value: unknown) => typeof value === "string" ? value : "";
 
 export default function SupportWorkspace() {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const [account, setAccount] = useState<Account | null>(null);
   const [rows, setRows] = useState<SupportRecord[]>([]);
   const [notice, setNotice] = useState("");
@@ -58,7 +61,7 @@ export default function SupportWorkspace() {
   };
   const sections = ["Journal", "Reminders", "Family", "Places", "Crossword", ...(account?.role === "caregiver" ? ["Dashboard"] : [])];
   return <><Nav /><main className="mx-auto max-w-5xl space-y-6 px-5 pb-48 pt-24 lg:ml-[280px] lg:pt-10">
-    <h1 className="text-3xl font-bold">My support space</h1>
+    <h1 className="text-3xl font-bold">{tr("My support space")}</h1>
     <p role="status" className="text-xl">{notice}</p>
     {!account ? <section className="max-w-xl space-y-4 rounded-2xl border-2 p-6">
       <h2 className="text-2xl font-bold">{setup ? "Caregiver: set up two accounts" : "Sign in"}</h2>
@@ -73,7 +76,7 @@ export default function SupportWorkspace() {
     </section> : <>
       <div className="flex flex-wrap gap-3"><span>{account.username} · {pending ? `${pending} waiting to sync` : "All changes synced"}</span><button className={button} onClick={() => void syncSupport(account.patient).then(() => setNotice("Sync complete")).catch(error => setNotice(error.message))}>Sync now</button><button className={button} onClick={() => void platformRequest("/auth/logout", {}).then(() => { setAccount(null); localStorage.removeItem("cogni:offline-account"); localStorage.removeItem("cogni:role"); localStorage.removeItem("cogni:patient"); window.dispatchEvent(new Event("cogni:patient-change")); }).catch(error => setNotice(error.message))}>Sign out</button></div>
       <nav className="flex flex-wrap gap-3" aria-label="Support activities">{sections.map(name => <button key={name} className={button} aria-current={section === name ? "page" : undefined} onClick={() => setSection(name)}>{name}</button>)}</nav>
-      <VoiceQuestion auto={false} prompt="Choose an activity" options={sections.map(label => ({ id: label, label }))} onAnswer={setSection} />
+      <VoiceQuestion auto={false} prompt={tr("Choose an activity")} options={sections.map(label => ({ id: label, label }))} onAnswer={setSection} />
       {section === "Journal" && <Journal rows={rows} save={save} patient={account.patient} notify={setNotice} />}
       {section === "Reminders" && <Reminders rows={rows} save={save} caregiver={account.role === "caregiver"} />}
       {section === "Family" && <Family rows={rows} save={save} caregiver={account.role === "caregiver"} patient={account.patient} notify={setNotice} />}
@@ -93,13 +96,13 @@ function MediaPlayback({ id, video }: { id: string; video: boolean }) {
   return video ? <video controls src={source} className="max-h-72 w-full" /> : <audio controls src={source} className="w-full" />;
 }
 function Journal({ rows, save, patient, notify }: { rows: SupportRecord[]; save: Save; patient: string; notify: (message: string) => void }) {
+  const { locale } = useInteraction(); const tr = (phrase: string) => translate(locale, phrase);
   const [draft, setDraft] = useState("");
   const [recording, setRecording] = useState(false);
   const [media, setMedia] = useState<{ id: string; video: boolean } | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const speech = useRef(new BrowserSpeechProvider());
-  const { locale } = useInteraction();
   useEffect(() => () => { recorder.current?.state === "recording" && recorder.current.stop(); stream.current?.getTracks().forEach(track => track.stop()); speech.current.cancel(); }, []);
   const record = async (video: boolean) => {
     try {
@@ -116,39 +119,45 @@ function Journal({ rows, save, patient, notify }: { rows: SupportRecord[]; save:
       void speech.current.listen(locale.speechLanguage).then(result => setDraft(value => `${value} ${result.text}`.trim())).catch(() => notify("Live transcription is unavailable or stopped. You can type or edit the transcript; the recording continues."));
     } catch (error) { stream.current?.getTracks().forEach(track => track.stop()); notify((error as Error).message); }
   };
-  return <section className="space-y-4 rounded-2xl border-2 p-6"><h2 className="text-2xl font-bold">Tell me about your day</h2>
-    <label className="block">Your memory or transcript<textarea className={inputClass} rows={5} value={draft} maxLength={12000} onChange={e => setDraft(e.target.value)} /></label>
-    <div className="flex flex-wrap gap-3">{recording ? <button className={button} onClick={() => { recorder.current?.stop(); speech.current.cancel(); }}>Stop recording</button> : <><button className={button} onClick={() => void record(false)}>Record audio</button><button className={button} onClick={() => void record(true)}>Record video</button></>}</div>
-    {recording && <p role="status">Recording… Stop when you are ready.</p>}
+  return <section className="space-y-4 rounded-2xl border-2 p-6"><h2 className="text-2xl font-bold">{tr("Tell me about your day")}</h2>
+    <label className="block">{tr("Your memory or transcript")}<textarea className={inputClass} rows={5} value={draft} maxLength={12000} onChange={e => setDraft(e.target.value)} /></label>
+    <div className="flex flex-wrap gap-3">{recording ? <button className={button} onClick={() => { recorder.current?.stop(); speech.current.cancel(); }}>{tr("Stop recording")}</button> : <><button className={button} onClick={() => void record(false)}>{tr("Record audio")}</button><button className={button} onClick={() => void record(true)}>{tr("Record video")}</button></>}</div>
+    {recording && <p role="status">{tr("Recording… Stop when you are ready.")}</p>}
     {media && <MediaPlayback id={media.id} video={media.video} />}
-    <button className={button} disabled={recording || (!draft.trim() && !media)} onClick={() => { const today = dayKey(new Date()); if (save("journal", { text: draft, summary: summarize(draft), day: today, media, locationIds: rows.filter(row => row.kind === "location" && row.data.day === today).map(row => row.id) })) { setDraft(""); setMedia(null); } }}>Save memory</button>
-    <h3 className="text-xl font-bold">How are you feeling?</h3>
-    <div className="flex flex-wrap gap-3">{["🙂 Happy", "😐 Okay", "😔 Sad"].map(mood => <button key={mood} className={button} onClick={() => save("mood", { mood, day: dayKey(new Date()) })}>{mood}</button>)}</div>
-    <VoiceQuestion prompt="How are you feeling?" auto={false} options={[{ id: "Happy", label: "Happy" }, { id: "Okay", label: "Okay" }, { id: "Sad", label: "Sad" }]} onAnswer={mood => save("mood", { mood, day: dayKey(new Date()) })} />
+    <button className={button} disabled={recording || (!draft.trim() && !media)} onClick={() => { const today = dayKey(new Date()); if (save("journal", { text: draft, summary: summarize(draft), day: today, media, locationIds: rows.filter(row => row.kind === "location" && row.data.day === today).map(row => row.id) })) { setDraft(""); setMedia(null); } }}>{tr("Save memory")}</button>
+    <h3 className="text-xl font-bold">{tr("How are you feeling?")}</h3>
+    <div className="flex flex-wrap gap-3">{["🙂 Happy", "😐 Okay", "😔 Sad"].map(mood => <button key={mood} className={button} onClick={() => save("mood", { mood, day: dayKey(new Date()) })}>{mood.replace("Happy", tr("Happy")).replace("Okay", tr("Okay")).replace("Sad", tr("Sad"))}</button>)}</div>
+    <VoiceQuestion prompt={tr("How are you feeling?")} auto={false} options={[{ id: "Happy", label: tr("Happy") }, { id: "Okay", label: tr("Okay") }, { id: "Sad", label: tr("Sad") }]} onAnswer={mood => save("mood", { mood, day: dayKey(new Date()) })} />
     {rows.filter(row => row.kind === "journal").slice(-10).reverse().map(row => <article key={row.id} className="space-y-3 rounded-xl border p-4"><p className="text-xl">{text(row.data.text)}</p><p>{text(row.data.summary)}</p>{row.data.media && typeof row.data.media === "object" ? <MediaPlayback id={text((row.data.media as { id: string }).id)} video={Boolean((row.data.media as { video: boolean }).video)} /> : null}</article>)}
   </section>;
 }
 
 function Reminders({ rows, save, caregiver }: { rows: SupportRecord[]; save: Save; caregiver: boolean }) {
+  const { locale } = useInteraction(); const tr = (phrase: string) => translate(locale, phrase);
   const today = dayKey(new Date());
   const complete = (row: SupportRecord, method: string) => save("adherence", { reminderId: row.id, day: today, method }, `done:${row.id}:${today}`);
-  return <section className="space-y-4 rounded-2xl border-2 p-6"><h2 className="text-2xl font-bold">Things to do</h2>
-    {caregiver && <form className="space-y-3" onSubmit={e => { e.preventDefault(); const form = e.currentTarget; const data = Object.fromEntries(new FormData(form)); save("reminder", data); form.reset(); }}><label>Reminder<input name="label" required maxLength={160} className={inputClass} /></label><label>Kind<select name="type" className={inputClass}><option>Medicine</option><option>Hydration</option><option>Activity</option><option>Appointment</option></select></label><label>Time<input name="time" type="time" required className={inputClass} /></label><button className={button}>Add reminder</button></form>}
-    {rows.filter(row => row.kind === "reminder").map(row => { const done = rows.some(r => r.id === `done:${row.id}:${today}`); return <article className="rounded-xl border-2 p-4" key={row.id}><h3 className="text-2xl">{text(row.data.label)}</h3><p>{text(row.data.time)}</p><button className={button} disabled={done} onClick={() => complete(row, "tap")}>{done ? "Done ✓" : "Done"}</button><VoiceQuestion auto={false} prompt={text(row.data.label)} disabled={done} options={[{ id: "done", label: "Done" }]} onAnswer={() => complete(row, "voice")} /></article>; })}
+  return <section className="space-y-4 rounded-2xl border-2 p-6"><h2 className="text-2xl font-bold">{tr("Things to do")}</h2>
+    {caregiver && <form className="space-y-3" onSubmit={e => { e.preventDefault(); const form = e.currentTarget; const data = Object.fromEntries(new FormData(form)); save("reminder", data); form.reset(); }}><label>{tr("Reminder")}<input name="label" required maxLength={160} className={inputClass} /></label><label>{tr("Kind")}<select name="type" className={inputClass}><option>Medicine</option><option>Hydration</option><option>Activity</option><option>Appointment</option></select></label><label>{tr("Time")}<input name="time" type="time" required className={inputClass} /></label><button className={button}>{tr("Add reminder")}</button></form>}
+    {rows.filter(row => row.kind === "reminder").map(row => { const done = rows.some(r => r.id === `done:${row.id}:${today}`); return <article className="rounded-xl border-2 p-4" key={row.id}><h3 className="text-2xl">{text(row.data.label)}</h3><p>{text(row.data.time)}</p><button className={button} disabled={done} onClick={() => complete(row, "tap")}>{done ? `${tr("Done")} ✓` : tr("Done")}</button><VoiceQuestion auto={false} prompt={text(row.data.label)} disabled={done} options={[{ id: "done", label: tr("Done") }]} onAnswer={() => complete(row, "voice")} /></article>; })}
     {!rows.some(row => row.kind === "reminder") && <p>Your caregiver can add reminders here.</p>}
   </section>;
 }
 
 function Family({ rows, save, caregiver, patient, notify }: { rows: SupportRecord[]; save: Save; caregiver: boolean; patient: string; notify: (message: string) => void }) {
+  const { locale } = useInteraction(); const tr = (phrase: string) => translate(locale, phrase);
   const [draft, setDraft] = useState("");
   const [recording, setRecording] = useState(false);
   const [media, setMedia] = useState<{ id: string; video: false } | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
-  useEffect(() => () => { if (recorder.current?.state === "recording") recorder.current.stop(); stream.current?.getTracks().forEach(track => track.stop()); }, []);
+  const starting = useRef(false);
+  const cancelled = useRef(false);
+  useEffect(() => () => { cancelled.current = true; if (recorder.current?.state === "recording") recorder.current.stop(); stream.current?.getTracks().forEach(track => track.stop()); }, []);
   const startRecording = async () => {
+    if (starting.current || recording) return;
+    starting.current = true; cancelled.current = false;
     try {
-      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") throw new Error("Audio recording is unavailable. You can leave a written message instead.");
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") throw new Error(tr("Audio recording is unavailable. You can leave a written message instead."));
       const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.current = audioStream;
       const capture = new MediaRecorder(audioStream);
@@ -159,27 +168,30 @@ function Family({ rows, save, caregiver, patient, notify }: { rows: SupportRecor
         audioStream.getTracks().forEach(track => track.stop());
         stream.current = null;
         setRecording(false);
+        if (cancelled.current) { cancelled.current = false; return; }
         const blob = new Blob(chunks, { type: capture.mimeType || "audio/webm" });
-        if (!blob.size) { notify("No audio was captured. You can try again or leave a written message."); return; }
+        if (!blob.size) { notify(tr("No audio was captured. You can try again or leave a written message.")); return; }
         void saveMedia(id, blob)
-          .then(() => { setMedia({ id, video: false }); notify("Voice message recorded. Save it to share it with the patient."); })
-          .catch(() => notify("Voice message could not be saved. You can leave a written message instead."));
+          .then(() => { setMedia({ id, video: false }); notify(tr("Voice message recorded. Save it to share it with the patient.")); })
+          .catch(() => notify(tr("Voice message could not be saved. You can leave a written message instead.")));
       };
       capture.start();
       setRecording(true);
     } catch (error) {
       stream.current?.getTracks().forEach(track => track.stop());
       stream.current = null;
-      notify((error as Error).message || "Microphone unavailable. You can leave a written message instead.");
-    }
+      setRecording(false);
+      notify(tr("Microphone unavailable. You can leave a written message instead."));
+    } finally { starting.current = false; }
   };
+  const cancelRecording = () => { cancelled.current = true; if (recorder.current?.state === "recording") recorder.current.stop(); else { stream.current?.getTracks().forEach(track => track.stop()); stream.current = null; setRecording(false); cancelled.current = false; } };
   const saveMessage = () => {
     if (save("message", { text: draft.trim(), ...(media ? { media } : {}) })) { setDraft(""); setMedia(null); }
   };
-  return <section className="space-y-4 rounded-2xl border-2 p-6"><h2 className="text-2xl font-bold">Family messages</h2>
-    {caregiver && <div className="space-y-3"><label>Your written or spoken message<textarea value={draft} onChange={event => setDraft(event.target.value)} maxLength={2000} className={inputClass} /></label>{recording ? <button type="button" className={button} onClick={() => recorder.current?.stop()}>Stop recording</button> : <button type="button" className={button} onClick={() => void startRecording()}>Record a voice message</button>}{recording && <p role="status">Recording… Stop when you are ready.</p>}{media && <MediaPlayback id={media.id} video={false} />}<button type="button" className={button} disabled={recording || (!draft.trim() && !media)} onClick={saveMessage}>Share with patient</button></div>}
-    {rows.filter(row => row.kind === "message").slice(-10).reverse().map(row => <article key={row.id} className="space-y-3 rounded-xl border-2 p-4">{text(row.data.text) && <p className="text-2xl">{text(row.data.text)}</p>}{typeof row.data.media === "object" && row.data.media !== null && <MediaPlayback id={text((row.data.media as { id: string }).id)} video={false} />}<VoiceQuestion auto={false} prompt={text(row.data.text) || "Family voice message"} options={[{ id: "Thank you", label: "Thank you" }, { id: "Please call me", label: "Please call me" }]} onAnswer={reply => save("reply", { messageId: row.id, text: reply, method: "voice" })} /><div className="flex flex-wrap gap-3">{["Thank you", "Please call me"].map(reply => <button key={reply} className={button} onClick={() => save("reply", { messageId: row.id, text: reply, method: "tap" })}>{reply}</button>)}</div>{rows.filter(r => r.kind === "reply" && r.data.messageId === row.id).map(reply => <p key={reply.id}>↳ {text(reply.data.text)}</p>)}</article>)}
-    {!rows.some(row => row.kind === "message") && <p>No family messages yet.</p>}
+  return <section className="space-y-4 rounded-2xl border-2 p-6"><h2 className="text-2xl font-bold">{tr("Family messages")}</h2>
+    {caregiver && <div className="space-y-3"><label>{tr("Your written or spoken message")}<textarea value={draft} onChange={event => setDraft(event.target.value)} maxLength={2000} className={inputClass} /></label>{recording ? <><button type="button" className={button} onClick={() => recorder.current?.stop()}>Stop recording</button><button type="button" className={button} onClick={cancelRecording}>{tr("Cancel recording")}</button></> : <button type="button" className={button} onClick={() => void startRecording()}>{tr("Record a voice message")}</button>}{recording && <p role="status">Recording… Stop when you are ready.</p>}{media && <><MediaPlayback id={media.id} video={false} /><button type="button" className={button} onClick={() => { setMedia(null); notify(tr("Voice message removed. You can record again or write a message.")); }}>{tr("Record again")}</button></>}<button type="button" className={button} disabled={recording || (!draft.trim() && !media)} onClick={saveMessage}>{tr("Share with patient")}</button></div>}
+    {rows.filter(row => row.kind === "message").slice(-10).reverse().map(row => <article key={row.id} className="space-y-3 rounded-xl border-2 p-4">{text(row.data.text) && <p className="text-2xl">{text(row.data.text)}</p>}{typeof row.data.media === "object" && row.data.media !== null && <MediaPlayback id={text((row.data.media as { id: string }).id)} video={false} />}<VoiceQuestion auto={false} prompt={text(row.data.text) || tr("Family voice message")} options={[{ id: "Thank you", label: tr("Thank you") }, { id: "Please call me", label: tr("Please call me") }]} onAnswer={reply => save("reply", { messageId: row.id, text: reply, method: "voice" })} /><div className="flex flex-wrap gap-3">{["Thank you", "Please call me"].map(reply => <button key={reply} className={button} onClick={() => save("reply", { messageId: row.id, text: reply, method: "tap" })}>{tr(reply)}</button>)}</div>{rows.filter(r => r.kind === "reply" && r.data.messageId === row.id).map(reply => <p key={reply.id}>↳ {text(reply.data.text)}</p>)}</article>)}
+    {!rows.some(row => row.kind === "message") && <p>{tr("No family messages yet.")}</p>}
   </section>;
 }
 

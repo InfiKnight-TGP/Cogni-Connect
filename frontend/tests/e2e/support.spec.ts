@@ -13,8 +13,16 @@ test.beforeEach(async ({ page }) => {
   await installSpeechMock(page);
   // Exercise real Flask routes against a temporary database, never the user's DB.
   await page.route('**/platform-api/**', async route => {
-    const path = new URL(route.request().url()).pathname.replace('/platform-api', '/platform');
-    const response = await route.fetch({ url: `http://127.0.0.1:5031${path}` });
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace('/platform-api', '/platform');
+    const response = await route.fetch({
+      url: `http://127.0.0.1:5031${path}`,
+      method: request.method(),
+      headers: request.headers(),
+      ...(request.url().includes('/media/') && request.method() === 'POST'
+        ? { postData: Buffer.from('mock family voice note') }
+        : request.postDataBuffer() ? { postData: request.postDataBuffer()! } : {}),
+    });
     await route.fulfill({ response });
   });
   await page.goto('/support', { waitUntil: 'domcontentloaded' });
@@ -34,7 +42,9 @@ async function login(page: Page, username: string, password: string) {
   if (await page.getByRole('button', { name: 'Yes', exact: true }).isVisible()) await page.getByRole('button', { name: 'Yes', exact: true }).click();
 }
 async function sync(page: Page) {
+  const saved = page.waitForResponse(response => response.url().endsWith('/platform-api/records') && response.request().method() === 'POST' && response.ok());
   await page.getByRole('button', { name: 'Sync now', exact: true }).click();
+  await saved;
   await expect(page.getByText('Sync complete', { exact: true })).toBeVisible();
 }
 async function records(page: Page) {
@@ -99,6 +109,9 @@ test('caregiver voice message is saved, synced and playable in the patient accou
   });
   await login(page, demo.caregiver, demo.password);
   await page.getByRole('button', { name: 'Family', exact: true }).click();
+  await page.getByRole('button', { name: 'Record a voice message', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel recording', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Record a voice message', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Record a voice message', exact: true }).click();
   await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
   await expect(page.getByText('Voice message recorded. Save it to share it with the patient.')).toBeVisible();
