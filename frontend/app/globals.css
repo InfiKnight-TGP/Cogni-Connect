@@ -50,6 +50,15 @@
   }
 }
 
+html[data-animations="false"] *,
+html[data-animations="false"] *::before,
+html[data-animations="false"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
 /* App shell: leave room for the sidebar (desktop) or the bottom tab bar (phone) */
 @media (min-width: 1024px) {
   body:has([data-app-shell]) {

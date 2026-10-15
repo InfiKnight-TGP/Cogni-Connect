@@ -8,6 +8,8 @@ import { useCaregiver } from "@/lib/mode";
 import { LEVEL_NAMES, gameArea } from "@/lib/progress";
 import { localDateKey } from "./date";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
+import { usePreferences } from "@/components/interaction/InteractionProvider";
+import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 
 /** True on the caregiver's All Games page: games can be tried without saving a score. */
 export const PreviewContext = createContext(false);
@@ -40,6 +42,7 @@ export default function GameShell({
   children,
 }: GameShellProps) {
   const { t } = useTranslate();
+  const { preferences, effectiveAnimations } = usePreferences();
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
   const [score, setScore] = useState<number | null>(null);
@@ -56,6 +59,13 @@ export default function GameShell({
     setScore(clampedScore);
     setFinished(true);
     setStarted(false);
+    if (preferences.soundEffects && typeof window !== "undefined") {
+      try {
+        const context = new AudioContext(); const oscillator = context.createOscillator(); const gain = context.createGain();
+        oscillator.frequency.value = 660; gain.gain.setValueAtTime(0.08, context.currentTime); gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.18);
+        oscillator.connect(gain); gain.connect(context.destination); oscillator.start(); oscillator.stop(context.currentTime + 0.18); oscillator.onended = () => void context.close();
+      } catch { /* Audio is optional; scoring must continue without it. */ }
+    }
 
     // Previews from All Games must not count as the patient's scores
     if (!caregiver && !preview && saveResult) await saveScore({
@@ -99,7 +109,7 @@ export default function GameShell({
 
       {/* Screen 1: Start Screen */}
       {!started && !finished && (
-        <div className="flex flex-col items-center justify-center py-12 text-center space-y-6">
+        <div className={`flex flex-col items-center justify-center py-12 text-center space-y-6 ${effectiveAnimations ? "" : "motion-reduce:transition-none"}`}>
           <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center text-primary text-3xl">
             🎮
           </div>
@@ -109,6 +119,7 @@ export default function GameShell({
               {t("Click Start to launch {title}.", { title: t(title) })}{caregiver && level === 1 && ` ${t("No timers apply in Easy mode.")}`}
             </p>
           </div>
+          <VoiceQuestion question={`${t(title)}. ${t(instructions)}`} allowAnswer={false} />
           {caregiver && preview && showPreviewDatePicker && (
             <label className="flex items-center gap-3 text-sm text-muted-foreground">
               <span>{t("Preview date")}</span>
@@ -145,14 +156,12 @@ export default function GameShell({
 
       {/* Screen 3: Finish Screen */}
       {finished && (
-        <div className="flex flex-col items-center justify-center py-10 text-center space-y-5">
+        <div className={`flex flex-col items-center justify-center py-10 text-center space-y-5 ${effectiveAnimations ? "" : "motion-reduce:transition-none"}`}>
           <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-950/60 flex items-center justify-center text-green-600 dark:text-green-400">
             <Award className="h-10 w-10" />
           </div>
           <div className="space-y-1">
-            <h2 className="text-2xl font-bold text-green-600 dark:text-green-400">
-              {t("Well done!")}
-            </h2>
+            {preferences.encouragingMessages && <h2 className="text-2xl font-bold text-green-600 dark:text-green-400">{t("Well done!")}</h2>}
             <p className="text-lg text-foreground font-medium">
               {t("You scored {score} / 100", { score: score ?? 0 })}
             </p>
@@ -160,6 +169,7 @@ export default function GameShell({
               ? <p className="text-sm text-muted-foreground">{t("Caregiver mode: this score was not saved.")}</p>
               : preview && <p className="text-sm text-muted-foreground">{t("Preview: this score was not saved.")}</p>}
           </div>
+          <VoiceQuestion question={`${preferences.encouragingMessages ? `${t("Well done!")} ` : ""}${t("You scored {score} / 100", { score: score ?? 0 })}`} allowAnswer={false} />
           <Button
             variant="outline"
             size="lg"

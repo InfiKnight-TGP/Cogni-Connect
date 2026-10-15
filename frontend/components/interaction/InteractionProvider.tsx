@@ -4,6 +4,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { translate, type Locale } from "@/lib/interaction/locale";
 import { API_URL } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
+import { DEFAULT_PREFERENCES, readPreferences, textSizePixels, writePreferences, type Preferences } from "@/lib/interaction/preferences";
+import { WhisperSpeechProvider } from "@/lib/interaction/speech";
 
 export type LanguageCode = "en" | "hi" | "as";
 type InteractionContextValue = {
@@ -12,6 +14,11 @@ type InteractionContextValue = {
   englishLocale: Locale;
   ready: boolean;
   setLanguage: (language: LanguageCode) => void;
+  preferences: Preferences;
+  updatePreferences: (update: Partial<Preferences>) => void;
+  effectiveAnimations: boolean;
+  caregiverReady: boolean;
+  reducedMotion: boolean;
 };
 
 const InteractionContext = createContext<InteractionContextValue | null>(null);
@@ -34,6 +41,8 @@ export function InteractionProvider({
 }) {
   const [language, setLanguage] = useState<LanguageCode>("en");
   const [ready, setReady] = useState(false);
+  const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
+  const [reducedMotion, setReducedMotion] = useState(false);
   const [caregiver, caregiverReady] = useCaregiver();
   const locale = locales.find((item) => item.code === language) ?? locales.find((item) => item.code === "en")!;
   const englishLocale = locales.find((item) => item.code === "en")!;
@@ -63,8 +72,30 @@ export function InteractionProvider({
     document.documentElement.lang = activeLocale.code;
   }, [activeLocale.code]);
 
+  useEffect(() => {
+    setPreferences(readPreferences());
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updateMotion = () => setReducedMotion(query.matches);
+    updateMotion(); query.addEventListener("change", updateMotion);
+    return () => query.removeEventListener("change", updateMotion);
+  }, []);
+
+  const updatePreferences = useCallback((update: Partial<Preferences>) => {
+    setPreferences(previous => {
+      const next = { ...previous, ...update };
+      if (!next.answerBySpeaking) next.listenAutomatically = false;
+      writePreferences(next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${textSizePixels(preferences.textSize)}px`;
+    document.documentElement.dataset.animations = String(preferences.animations && !reducedMotion);
+  }, [preferences.textSize, preferences.animations, reducedMotion]);
+
   const setSelectedLanguage = useCallback((value: LanguageCode) => setLanguage(normalizeLanguage(value)), []);
-  const context = useMemo(() => ({ language, locale, englishLocale, ready, setLanguage: setSelectedLanguage }), [language, locale, englishLocale, ready, setSelectedLanguage]);
+  const context = useMemo(() => ({ language, locale, englishLocale, ready, setLanguage: setSelectedLanguage, preferences, updatePreferences, effectiveAnimations: preferences.animations && !reducedMotion, caregiverReady, reducedMotion }), [language, locale, englishLocale, ready, setSelectedLanguage, preferences, updatePreferences, reducedMotion, caregiverReady]);
 
   return (
     <InteractionContext.Provider value={context}>
@@ -87,5 +118,16 @@ export function useTranslate() {
     (phrase: string, values: Record<string, string | number> = {}) => translate(activeLocale, phrase, values),
     [activeLocale],
   );
-  return { t, locale: activeLocale, language, ready, setLanguage, caregiver };
+  return { t, locale: activeLocale, language, ready, setLanguage, caregiver, caregiverReady };
+}
+
+export function usePreferences() {
+  const { preferences, updatePreferences, effectiveAnimations, reducedMotion } = useInteraction();
+  return { preferences, updatePreferences, effectiveAnimations, reducedMotion };
+}
+
+export function useSpeech() {
+  const { locale } = useTranslate();
+  const provider = useMemo(() => new WhisperSpeechProvider(), []);
+  return { provider, speechLanguage: locale.speechLanguage };
 }

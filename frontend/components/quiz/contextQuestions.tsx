@@ -13,6 +13,7 @@ import VideoModal from "../videoModal";
 import { format } from "date-fns";
 import { API_URL } from "@/lib/api";
 import { isCaregiverUnlocked } from "@/lib/mode";
+import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 
 export default function ContextQuestions({
   setProgress,
@@ -342,6 +343,7 @@ function Question({
       <div className="mt-8 text-2xl font-medium">
         <span className="text-blue-600">Question {n}.</span> {data?.question}
       </div>
+      <VoiceQuestion question={data?.question ?? ""} onTranscript={setValue} />
       <Textarea
         value={value}
         onChange={(e) => {

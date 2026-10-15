@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Volume2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useRef, useState } from "react";
 import { API_URL } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
+import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
+import { usePreferences } from "@/components/interaction/InteractionProvider";
+import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
+import type { AnswerInput } from "@/components/interaction/VoiceQuestion";
 
 type Person = {
   id: string;
@@ -50,11 +52,13 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
   const [shakingId, setShakingId] = useState<string | null>(null);
   const [roundPoints, setRoundPoints] = useState<number[]>([]);
   const [reinforcement, setReinforcement] = useState(false);
-  const [hasVoice, setHasVoice] = useState(false);
+  const { preferences } = usePreferences();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const nextRoundTimer = useRef<number | null>(null);
   const feedbackActive = useRef(false);
+  const round = rounds[roundIndex];
+  const logAnswer = useAnswerLog("name-recognition", "recognition-orientation", `${roundIndex}-${round?.target.id ?? "loading"}`, 1);
 
   useEffect(() => {
     let active = true;
@@ -72,33 +76,15 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
     return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    const updateVoices = () => setHasVoice(window.speechSynthesis.getVoices().length > 0);
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    updateVoices();
-    window.speechSynthesis.addEventListener("voiceschanged", updateVoices);
-    return () => window.speechSynthesis.removeEventListener("voiceschanged", updateVoices);
-  }, []);
-
   useEffect(() => () => {
     if (nextRoundTimer.current !== null) window.clearTimeout(nextRoundTimer.current);
   }, []);
 
-  const speak = useCallback((person: Person) => {
-    if (!("speechSynthesis" in window)) return;
-    const utterance = new SpeechSynthesisUtterance(
-      person.relation?.trim() ? `${person.name}, your ${person.relation}` : person.name,
-    );
-    const voice = window.speechSynthesis.getVoices().find((item) => item.lang.toLowerCase().startsWith("en-in"));
-    if (voice) utterance.voice = voice;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-  }, []);
-
-  const choose = (person: Person) => {
+  const choose = (person: Person, input: AnswerInput = { method: "tap", responseMs: null }) => {
     const round = rounds[roundIndex];
     if (!round || reinforcement || feedbackActive.current) return;
     if (person.id !== round.target.id) {
+      logAnswer(false, input);
       if (revealed) return;
       setShakingId(person.id);
       window.setTimeout(() => setShakingId((current) => current === person.id ? null : current), 350);
@@ -108,6 +94,7 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
       return;
     }
 
+    logAnswer(true, input);
     const points = revealed ? 0 : wrongCount === 0 ? 1 : 0.5;
     const nextPoints = [...roundPoints, points];
     setRoundPoints(nextPoints);
@@ -135,45 +122,45 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
     </p>;
   }
 
-  const round = rounds[roundIndex];
-  const prompt = round.kind === "name"
+  const activeRound = rounds[roundIndex];
+  const prompt = activeRound.kind === "name"
     ? "Who is this?"
-    : round.kind === "relation"
-      ? `Who is your ${round.target.relation}?`
-      : `Where is ${round.target.name}?`;
-  const shownName = round.target.relation?.trim()
-    ? `${round.target.name}, your ${round.target.relation}`
-    : round.target.name;
+    : activeRound.kind === "relation"
+      ? `Who is your ${activeRound.target.relation}?`
+      : `Where is ${activeRound.target.name}?`;
+  const shownName = activeRound.target.relation?.trim()
+    ? `${activeRound.target.name}, your ${activeRound.target.relation}`
+    : activeRound.target.name;
 
   return <section className="space-y-6 text-center" aria-live="polite">
     <style>{`@keyframes nameRecallShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }`}</style>
     <div>
       <p className="text-base font-semibold uppercase tracking-wide text-muted-foreground">Round {roundIndex + 1} of 3</p>
-      <h2 className="mt-2 text-2xl font-bold text-foreground">{reinforcement ? "Well remembered" : prompt}</h2>
+      <h2 className="mt-2 text-2xl font-bold text-foreground">{reinforcement && preferences.encouragingMessages ? "Well remembered" : prompt}</h2>
     </div>
 
     {reinforcement ? <div className="flex flex-col items-center gap-3" role="status">
-      <img src={`${API_URL}/known-faces/${encodeURIComponent(round.target.photo)}`} alt={round.target.name} className="h-48 w-48 rounded-xl border border-border object-cover shadow-sm" />
+      <img src={`${API_URL}/known-faces/${encodeURIComponent(activeRound.target.photo)}`} alt={activeRound.target.name} className="h-48 w-48 rounded-xl border border-border object-cover shadow-sm" />
       <div className="flex items-center gap-3">
         <p className="text-xl font-semibold">{shownName}</p>
-        {hasVoice && <Button type="button" variant="outline" size="icon" className="h-11 w-11" aria-label={`Read ${shownName} aloud`} title="Read aloud" onClick={() => speak(round.target)}><Volume2 className="h-5 w-5" /></Button>}
       </div>
     </div> : <>
-      {round.kind === "name" && <img src={`${API_URL}/known-faces/${encodeURIComponent(round.target.photo)}`} alt="Who is this?" className="mx-auto h-48 w-48 rounded-xl border border-border object-cover shadow-sm" />}
+      <VoiceQuestion question={prompt} options={activeRound.options.map(person => ({ id: person.id, label: person.name }))} onMatched={(option, input) => { const selected = activeRound.options.find(person => person.id === option.id); if (selected) choose(selected, input); }} />
+      {activeRound.kind === "name" && <img src={`${API_URL}/known-faces/${encodeURIComponent(activeRound.target.photo)}`} alt="Who is this?" className="mx-auto h-48 w-48 rounded-xl border border-border object-cover shadow-sm" />}
 
-      {round.kind === "name" ? <div className="grid gap-3 sm:grid-cols-3">
-        {round.options.map((person) => <button key={person.id} type="button" onClick={() => choose(person)} aria-label={person.name}
+      {activeRound.kind === "name" ? <div className="grid gap-3 sm:grid-cols-3">
+        {activeRound.options.map((person) => <button key={person.id} type="button" onClick={() => choose(person)} aria-label={person.name}
           className={`min-h-14 rounded-xl border border-border bg-card px-4 py-3 text-xl font-semibold text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${revealed && person.id === round.target.id ? "border-green-600 bg-green-600/15" : ""}`}
           style={shakingId === person.id ? { animation: "nameRecallShake 300ms ease-in-out" } : undefined}>{person.name}</button>)}
       </div> : <div className="grid gap-3 sm:grid-cols-3">
-        {round.options.map((person) => <button key={person.id} type="button" onClick={() => choose(person)} aria-label={person.name}
+        {activeRound.options.map((person) => <button key={person.id} type="button" onClick={() => choose(person)} aria-label={person.name}
           className={`rounded-xl border border-border bg-card p-2 text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${revealed && person.id === round.target.id ? "border-green-600 bg-green-600/15" : ""}`}
           style={shakingId === person.id ? { animation: "nameRecallShake 300ms ease-in-out" } : undefined}>
           <img src={`${API_URL}/known-faces/${encodeURIComponent(person.photo)}`} alt="" className="mx-auto aspect-square w-full min-w-36 max-w-48 rounded-lg object-cover" />
         </button>)}
       </div>}
 
-      {wrongCount === 1 && !revealed && <p className="text-lg text-muted-foreground" role="status">Hint: the name starts with {round.target.name.trim().charAt(0).toUpperCase()}…</p>}
+      {wrongCount === 1 && !revealed && <p className="text-lg text-muted-foreground" role="status">Hint: the name starts with {activeRound.target.name.trim().charAt(0).toUpperCase()}…</p>}
       {revealed && <p className="text-lg text-muted-foreground" role="status">Here’s the answer. Tap the highlighted choice when you’re ready.</p>}
     </>}
   </section>;

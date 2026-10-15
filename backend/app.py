@@ -13,6 +13,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import threading
 import sys
 import uuid
+from io import BytesIO
 
 # process_video prints "✓"; under `npm run dev` stdout is a pipe, which Windows encodes as cp1252
 sys.stdout.reconfigure(encoding="utf-8")
@@ -42,6 +43,8 @@ processing_status = {}
 client = OpenAI(
     api_key=os.getenv('OPENAI_API_KEY', 'not_configured')
 )
+
+MAX_TRANSCRIPTION_BYTES = 25 * 1024 * 1024
 
 QAS_PATH = "qas.json"  
 
@@ -218,6 +221,45 @@ def gpt_accuracy(answer1, answer2, journal_context=None):
         return response.choices[0].message.content
     except Exception as e:
         return f"Error with OpenAI API: {e}"
+
+
+@api.route('/transcribe', methods=['POST'])
+def transcribe():
+    if not client.api_key or client.api_key == 'not_configured':
+        return jsonify(error="Speech transcription is unavailable."), 503
+    if request.content_length and request.content_length > MAX_TRANSCRIPTION_BYTES + 64 * 1024:
+        return jsonify(error="Audio must be 25 MB or smaller."), 413
+    audio = request.files.get('audio')
+    language = request.form.get('language', 'en-IN')
+    if audio is None:
+        return jsonify(error="Audio is required."), 400
+    payload = audio.stream.read(MAX_TRANSCRIPTION_BYTES + 1)
+    if len(payload) > MAX_TRANSCRIPTION_BYTES:
+        return jsonify(error="Audio must be 25 MB or smaller."), 413
+    try:
+        result = client.audio.transcriptions.create(
+            model='whisper-1',
+            file=(audio.filename or 'answer.webm', BytesIO(payload), audio.mimetype or 'audio/webm'),
+            language=language.split('-', 1)[0],
+        )
+        return jsonify(text=result.text)
+    except Exception:
+        return jsonify(error="Speech transcription is unavailable."), 503
+
+
+@api.route('/speak', methods=['POST'])
+def speak():
+    if not client.api_key or client.api_key == 'not_configured':
+        return jsonify(error="Speech synthesis is unavailable."), 503
+    payload = request.get_json(silent=True) or {}
+    text = payload.get('text')
+    if not isinstance(text, str) or not text.strip() or len(text) > 4000:
+        return jsonify(error="Text is required (up to 4000 characters)."), 400
+    try:
+        response = client.audio.speech.create(model='tts-1', voice='alloy', input=text)
+        return response.content, 200, {'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store'}
+    except Exception:
+        return jsonify(error="Speech synthesis is unavailable."), 503
 
 
 @api.route('/search')

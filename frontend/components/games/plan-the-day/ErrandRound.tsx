@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { PLACES } from "./data";
 import { DAY_START, ErrandSet, formatHour, Place, ruleBreaker, validOrders } from "./rules";
 import { useSlots } from "./useSlots";
+import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
+import { usePreferences } from "@/components/interaction/InteractionProvider";
 
 const LEG_SECONDS = 1.2; // walking time between two places
 
@@ -19,9 +21,6 @@ const ROADS: [Place, Place][] = [
   ["pharmacy", "bank"],
   ["temple", "bank"],
 ];
-
-const prefersReducedMotion = () =>
-  typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function TownMap({
   route,
@@ -92,6 +91,7 @@ function TownMap({
 export default function ErrandRound({ set, onDone }: { set: ErrandSet; onDone: (points: number) => void }) {
   const { errands, rule } = set;
   const { tray, slots, place, sendBack, full } = useSlots(errands.length);
+  const { preferences, effectiveAnimations } = usePreferences();
   const [phase, setPhase] = useState<"order" | "walk" | "done">("order");
   const [tries, setTries] = useState(0);
   const [breaker, setBreaker] = useState<string | null>(null);
@@ -107,7 +107,7 @@ export default function ErrandRound({ set, onDone }: { set: ErrandSet; onDone: (
     setBreaker(null);
     setTries(attempt);
     setPhase("walk");
-    const walkMs = prefersReducedMotion() ? 0 : LEG_SECONDS * order.length * 1000;
+    const walkMs = effectiveAnimations ? LEG_SECONDS * order.length * 1000 : 0;
     window.setTimeout(() => {
       const broken = ruleBreaker(order, rule);
       setBreaker(broken);
@@ -124,6 +124,7 @@ export default function ErrandRound({ set, onDone }: { set: ErrandSet; onDone: (
         <h2 className="text-2xl font-bold md:text-3xl">Errand planner</h2>
         <p className="mt-1 text-xl">Tap the errands in order, then press Go.</p>
       </div>
+      {phase === "order" && !full && <VoiceQuestion question={`${rule.text}. Tap the errands in order, then press Go.`} options={tray.map(card => ({ id: String(card), label: errands[card].label }))} onMatched={option => place(Number(option.id))} />}
 
       <div className="flex items-center gap-4 rounded-xl border-2 border-primary/40 bg-primary/5 p-4">
         <span className="text-5xl leading-none">{rule.icon}</span>
@@ -135,7 +136,7 @@ export default function ErrandRound({ set, onDone }: { set: ErrandSet; onDone: (
         </div>
       </div>
 
-      <TownMap key={phase === "walk" ? `walk${tries}` : "still"} route={route} walking={phase === "walk"} highlight={breakerPlace} />
+      <TownMap key={phase === "walk" ? `walk${tries}` : "still"} route={route} walking={phase === "walk" && effectiveAnimations} highlight={breakerPlace} />
 
       <div className="grid grid-cols-3 gap-3">
         {slots.map((card, i) => {
@@ -184,11 +185,7 @@ export default function ErrandRound({ set, onDone }: { set: ErrandSet; onDone: (
         </div>
       )}
 
-      {phase === "done" && !breaker && (
-        <p className="text-center text-2xl font-bold text-green-700 dark:text-green-400">
-          {points === 20 ? "Well planned! Every errand fits." : "You fixed it. Well done!"}
-        </p>
-      )}
+      {phase === "done" && !breaker && preferences.encouragingMessages && <p className="text-center text-2xl font-bold text-green-700 dark:text-green-400">{points === 20 ? "Well planned! Every errand fits." : "You fixed it. Well done!"}</p>}
 
       {phase === "done" && breaker && (
         <div className="space-y-2">

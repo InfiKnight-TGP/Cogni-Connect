@@ -1,14 +1,18 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { format } from "date-fns";
-import { Check, Eye, RotateCcw, Volume2 } from "lucide-react";
+import { Check, Eye, RotateCcw } from "lucide-react";
 import GameShell from "../_shared/GameShell";
 import { GameProps } from "../_shared/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { stories, storyBuilderConfig, Story } from "./data";
 import { hideWord } from "./logic";
+import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
+import type { AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { usePreferences } from "@/components/interaction/InteractionProvider";
 
 function getRandomPair<T>(array: T[]): [T, T] {
   const firstIndex = Math.floor(Math.random() * array.length);
@@ -27,43 +31,13 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
   const [totalCorrect, setTotalCorrect] = useState(0);
   const [pickedCorrect, setPickedCorrect] = useState<boolean | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [canSpeak, setCanSpeak] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const { preferences } = usePreferences();
 
   const story = sessionStories[currentStoryIdx];
   const totalBlanks = storyBuilderConfig.totalBlanks; // 6
-
-  useEffect(() => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      setCanSpeak(true);
-    }
-  }, []);
-
-  const stopSpeech = () => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-    }
-  };
-
-  useEffect(() => {
-    return () => stopSpeech();
-  }, [currentStoryIdx, phase]);
-
-  const handleReadAloud = () => {
-    if (!canSpeak) return;
-    stopSpeech();
-    const textToRead = `${story.title}. ${story.sentences.join(" ")}`;
-    const utterance = new SpeechSynthesisUtterance(textToRead);
-    utterance.lang = "en-IN";
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-    setIsSpeaking(true);
-    window.speechSynthesis.speak(utterance);
-  };
+  const logAnswer = useAnswerLog("story-builder", "verbal-memory", `${currentStoryIdx}-${blankIndex}`, 1);
 
   const reset = () => {
-    stopSpeech();
     setSessionStories(getRandomPair(stories));
     setCurrentStoryIdx(0);
     setPhase("read");
@@ -73,16 +47,16 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
     setSelectedAnswer(null);
   };
 
-  const choose = (answer: string) => {
+  const choose = (answer: string, input: AnswerInput = { method: "tap", responseMs: null }) => {
     if (pickedCorrect !== null) return;
     const isCorrect = answer === story.blanks[blankIndex].answer;
+    logAnswer(isCorrect, input);
     if (isCorrect) setTotalCorrect((value) => value + 1);
     setSelectedAnswer(answer);
     setPickedCorrect(isCorrect);
   };
 
   const next = () => {
-    stopSpeech();
     if (blankIndex < story.blanks.length - 1) {
       setBlankIndex((value) => value + 1);
       setPickedCorrect(null);
@@ -118,17 +92,8 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
             <h2 id="story-title" className="text-2xl font-semibold">
               {story.title}
             </h2>
-            {canSpeak && (
-              <Button
-                variant={isSpeaking ? "default" : "outline"}
-                size="sm"
-                onClick={handleReadAloud}
-              >
-                <Volume2 className="mr-2 h-4 w-4" />
-                {isSpeaking ? "Speaking…" : "Read aloud"}
-              </Button>
-            )}
           </div>
+          <VoiceQuestion question={`${story.title}. ${story.sentences.join(" ")}`} />
           <ol className="mt-5 space-y-3">
             {story.sentences.map((sentence, index) => (
               <li key={index} className="rounded-lg border bg-background p-4 text-lg leading-relaxed">
@@ -136,7 +101,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
               </li>
             ))}
           </ol>
-          <Button className="mt-6 min-h-12 w-full sm:w-auto" onClick={() => { stopSpeech(); setPhase("recall"); }}>
+          <Button className="mt-6 min-h-12 w-full sm:w-auto" onClick={() => setPhase("recall")}>
             <Eye className="mr-2 h-4 w-4" /> I’m ready to remember
           </Button>
         </section>
@@ -158,6 +123,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
           </ol>
           <Card className="mt-6 p-5">
             <p className="mb-4 font-medium">Choose the missing word:</p>
+            <VoiceQuestion question={`${hideWord(story.sentences[story.blanks[blankIndex].sentence], story.blanks[blankIndex].answer)} Choose the missing word.`} options={story.blanks[blankIndex].options.map((option, index) => ({ id: String(index), label: option }))} onMatched={(option, input) => choose(story.blanks[blankIndex].options[Number(option.id)], input)} />
             <div className="grid gap-3 sm:grid-cols-3">
               {story.blanks[blankIndex].options.map((option) => {
                 const selected = pickedCorrect !== null && option === story.blanks[blankIndex].answer;
@@ -190,7 +156,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
               >
                 <Check className="h-5 w-5" />
                 {pickedCorrect
-                  ? "That’s right!"
+                  ? preferences.encouragingMessages ? "That’s right!" : ""
                   : `The missing word is “${story.blanks[blankIndex].answer}.”`}
               </div>
             )}

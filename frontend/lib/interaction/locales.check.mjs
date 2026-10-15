@@ -111,6 +111,15 @@ const required = [
   'Add words with 2–14 English letters. Your current setting may prefer shorter words.',
   '{count} letters','Crossword answer','Across','Down'
 ];
+required.push(
+  'Preferences','Activity experience','Sound effects','Animations','Encouraging messages','Accessibility',
+  'Read questions aloud','Answer by speaking','Listen automatically','Speech speed','Slow','Normal','Largest',
+  'Appearance','System default','Help','Need help? Ask your caregiver.','Patient preferences are available in patient mode.',
+  'Animations are off because reduced motion is enabled on this device.',
+  'Read aloud is not available on this device.','Microphone not available. You can still tap your answer.',
+  "I didn\'t hear anything. Try again or tap your answer.",'Voice is not available here. You can still tap your answer.',
+  'Reading aloud…','Confirm your answer','Did you mean {answer}?','Yes','Try again','Settings'
+);
 for (const phrase of required) {
   assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing UI phrase: ${phrase}`);
   assert.equal(typeof as.ui[phrase], 'string', `Assamese missing UI phrase: ${phrase}`);

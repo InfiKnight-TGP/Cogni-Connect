@@ -114,6 +114,7 @@ export default function Nav() {
           })}
         </nav>
         <div className="flex flex-col gap-2 border-t border-border pt-4">
+          {!caregiver && <Link href="/settings" aria-current={isActive("/settings") ? "page" : undefined} className={itemClass(isActive("/settings"))}><Settings className="h-8 w-8 shrink-0 text-muted-foreground" /><span>{t("Settings")}</span></Link>}
           {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={itemClass(isActive("/caregiver/settings"))}><Settings className="h-8 w-8 shrink-0 text-muted-foreground" /><span>{t("Settings")}</span></Link>}
           <button type="button" className={itemClass(false)} onClick={modeButton.onClick}>
             <ModeIcon className="h-8 w-8 shrink-0 text-muted-foreground" />
@@ -144,6 +145,7 @@ export default function Nav() {
             </Link>
           );
         })}
+        {!caregiver && <Link href="/settings" aria-current={isActive("/settings") ? "page" : undefined} className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${isActive("/settings") ? "border-primary text-primary" : "border-transparent text-foreground"}`}><Settings className="h-7 w-7" /><span className="whitespace-nowrap">{t("Settings")}</span></Link>}
         {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${isActive("/caregiver/settings") ? "border-primary text-primary" : "border-transparent text-foreground"}`}><Settings className="h-7 w-7" /><span className="whitespace-nowrap">{t("Settings")}</span></Link>}
         <button
           type="button"

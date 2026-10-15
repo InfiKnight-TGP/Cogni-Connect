@@ -16,6 +16,7 @@ import { format } from "date-fns";
 import { Separator } from "../ui/separator";
 import { Badge } from "../ui/badge";
 import { API_URL } from "@/lib/api";
+import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 
 interface KnownFace {
   name: string;
@@ -185,6 +186,15 @@ export default function PersonSelect({
       <div className="mt-12 text-xl font-medium">
         On this day, who did you talk to? (Select all that apply)
       </div>
+      {!loading && detectedNames.length > 0 && <VoiceQuestion
+        question="On this day, who did you talk to? Select all that apply."
+        options={allFacesForQuiz.map((person, index) => ({ id: String(index), label: person.name }))}
+        onMatched={option => {
+          const index = Number(option.id);
+          setSelected(current => current.includes(index) ? current.filter(value => value !== index) : [...current, index]);
+          setSubmitted(null);
+        }}
+      />}
 
       {loading ? (
         <div className="mt-8 text-center text-muted-foreground">
