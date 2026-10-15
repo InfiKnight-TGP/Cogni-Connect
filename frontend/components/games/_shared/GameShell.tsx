@@ -9,7 +9,7 @@ import { LEVEL_NAMES, gameArea } from "@/lib/progress";
 import { localDateKey } from "./date";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 import { usePreferences } from "@/components/interaction/InteractionProvider";
-import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
+import { ReadAloud } from "@/components/interaction/ReadAloud";
 
 /** True on the caregiver's All Games page: games can be tried without saving a score. */
 export const PreviewContext = createContext(false);
@@ -119,7 +119,7 @@ export default function GameShell({
               {t("Click Start to launch {title}.", { title: t(title) })}{caregiver && level === 1 && ` ${t("No timers apply in Easy mode.")}`}
             </p>
           </div>
-          <VoiceQuestion question={`${t(title)}. ${t(instructions)}`} allowAnswer={false} />
+          <ReadAloud text={`${t(title)}. ${t(instructions)}`} />
           {caregiver && preview && showPreviewDatePicker && (
             <label className="flex items-center gap-3 text-sm text-muted-foreground">
               <span>{t("Preview date")}</span>
@@ -169,7 +169,7 @@ export default function GameShell({
               ? <p className="text-sm text-muted-foreground">{t("Caregiver mode: this score was not saved.")}</p>
               : preview && <p className="text-sm text-muted-foreground">{t("Preview: this score was not saved.")}</p>}
           </div>
-          <VoiceQuestion question={`${preferences.encouragingMessages ? `${t("Well done!")} ` : ""}${t("You scored {score} / 100", { score: score ?? 0 })}`} allowAnswer={false} />
+          <ReadAloud kind="feedback" text={`${preferences.encouragingMessages ? `${t("Well done!")} ` : ""}${t("You scored {score} / 100", { score: score ?? 0 })}`} />
           <Button
             variant="outline"
             size="lg"

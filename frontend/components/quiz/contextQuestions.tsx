@@ -13,7 +13,8 @@ import VideoModal from "../videoModal";
 import { format } from "date-fns";
 import { API_URL } from "@/lib/api";
 import { isCaregiverUnlocked } from "@/lib/mode";
-import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
+import { ReadAloud } from "@/components/interaction/ReadAloud";
+import { DictationButton } from "@/components/interaction/DictationButton";
 
 export default function ContextQuestions({
   setProgress,
@@ -343,7 +344,7 @@ function Question({
       <div className="mt-8 text-2xl font-medium">
         <span className="text-blue-600">Question {n}.</span> {data?.question}
       </div>
-      <VoiceQuestion question={data?.question ?? ""} onTranscript={setValue} />
+      <ReadAloud text={`Question ${n}. ${data?.question ?? ""}`} />
       <Textarea
         value={value}
         onChange={(e) => {
@@ -352,6 +353,7 @@ function Question({
         placeholder="Answer the question here."
         className="mt-8 h-12 max-h-36 w-full text-lg"
       />
+      <DictationButton value={value} onText={setValue} />
       <Button
         onClick={() => onSubmit()}
         size="lg"
@@ -361,6 +363,7 @@ function Question({
         Submit <ArrowRight className="ml-3 h-4 w-4" />
       </Button>
       {error && <p role="alert" className="mt-4 text-sm text-destructive">{error}</p>}
+      {error && <ReadAloud text={error} kind="feedback" />}
 
       {feedback[parseInt(n) - 1].submitted ? (
         <Card className="mt-6 w-full p-6">
@@ -370,6 +373,7 @@ function Question({
               {feedback[parseInt(n) - 1].feedback}/10
             </span>
           </div>
+          <ReadAloud text={`Accuracy of your response: ${feedback[parseInt(n) - 1].feedback} out of 10.`} kind="feedback" />
           <div className="flex gap-4">
             <Button
               onClick={() => {

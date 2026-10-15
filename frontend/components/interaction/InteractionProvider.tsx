@@ -5,7 +5,9 @@ import { translate, type Locale } from "@/lib/interaction/locale";
 import { API_URL } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
 import { DEFAULT_PREFERENCES, readPreferences, textSizePixels, writePreferences, type Preferences } from "@/lib/interaction/preferences";
-import { WhisperSpeechProvider } from "@/lib/interaction/speech";
+import { WhisperSpeechProvider, type SpeechProvider } from "@/lib/interaction/speech";
+import { usePathname } from "next/navigation";
+import { cancelSpeechSession } from "./speechSession";
 
 export type LanguageCode = "en" | "hi" | "as";
 type InteractionContextValue = {
@@ -19,10 +21,12 @@ type InteractionContextValue = {
   effectiveAnimations: boolean;
   caregiverReady: boolean;
   reducedMotion: boolean;
+  speechProvider: SpeechProvider;
 };
 
 const InteractionContext = createContext<InteractionContextValue | null>(null);
 const supportedLanguages = new Set<LanguageCode>(["en", "hi", "as"]);
+const sharedSpeechProvider = new WhisperSpeechProvider();
 
 export function normalizeLanguage(value: unknown): LanguageCode {
   return typeof value === "string" && supportedLanguages.has(value as LanguageCode)
@@ -44,6 +48,7 @@ export function InteractionProvider({
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [caregiver, caregiverReady] = useCaregiver();
+  const pathname = usePathname();
   const locale = locales.find((item) => item.code === language) ?? locales.find((item) => item.code === "en")!;
   const englishLocale = locales.find((item) => item.code === "en")!;
   const englishMode = caregiver || !caregiverReady;
@@ -67,6 +72,11 @@ export function InteractionProvider({
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    cancelSpeechSession();
+    sharedSpeechProvider.cancel();
+  }, [pathname]);
 
   useEffect(() => {
     document.documentElement.lang = activeLocale.code;
@@ -95,7 +105,7 @@ export function InteractionProvider({
   }, [preferences.textSize, preferences.animations, reducedMotion]);
 
   const setSelectedLanguage = useCallback((value: LanguageCode) => setLanguage(normalizeLanguage(value)), []);
-  const context = useMemo(() => ({ language, locale, englishLocale, ready, setLanguage: setSelectedLanguage, preferences, updatePreferences, effectiveAnimations: preferences.animations && !reducedMotion, caregiverReady, reducedMotion }), [language, locale, englishLocale, ready, setSelectedLanguage, preferences, updatePreferences, reducedMotion, caregiverReady]);
+  const context = useMemo(() => ({ language, locale, englishLocale, ready, setLanguage: setSelectedLanguage, preferences, updatePreferences, effectiveAnimations: preferences.animations && !reducedMotion, caregiverReady, reducedMotion, speechProvider: sharedSpeechProvider }), [language, locale, englishLocale, ready, setSelectedLanguage, preferences, updatePreferences, reducedMotion, caregiverReady]);
 
   return (
     <InteractionContext.Provider value={context}>
@@ -128,6 +138,6 @@ export function usePreferences() {
 
 export function useSpeech() {
   const { locale } = useTranslate();
-  const provider = useMemo(() => new WhisperSpeechProvider(), []);
+  const { speechProvider: provider } = useInteraction();
   return { provider, speechLanguage: locale.speechLanguage };
 }
