@@ -22,6 +22,8 @@ import {
 import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useState } from "react";
 import { dayKey, toEntries } from "@/lib/progress";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
+import { translate } from "@/lib/interaction/locale";
 
 interface Activity {
   id: string;
@@ -63,6 +65,8 @@ function greeting() {
 }
 
 export default function TodayPage() {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const router = useRouter();
   const [hello, setHello] = useState("");
   const [today, setToday] = useState("");
@@ -135,7 +139,7 @@ export default function TodayPage() {
               load(today);
             }}
           >
-            ← Back to my day
+            ← {tr("Back to my day")}
           </Button>
           <Game level={playing.level} date={today} />
         </main>
@@ -153,28 +157,31 @@ export default function TodayPage() {
       <main className="min-w-0 flex-1 space-y-6">
         {/* Greeting & Progress */}
         <div className="space-y-1">
-          <h1 className="text-4xl font-bold sm:text-5xl">{hello}</h1>
+          <h1 className="text-4xl font-bold sm:text-5xl">{tr(hello)}</h1>
           {plan !== null && !failed && (
             <p className="text-xl font-medium text-muted-foreground sm:text-2xl">
-              {doneCount} of {totalCount} done today
+              {translate(locale, "{done} of {total} done today", { done: doneCount, total: totalCount })}
             </p>
           )}
         </div>
 
         {failed ? (
           <div className="space-y-4">
-            <p className="text-2xl">Sorry, we could not load your day.</p>
+          <p className="text-2xl">{tr("Sorry, we could not load your day.")}</p>
             <Button className="h-14 px-6 text-xl" onClick={() => load(today)}>
-              Try again
+              {tr("Try again")}
             </Button>
           </div>
         ) : plan === null ? (
-          <p className="text-2xl">Loading…</p>
+          <p className="text-2xl">{tr("Loading…")}</p>
         ) : (
           <TodayPath
             plan={plan}
             best={best}
-            meta={getActivityMeta}
+            meta={(id) => {
+              const activityMeta = getActivityMeta(id);
+              return { ...activityMeta, name: tr(activityMeta.name) };
+            }}
             onOpen={(activity: Activity) =>
               activity.id === "daily_recall" ? router.push("/quiz?start=today") : setPlaying(activity)
             }

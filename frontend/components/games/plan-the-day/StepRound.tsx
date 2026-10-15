@@ -4,6 +4,8 @@ import React, { useState } from "react";
 import { BigTile } from "../_shared/BigTile";
 import { Button } from "@/components/ui/button";
 import { GRID_COLS, useSlots } from "./useSlots";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
 
 // An everyday step, a caregiver's routine step, or a photo from the user's own day.
 export type StepCard =
@@ -69,9 +71,17 @@ export default function StepRound({
   const { tray, slots, place, sendBack, full } = useSlots(cards.length);
   const [checked, setChecked] = useState(false);
   const correct = slots.filter((card, i) => card === i).length;
+  const log = useAnswerLog("plan-the-day", "Executive Function", JSON.stringify(slots), 1);
+  const choose = (id: string, input?: AnswerInput) => {
+    if (id === "next") { onDone((correct / cards.length) * 20); return; }
+    if (id === "check") { setChecked(true); return; }
+    const card = Number(id); if (checked || !tray.includes(card)) return;
+    log(card === slots.findIndex(value => value === null), input); place(card);
+  };
 
   return (
     <div className="space-y-8">
+      <VoiceQuestion prompt={checked ? "Ready for the next activity?" : `${prompt} Choose step ${slots.filter(value => value !== null).length + 1}`} options={checked ? [{ id: "next", label: "Next" }] : full ? [{ id: "check", label: "Check" }] : tray.map(index => ({ id: String(index), label: cards[index].kind === "step" ? (cards[index] as { label: string }).label : `Picture ${index + 1}` }))} onAnswer={choose} />
       <div>
         <h2 className="text-2xl font-bold md:text-3xl">{title}</h2>
         <p className="mt-1 text-xl">{prompt}</p>
@@ -105,7 +115,7 @@ export default function StepRound({
       {!full && (
         <div className={`grid grid-cols-2 gap-4 border-t border-border pt-8 ${GRID_COLS[cards.length]}`}>
           {tray.map((card) => (
-            <CardTile key={card} card={cards[card]} onClick={() => place(card)} />
+            <CardTile key={card} card={cards[card]} onClick={() => choose(String(card))} />
           ))}
         </div>
       )}

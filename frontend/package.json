@@ -5,8 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node scripts/offline-assets.mjs",
+    "test:unit": "node lib/progress.check.mjs && node components/games/plan-the-day/rules.check.mjs && node lib/interaction/interaction.check.mjs && node lib/interaction/speech.check.mjs && node lib/interaction/adaptive.check.mjs && node lib/interaction/content.check.mjs && node lib/interaction/yesterday-quiz.check.mjs && node lib/interaction/sync.check.mjs && node lib/interaction/trends.check.mjs",
+    "test:e2e": "playwright test",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:e2e:support": "playwright test --config playwright.support.config.ts",
+    "test:locales": "python lib/interaction/locales.check.py && node lib/interaction/locales.check.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.0.5",
@@ -31,6 +36,7 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

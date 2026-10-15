@@ -22,6 +22,8 @@ load_dotenv()
 
 api = Flask(__name__)
 CORS(api)
+from platform_api import register_platform
+register_platform(api)
 
 # Configuration for file uploads
 UPLOAD_FOLDER = 'content'
@@ -156,6 +158,8 @@ def questions():
 def accuracy():
     given = request.args.get('given')
     real = request.args.get('real')
+    if not given or not real:
+        return jsonify(error="Both answers are required"), 400
     video_path = request.args.get('video')  # Get video path to find journal
     journal = None
     
@@ -180,17 +184,18 @@ def accuracy():
     # Ensure score is an integer
     try:
         score_int = int(score)
-    except:
-        score_int = 5  # Default middle score if parsing fails
+        if not 0 <= score_int <= 10:
+            raise ValueError("Score out of range")
+    except (ValueError, TypeError):
+        return jsonify(error="Answer evaluation is unavailable. Your answer has not been scored."), 503
     
     return jsonify(score_int)
 
 
 def gpt_accuracy(answer1, answer2, journal_context=None):
-    # If API key is not configured, return a mock accuracy score
+    # An unavailable evaluator must never fabricate cognitive performance.
     if not client.api_key or client.api_key == 'not_configured':
-        import random
-        return str(random.randint(6, 10))
+        return None
     try:
         # Build the prompt with journal context if available
         prompt = (
@@ -1358,4 +1363,4 @@ def generate_questions():
 
 
 if __name__ == '__main__':
-    api.run(host='0.0.0.0', port=5000, debug=True)
+    api.run(host=os.getenv('COGNI_HOST', '127.0.0.1'), port=5000, debug=os.getenv('FLASK_DEBUG') == '1')

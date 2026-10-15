@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { stories, storyBuilderConfig, Story } from "./data";
 import { hideWord } from "./logic";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
 
 function getRandomPair<T>(array: T[]): [T, T] {
   const firstIndex = Math.floor(Math.random() * array.length);
@@ -32,6 +34,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
 
   const story = sessionStories[currentStoryIdx];
   const totalBlanks = storyBuilderConfig.totalBlanks; // 6
+  const logAnswer = useAnswerLog("story-builder", "Memory", `${currentStoryIdx}:${phase}:${blankIndex}`, 1);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -73,9 +76,10 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
     setSelectedAnswer(null);
   };
 
-  const choose = (answer: string) => {
+  const choose = (answer: string, input: AnswerInput = { method: "tap", responseMs: null }) => {
     if (pickedCorrect !== null) return;
     const isCorrect = answer === story.blanks[blankIndex].answer;
+    logAnswer(isCorrect, input);
     if (isCorrect) setTotalCorrect((value) => value + 1);
     setSelectedAnswer(answer);
     setPickedCorrect(isCorrect);
@@ -114,6 +118,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
 
       {phase === "read" ? (
         <section aria-labelledby="story-title">
+          <VoiceQuestion prompt={`${story.title}. ${story.sentences.join(" ")}. Say ready when you want to remember.`} translatePrompt={false} options={[{ id: "ready", label: "Ready", synonyms: ["I am ready", "remember"] }]} onAnswer={() => { stopSpeech(); setPhase("recall"); }} />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="story-title" className="text-2xl font-semibold">
               {story.title}
@@ -158,6 +163,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
           </ol>
           <Card className="mt-6 p-5">
             <p className="mb-4 font-medium">Choose the missing word:</p>
+            <VoiceQuestion prompt={`Choose the missing word. ${hideWord(story.sentences[story.blanks[blankIndex].sentence], story.blanks[blankIndex].answer)}`} translatePrompt={false} translateOptions={false} options={story.blanks[blankIndex].options.map(label => ({ id: label, label }))} onAnswer={choose} disabled={pickedCorrect !== null} />
             <div className="grid gap-3 sm:grid-cols-3">
               {story.blanks[blankIndex].options.map((option) => {
                 const selected = pickedCorrect !== null && option === story.blanks[blankIndex].answer;

@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
+import { translate } from "@/lib/interaction/locale";
 
 interface Activity {
   id: string;
@@ -28,6 +30,7 @@ const STAGES: Record<Activity["level"], string> = {
 const starsFor = (score: number) => (score >= 80 ? 3 : score >= 50 ? 2 : 1);
 
 function TreasureChest() {
+  const { locale } = useInteraction();
   return (
     <div className="flex flex-col items-center gap-2 pt-7" aria-label="Treasure chest">
       <div aria-hidden="true" className="relative h-[4.5rem] w-24">
@@ -36,21 +39,23 @@ function TreasureChest() {
           <div className="absolute left-1/2 top-1/2 h-4 w-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-yellow-200 bg-yellow-400" />
         </div>
       </div>
-      <p className="text-lg font-bold text-amber-900 dark:text-amber-200">Treasure chest</p>
+      <p className="text-lg font-bold text-amber-900 dark:text-amber-200">{translate(locale, "Treasure chest")}</p>
     </div>
   );
 }
 
 export default function TodayPath({ plan, best, meta, onOpen }: TodayPathProps) {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const nextIndex = plan.findIndex((activity) => best[activity.id] === undefined);
   const allDone = plan.length > 0 && nextIndex === -1;
   let activityIndex = 0;
 
   return (
-    <section aria-label="Today’s activities" className="relative mx-auto max-w-2xl pb-8">
+    <section aria-label={tr("Today’s activities")} className="relative mx-auto max-w-2xl pb-8">
       {allDone && (
         <p className="mb-5 rounded-2xl border-2 border-green-600 bg-green-50 p-5 text-center text-2xl font-bold text-green-900 dark:bg-green-950/50 dark:text-green-100 sm:text-3xl">
-          All done for today! 🌟
+          {tr("All done for today! ⭐")}
         </p>
       )}
 
@@ -69,7 +74,7 @@ export default function TodayPath({ plan, best, meta, onOpen }: TodayPathProps) 
                 id={`today-stage-${level}`}
                 className="mx-auto mb-5 w-fit rounded-full border border-border bg-card px-6 py-2 text-xl font-bold text-foreground shadow-sm"
               >
-                {STAGES[level as Activity["level"]]}
+                {tr(STAGES[level as Activity["level"]])}
               </h2>
 
               <ol className="space-y-8">
@@ -87,7 +92,7 @@ export default function TodayPath({ plan, best, meta, onOpen }: TodayPathProps) 
                         <div className="relative flex w-32 flex-col items-center text-center sm:w-36">
                           {isNext && (
                             <span className="absolute -top-9 left-1/2 z-10 -translate-x-1/2 rounded-full bg-primary px-4 py-1 text-sm font-extrabold tracking-wide text-primary-foreground shadow-md after:absolute after:left-1/2 after:top-full after:-translate-x-1/2 after:border-x-[7px] after:border-t-[8px] after:border-x-transparent after:border-t-primary">
-                              START
+                              {tr("START")}
                             </span>
                           )}
                           <button

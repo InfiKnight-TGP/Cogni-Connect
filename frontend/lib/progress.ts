@@ -7,6 +7,11 @@ export const LEVEL_NAMES = { 1: "Easy", 2: "Medium", 3: "Hard" } as const;
 export type Level = keyof typeof LEVEL_NAMES;
 
 const GAME_AREA: Record<string, Area> = {
+  "memory-cards": "Memory",
+  "sound-tap": "Attention",
+  "pattern-completion": "Recognition & Orientation",
+  "object-naming": "Recognition & Orientation",
+  "yesterday-quiz": "Memory",
   "story-builder": "Memory",
   "word-association": "Memory",
   "mole-path": "Memory",

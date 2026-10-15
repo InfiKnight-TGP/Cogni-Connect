@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { crossword, summarize, distance, clusterVisits } from './content.ts';
+const puzzle = crossword([{ answer: 'MEERA', clue: 'Your daughter' }, { answer: 'TEA', clue: 'A warm drink' }, { answer: 'RICE', clue: 'Your favourite food' }, { answer: 'TEA', clue: 'duplicate' }]);
+assert.ok(puzzle.words.length >= 2);
+assert.equal(new Set(puzzle.words.map(w => w.answer)).size, puzzle.words.length);
+for (const word of puzzle.words) for (let i = 0; i < word.answer.length; i++) assert.equal(puzzle.grid[word.row + (word.direction === 'down' ? i : 0)][word.col + (word.direction === 'across' ? i : 0)], word.answer[i]);
+assert.equal(crossword([]).words.length, 0);
+assert.equal(crossword([{ answer: 'A', clue: 'short' }]).words.length, 0);
+assert.equal(summarize('First sentence. Second sentence. Third sentence.'), 'First sentence. Second sentence.');
+const place = { latitude: 26.14, longitude: 91.73, timestamp: 1 };
+assert.equal(distance(place, place), 0);
+assert.equal(clusterVisits([place, { ...place, timestamp: 2 }])[0].visits, 2);
+console.log('content checks passed: grid consistency, deduplication, summary and visit clustering');

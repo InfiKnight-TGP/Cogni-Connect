@@ -6,6 +6,9 @@ import { GameProps } from "../_shared/types";
 import { BigTile, BigTileProps } from "../_shared/BigTile";
 import { cn } from "@/lib/utils";
 import { Bin, BinIndex } from "./data";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
+import { localDateKey } from "../_shared/date";
 import {
   ITEMS_PER_ROUND,
   ITEMS_PER_RULE,
@@ -26,7 +29,7 @@ const WRONG_MS = 1000; // red flash + correct bin glows
 
 /** Sorting Station is a single Level 2 game. */
 export default function SortingStation({
-  date = new Date().toISOString().split("T")[0],
+  date = localDateKey(),
   onFinish,
 }: GameProps) {
   return (
@@ -81,6 +84,7 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
   const round = rounds[roundIdx];
   const trial = round.trials[trialIdx];
   const rule = ruleOf(round.pair, trial.rule);
+  const logAnswer = useAnswerLog("sorting-station", "Executive Function", `${roundIdx}:${trialIdx}:${!!cue}`, 2);
 
   // Hide the full-screen cue after 3 seconds.
   useEffect(() => {
@@ -132,10 +136,11 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
     return () => clearTimeout(t);
   }, [feedback, trialIdx, roundIdx, round, rounds]);
 
-  const handlePick = (bin: BinIndex) => {
+  const handlePick = (bin: BinIndex, input: AnswerInput = { method: "tap", responseMs: null }) => {
     if (cue || feedback) return;
     const answer = correctBin(trial);
     const ok = bin === answer;
+    logAnswer(ok, input);
     if (ok) correctRef.current += 1;
     else if (isSwitchTrial(trialIdx)) switchErrorsRef.current += 1;
     setFeedback({ chosen: bin, answer, ok });
@@ -167,6 +172,7 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
 
   return (
     <div className="flex flex-col items-center gap-6 select-none">
+      <VoiceQuestion prompt={`Sort by ${rule.sortBy}. ${trial.item.label}`} options={rule.bins.map((bin, i) => ({ id: String(i), label: bin.label }))} onAnswer={(id, input) => handlePick(Number(id) as BinIndex, input)} disabled={!!cue || !!feedback} />
       <style>{`
         @keyframes ss-shake {
           0%, 100% { transform: translateX(0); }

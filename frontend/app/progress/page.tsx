@@ -2,6 +2,8 @@
 
 import { CaregiverOnly } from "@/components/caregiver";
 import Nav from "@/components/nav";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
+import { translate } from "@/lib/interaction/locale";
 import ActivityLog from "@/components/caregiver/activityLog";
 import ProgressContent from "@/components/caregiver/progressContent";
 import ProgressSummary from "@/components/caregiver/progressSummary";
@@ -20,6 +22,8 @@ export default function ProgressPage() {
 }
 
 function ProgressReports() {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("summary");
   useEffect(() => {
@@ -33,9 +37,9 @@ function ProgressReports() {
   };
 
   return <main className="mx-auto max-w-screen-xl space-y-6 px-4 pb-24 pt-24 lg:pb-12 lg:pt-8">
-    <header><p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Caregiver portal</p><h1 className="mt-1 text-3xl font-bold">Progress &amp; Reports</h1></header>
+    <header><p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{tr("Caregiver portal")}</p><h1 className="mt-1 text-3xl font-bold">{tr("Progress & Reports")}</h1></header>
     <nav aria-label="Progress and report sections" className="flex gap-1 overflow-x-auto border-b border-border">
-      {TABS.map(([key, label]) => <button key={key} type="button" onClick={() => selectTab(key)} aria-current={tab === key ? "page" : undefined} className={`min-h-12 shrink-0 border-b-2 px-4 text-sm font-semibold ${tab === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{label}</button>)}
+      {TABS.map(([key, label]) => <button key={key} type="button" onClick={() => selectTab(key)} aria-current={tab === key ? "page" : undefined} className={`min-h-12 shrink-0 border-b-2 px-4 text-sm font-semibold ${tab === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{tr(label)}</button>)}
     </nav>
     {tab === "summary" && <ProgressSummary />}
     {tab === "trends" && <ProgressContent />}
@@ -45,6 +49,8 @@ function ProgressReports() {
 }
 
 function DoctorReportPreview() {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const router = useRouter();
   const [name, setName] = useState("");
   const [entries, setEntries] = useState<Entry[] | null>(null);
@@ -66,7 +72,7 @@ function DoctorReportPreview() {
     return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
   };
   return <section className="max-w-3xl rounded-xl border border-border bg-card p-6 shadow-sm">
-    <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Doctor’s Report</h2><p className="mt-1 text-sm text-muted-foreground">A short preview of recorded activity for sharing with a doctor.</p></div><Button onClick={() => router.push("/report")}><Printer className="mr-2 h-4 w-4" />Print / Save as PDF</Button></div>
+    <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">{tr("Doctor’s Report")}</h2><p className="mt-1 text-sm text-muted-foreground">{tr("A short preview of recorded activity for sharing with a doctor.")}</p></div><Button onClick={() => router.push("/report")}><Printer className="mr-2 h-4 w-4" />{tr("Print / Save as PDF")}</Button></div>
     <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">Patient</dt><dd className="font-medium">{name || "Not set"}</dd></div><div><dt className="text-muted-foreground">Period</dt><dd className="font-medium">{shortDate(weeks[0].start)} – {shortDate(weeks[3].end)} {today.getFullYear()}</dd></div></dl>
     <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[420px] text-left text-sm"><thead><tr className="border-y"><th className="py-3 pr-3 font-semibold">Domain</th><th className="py-3 pr-3 font-semibold">Observed average</th><th className="py-3 font-semibold">Activities</th></tr></thead><tbody>{AREAS.map((area) => <tr key={area} className="border-b last:border-0"><th className="py-3 pr-3 font-medium">{area}</th><td className="py-3 pr-3">{means(area) == null ? "Not measured" : `${means(area)}/100`}</td><td className="py-3">{periodEntries.filter((entry) => entry.area === area).length}</td></tr>)}</tbody></table></div>
     {entries === null && <p className="mt-3 text-sm text-muted-foreground">Loading preview…</p>}

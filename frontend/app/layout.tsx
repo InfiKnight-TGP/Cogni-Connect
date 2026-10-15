@@ -3,6 +3,8 @@ import "./globals.css";
 import localFont from "next/font/local";
 import { ThemeProvider } from "@/components/ui/theme";
 import { SiteLinksPlacement } from "@/components/siteLinks";
+import { InteractionProvider } from "@/components/interaction/InteractionProvider";
+import { loadLocales } from "@/lib/interaction/load-locales";
 
 const satoshi = localFont({
   src: "../public/fonts/Satoshi-Variable.ttf",
@@ -29,7 +31,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <InteractionProvider locales={loadLocales()}>{children}</InteractionProvider>
           <SiteLinksPlacement />
         </ThemeProvider>
       </body>

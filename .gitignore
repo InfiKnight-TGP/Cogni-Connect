@@ -11,6 +11,15 @@ graphify-out/
 # Environments
 .env
 .env*.local
+.env.*
+!.env.example
+!**/.env.example
+*.tsbuildinfo
+*.log
+backend/platform-data/
+frontend/public/sw-assets.json
+frontend/test-results/
+frontend/playwright-report/
 
 # Python
 .venv/

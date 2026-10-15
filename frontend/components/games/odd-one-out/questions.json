@@ -1,0 +1,8 @@
+{
+  "prompt": "Which picture does not belong with the others?",
+  "rounds": [
+    { "similar": [{"label":"Apple","emoji":"🍎","synonyms":["सेब"]},{"label":"Banana","emoji":"🍌","synonyms":["केला"]},{"label":"Orange","emoji":"🍊","synonyms":["संतरा"]},{"label":"Mango","emoji":"🥭","synonyms":["आम"]},{"label":"Grapes","emoji":"🍇","synonyms":["अंगूर"]}], "odd":{"label":"Bus","emoji":"🚌","synonyms":["बस"]} },
+    { "similar": [{"label":"Dog","emoji":"🐕","synonyms":["कुत्ता"]},{"label":"Cat","emoji":"🐈","synonyms":["बिल्ली"]},{"label":"Elephant","emoji":"🐘","synonyms":["हाथी"]},{"label":"Cow","emoji":"🐄","synonyms":["गाय"]},{"label":"Goat","emoji":"🐐","synonyms":["बकरी"]}], "odd":{"label":"Tea","emoji":"🍵","synonyms":["chai","चाय","চাহ"]} },
+    { "similar": [{"label":"Shirt","emoji":"👕","synonyms":[]},{"label":"Shoe","emoji":"👞","synonyms":["जूता"]},{"label":"Hat","emoji":"👒","synonyms":["टोपी"]},{"label":"Scarf","emoji":"🧣","synonyms":["muffler"]},{"label":"Socks","emoji":"🧦","synonyms":[]}], "odd":{"label":"Rice","emoji":"🍚","synonyms":["भात","চাউল","chawal"]} }
+  ]
+}

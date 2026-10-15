@@ -1,4 +1,5 @@
 import { API_URL } from "@/lib/api";
+export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const res = await fetch(`${API_URL}/questions`, {

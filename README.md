@@ -2,6 +2,70 @@
 
 A full-stack AI-powered memory support application designed to help individuals with dementia and Alzheimer's maintain connections with their memories through intelligent video analysis, face recognition, and interactive cognitive exercises. Built with Next.js, Flask, and OpenAI's GPT-4 Vision API.
 
+## Feature branch status
+
+The current patient game catalog is at `/play`; authenticated journals,
+reminders, family messages, places, crossword and caregiver overview are at
+`/support`. See [verified progress and remaining work](docs/WORK_PROGRESS.md).
+The older video-workflow descriptions below are not a completion checklist for
+the new platform.
+
+The interaction selector offers Read and tap (default), Listen and speak, and
+Mixed. Reading never starts recognition automatically. The mic reads the question
+and listens; uncertain matches require confirmation. Silence and recognition
+failures do not score an answer. Voice response timing is separate from tap timing.
+Speech operations now cancel on mode changes without cancelling unrelated audio
+or accepting late browser results.
+
+Run checks with Node 24 and the backend virtual environment:
+
+```powershell
+cd frontend
+npx tsc --noEmit
+npm run test:unit
+# Stop development servers before building.
+npm run build
+npm run start -- --hostname 127.0.0.1
+# In another frontend terminal, against that production server:
+npm run test:e2e
+# Real support API tests in a temporary database (auto-starts Flask on 5031):
+npm run test:e2e:support
+cd ../backend
+.venv\Scripts\python.exe -m unittest discover -s tests
+.venv\Scripts\python.exe -c "import app"
+```
+
+Playwright requires Chromium (`npx playwright install chromium`).
+Set `PLAYWRIGHT_BASE_URL` when using a different port. Browser speech tests use
+deterministic mocks; they do not validate a physical microphone or native voices.
+The support suite routes browser API requests to its isolated Flask test server;
+it does not populate the working patient database or verify the production proxy.
+For a safe production-browser workflow, including stale-build checks and port
+ownership checks, see [local test-server workflow](docs/LOCAL_TEST_WORKFLOW.md).
+
+To seed a local caregiver demo, run `.venv\Scripts\python.exe seed_platform.py`
+from `backend`.
+The script prompts for a password, labels all generated history SIMULATED, and
+refuses to overwrite existing usernames. It creates `simulated-caregiver` and
+`simulated-patient`; `--caregiver` and `--patient` select other demo usernames.
+
+## Known limitations
+
+- English, Hindi and Assamese interaction strings exist, but game content is not
+  fully translated. Browser voices and recognition language support vary; offline
+  recognition is unavailable in this provider. Read and tap remains available.
+- Offline caching covers the patient game/support shells after online preparation;
+  legacy video workflows are not fully offline.
+- The support API has scoped accounts and hashed passwords. Legacy JSON routes
+  and the UI PIN lock are not a secure multi-user deployment. Keep the backend on
+  loopback. Browser records and local media are not encrypted at rest.
+- SOS delivers to the caregiver account inbox, not SMS or emergency services.
+  Reminders need the app open; background scheduling is not implemented.
+- Journal recognition captures a short live utterance; it is not full recording
+  transcription. Crossword grids use English/Romanized letters and template clues.
+- This system supports engagement and early-change monitoring for caregivers and
+  clinicians. It does not diagnose or treat dementia. Demo seed data is simulated.
+
 ## ✨ Features
 
 ### 🎥 Video Memory Processing
@@ -627,11 +691,13 @@ Contributions are welcome! This project is designed to help individuals with cog
 
 ## 🔒 Privacy & Security
 
-- All data stored locally (no cloud sync by default)
-- OpenAI API calls are encrypted via HTTPS
-- No user data collected or shared
-- Videos and faces remain on local server
-- API key stored in environment variables (never committed)
+- Support records and recordings are stored locally first, then uploaded to the
+  configured backend when authenticated and connected; location sharing requires
+  caregiver consent. Browser speech services may process audio remotely.
+- Configured legacy OpenAI features send their relevant content to that provider.
+- Server sessions protect the new support API; legacy routes retain their original
+  single-patient access model. Use trusted devices for unencrypted local storage.
+- API keys belong in environment variables and must never be committed.
 
 ## 📜 License
 

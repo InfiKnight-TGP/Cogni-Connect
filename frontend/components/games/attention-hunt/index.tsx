@@ -7,6 +7,8 @@ import GameShell from "../_shared/GameShell";
 import { GameProps } from "../_shared/types";
 import { Button } from "@/components/ui/button";
 import { attentionRounds, BoardItem } from "./data";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
 import {
   initialSession,
   newSession,
@@ -28,7 +30,6 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
   const [foundTotal, setFoundTotal] = useState(0);
   const [wrongTaps, setWrongTaps] = useState(0);
   const [feedback, setFeedback] = useState("");
-  const [timeLeft, setTimeLeft] = useState(60);
   const [started, setStarted] = useState(false);
   const doneCalledRef = useRef(false);
 
@@ -37,6 +38,7 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
   const target = board.find((item) => item.isTarget)!;
   const targetCount = board.filter((item) => item.isTarget).length;
   const foundInRound = foundIds.length;
+  const log = useAnswerLog("attention-hunt", "Attention", `${roundIndex}:${started}:${foundIds.length}`, 3);
   const totalTargets = useMemo(
     () => boards.reduce((sum, items) => sum + items.filter((item) => item.isTarget).length, 0),
     [boards]
@@ -53,30 +55,6 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
     setBoards(newSession());
   }, []);
 
-  // 60-second timer per round (paused when not started)
-  useEffect(() => {
-    if (!started) return;
-    const timer = window.setInterval(() => {
-      setTimeLeft((time) => Math.max(0, time - 1));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [started, roundIndex]);
-
-  // Round timeout handling
-  useEffect(() => {
-    if (!started || timeLeft > 0) return;
-    if (roundIndex < attentionRounds.length - 1) {
-      setFeedback("Time's up for this round! Moving to the next round.");
-      setRoundIndex((r) => r + 1);
-      setFoundIds([]);
-      setWrongIds([]);
-      setTimeLeft(60);
-      setStarted(false);
-    } else {
-      handleFinishSession(foundTotal, wrongTaps);
-    }
-  }, [started, timeLeft, roundIndex, foundTotal, wrongTaps]);
-
   const reset = () => {
     doneCalledRef.current = false;
     const nextBoards = newSession();
@@ -87,12 +65,12 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
     setFoundTotal(0);
     setWrongTaps(0);
     setFeedback("");
-    setTimeLeft(60);
     setStarted(false);
   };
 
-  const select = (item: BoardItem) => {
+  const select = (item: BoardItem, input?: AnswerInput) => {
     if (!started || foundIds.includes(item.id)) return;
+    log(item.isTarget, input);
     if (!item.isTarget) {
       const nextWrong = wrongTaps + 1;
       setWrongTaps(nextWrong);
@@ -120,16 +98,16 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
     setFoundIds([]);
     setWrongIds([]);
     setFeedback("");
-    setTimeLeft(60);
     setStarted(false);
   };
 
   return (
     <div>
+      <VoiceQuestion key={`${roundIndex}:${foundIds.length}`} prompt={`Find ${target.label}. Say a row and column.`} disabled={!started} options={board.filter(item => !foundIds.includes(item.id)).map(item => ({ id: String(item.id), label: `Row ${Math.floor(item.id / config.columns) + 1} column ${item.id % config.columns + 1}` }))} onAnswer={(id, input) => { const item = board.find(item => item.id === Number(id)); if (item) select(item, input); }} />
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-primary">
-            Round {roundIndex + 1} of {attentionRounds.length} · Level 3
+            Round {roundIndex + 1} of {attentionRounds.length}
           </p>
           <h2 className="mt-1 text-2xl font-semibold">Find all the {pluralize(target.label)}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -138,9 +116,9 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
         </div>
         <div className="flex items-center gap-4">
           <div className="rounded-lg border bg-background px-4 py-3 text-center">
-            <div className="text-xs text-muted-foreground">Time left</div>
+            <div className="text-xs text-muted-foreground">Your pace</div>
             <div className="text-xl font-semibold tabular-nums" aria-live="off">
-              {timeLeft}s
+              Take your time
             </div>
           </div>
           <div
