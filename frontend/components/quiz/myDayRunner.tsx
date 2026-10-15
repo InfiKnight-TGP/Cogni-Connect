@@ -22,6 +22,7 @@ export default function MyDayRunner() {
   const { t } = useTranslate();
   const router = useRouter();
   const [date] = useState(localDateKey());
+  const [memoryDate, setMemoryDate] = useState(date);
   const [part, setPart] = useState(0);
   const [scores, setScores] = useState<number[]>([]);
   const [saveError, setSaveError] = useState(false);
@@ -30,15 +31,50 @@ export default function MyDayRunner() {
 
   useEffect(() => {
     let active = true;
-    fetch(`${API_URL}/generate-questions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date }),
-    })
-      .catch((error) => console.error("Could not prepare My Day questions:", error))
-      .finally(() => {
+    const prepareDay = async () => {
+      let sourceDate = date;
+      try {
+        const videosResponse = await fetch(`${API_URL}/videos`, { cache: "no-store" });
+        if (videosResponse.ok) {
+          const videos: { date?: string }[] = await videosResponse.json();
+          const availableDates = [...new Set(videos
+            .map(video => video.date?.match(/^\d{4}-\d{2}-\d{2}/)?.[0])
+            .filter((value): value is string => Boolean(value) && value! <= date))]
+            .sort((left, right) => right.localeCompare(left));
+
+          // Prefer the newest day with recognized people so Face Recognition
+          // has real answers. If none has faces, use the newest video day for
+          // the journal and transcript recall activity.
+          for (const availableDate of availableDates) {
+            const facesResponse = await fetch(`${API_URL}/faces-for-date?date=${availableDate}`, { cache: "no-store" });
+            if (!facesResponse.ok) continue;
+            const faces: { detected?: string[] } = await facesResponse.json();
+            if (faces.detected?.length) {
+              sourceDate = availableDate;
+              break;
+            }
+          }
+          if (sourceDate === date && availableDates.length) sourceDate = availableDates[0];
+        }
+      } catch (error) {
+        console.error("Could not find the latest memory day:", error);
+      }
+
+      if (!active) return;
+      setMemoryDate(sourceDate);
+      try {
+        await fetch(`${API_URL}/generate-questions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: sourceDate }),
+        });
+      } catch (error) {
+        console.error("Could not prepare My Day questions:", error);
+      } finally {
         if (active) setQuestionsReady(true);
-      });
+      }
+    };
+    void prepareDay();
     return () => {
       active = false;
     };
@@ -94,7 +130,7 @@ export default function MyDayRunner() {
             {saveError && <><p role="alert" className="mb-4 text-base text-destructive">{t("Could not save this part. Please try again.")}</p><ReadAloud kind="feedback" text={t("Could not save this part. Please try again.")} /></>}
             {part === 0 ? (
               <PersonSelect
-                date={dateFromLocalKey(sessionDate)}
+                date={dateFromLocalKey(memoryDate)}
                 myDay
                 standalone
                 setProgress={() => {}}
@@ -102,7 +138,7 @@ export default function MyDayRunner() {
               />
             ) : (
               <ContextQuestions
-                date={dateFromLocalKey(sessionDate)}
+                date={dateFromLocalKey(memoryDate)}
                 myDay
                 standalone
                 setProgress={() => {}}

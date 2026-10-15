@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Check, ChevronDown, Globe } from "lucide-react";
+import { useTheme } from "next-themes";
+import { Check, ChevronDown, Globe, Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { API_URL } from "@/lib/api";
 import { useTranslate, type LanguageCode as SupportedLanguage } from "@/components/interaction/InteractionProvider";
@@ -26,23 +27,38 @@ export const LANGUAGES = [
 ] as const;
 
 type LanguageItemCode = (typeof LANGUAGES)[number]["code"];
+type ThemeChoice = "system" | "light" | "dark";
+
+const THEME_CHOICES: { value: ThemeChoice; label: string; Icon: typeof Monitor }[] = [
+  { value: "system", label: "System", Icon: Monitor },
+  { value: "light", label: "Light", Icon: Sun },
+  { value: "dark", label: "Dark", Icon: Moon },
+];
 
 function languageLabel(code: LanguageItemCode) {
   return code === "mni-Mtei" ? "MNI" : code.toUpperCase();
 }
 
 function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column" }) {
+  const { theme, setTheme } = useTheme();
   const { t, language, ready: languageLoaded, setLanguage, caregiver } = useTranslate();
+  const [mounted, setMounted] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const languageMenuRef = useRef<HTMLDivElement>(null);
   const languageTriggerRef = useRef<HTMLButtonElement>(null);
+  const themeMenuRef = useRef<HTMLDivElement>(null);
+  const themeTriggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
-    if (!languageMenuOpen) return;
+    if (!languageMenuOpen && !themeMenuOpen) return;
     const closeOnOutsideClick = (event: PointerEvent) => {
       const target = event.target as Node;
       if (!languageMenuRef.current?.contains(target)) setLanguageMenuOpen(false);
+      if (!themeMenuRef.current?.contains(target)) setThemeMenuOpen(false);
     };
     const handleMenuKeyboard = (event: KeyboardEvent) => {
       const target = event.target;
@@ -52,6 +68,10 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
         if (menu && languageMenuRef.current?.contains(menu)) {
           setLanguageMenuOpen(false);
           languageTriggerRef.current?.focus();
+          event.preventDefault();
+        } else if (menu && themeMenuRef.current?.contains(menu)) {
+          setThemeMenuOpen(false);
+          themeTriggerRef.current?.focus();
           event.preventDefault();
         }
         return;
@@ -73,7 +93,7 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
       document.removeEventListener("pointerdown", closeOnOutsideClick);
       document.removeEventListener("keydown", handleMenuKeyboard);
     };
-  }, [languageMenuOpen]);
+  }, [languageMenuOpen, themeMenuOpen]);
 
   useEffect(() => {
     if (languageMenuOpen) {
@@ -81,7 +101,15 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
       (menu?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')
         ?? menu?.querySelector<HTMLButtonElement>('[role="menuitemradio"]'))?.focus();
     }
-  }, [languageMenuOpen]);
+    if (themeMenuOpen) {
+      const menu = themeMenuRef.current;
+      (menu?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')
+        ?? menu?.querySelector<HTMLButtonElement>('[role="menuitemradio"]'))?.focus();
+    }
+  }, [languageMenuOpen, themeMenuOpen]);
+
+  const currentTheme: ThemeChoice = mounted && (theme === "light" || theme === "dark") ? theme : "system";
+  const CurrentThemeIcon = THEME_CHOICES.find(({ value }) => value === currentTheme)?.Icon ?? Monitor;
 
   const saveLanguage = async (code: SupportedLanguage) => {
     setSaveError(false);
@@ -119,6 +147,7 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
               aria-expanded={languageMenuOpen}
               disabled={!languageLoaded}
               onClick={() => {
+                setThemeMenuOpen(false);
                 setLanguageMenuOpen((open) => !open);
               }}
               className="flex min-h-11 items-center gap-2 px-2 text-base text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60"
@@ -153,6 +182,30 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
                 })}
               </div>
             )}
+          </div>
+
+          <div className="relative" ref={themeMenuRef}>
+            <button
+              ref={themeTriggerRef}
+              type="button"
+              aria-label={`${t("Theme")}: ${t(THEME_CHOICES.find(({ value }) => value === currentTheme)?.label ?? "System")}`}
+              aria-haspopup="menu"
+              aria-expanded={themeMenuOpen}
+              onClick={() => { setLanguageMenuOpen(false); setThemeMenuOpen(open => !open); }}
+              className="flex min-h-11 items-center gap-2 px-2 text-base text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <CurrentThemeIcon aria-hidden="true" className="h-5 w-5" />
+              <span>{t("Theme")}</span>
+              <ChevronDown aria-hidden="true" className="h-4 w-4" />
+            </button>
+            {themeMenuOpen && <div role="menu" aria-label={t("Choose theme")} className="absolute left-1/2 top-full z-50 mt-1 max-h-72 w-max min-w-52 max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-x-hidden overflow-y-auto rounded-md border border-border bg-card p-1 text-left shadow-lg">
+              {THEME_CHOICES.map(({ value, label, Icon }) => {
+                const selected = currentTheme === value;
+                return <button key={value} type="button" role="menuitemradio" aria-checked={selected} onClick={() => { setTheme(value); setThemeMenuOpen(false); }} className="flex min-h-11 w-full items-center gap-2 rounded px-3 py-2 text-left text-base text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                  <Icon aria-hidden="true" className="h-5 w-5 shrink-0" /><span>{t(label)}</span>{selected && <Check aria-hidden="true" className="ml-auto h-4 w-4" />}
+                </button>;
+              })}
+            </div>}
           </div>
 
         </div>
