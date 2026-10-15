@@ -13,7 +13,7 @@ function ToggleRow({ label, checked, onChange, disabled = false }: { label: stri
   return <div className={`flex min-h-14 items-center justify-between gap-4 py-2 ${disabled ? "opacity-50" : ""}`}>
     <span className="text-lg font-medium">{label}</span>
     <button type="button" role="switch" aria-label={label} aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)} className={`relative h-12 w-24 shrink-0 rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:cursor-not-allowed ${checked ? "border-primary bg-primary" : "border-input bg-muted"}`}>
-      <span className={`absolute top-1 h-8 w-8 rounded-full bg-background shadow transition-transform ${checked ? "translate-x-12" : "translate-x-1"}`} />
+      <span className={`absolute left-1 top-1 h-8 w-8 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-14" : "translate-x-0"}`} />
     </button>
   </div>;
 }
