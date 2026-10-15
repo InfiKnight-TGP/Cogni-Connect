@@ -8,6 +8,7 @@ import { DAY_START, ErrandSet, formatHour, Place, ruleBreaker, validOrders } fro
 import { useSlots } from "./useSlots";
 import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 import { usePreferences } from "@/components/interaction/InteractionProvider";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 const LEG_SECONDS = 1.2; // walking time between two places
 
@@ -124,6 +125,7 @@ export default function ErrandRound({ set, onDone }: { set: ErrandSet; onDone: (
         <h2 className="text-2xl font-bold md:text-3xl">Errand planner</h2>
         <p className="mt-1 text-xl">Tap the errands in order, then press Go.</p>
       </div>
+      {phase !== "order" && !(phase === "done" && breaker) && <ReadAloud kind={phase === "done" ? "feedback" : "question"} text={phase === "walk" ? "Watch the route." : points === 20 ? "Well planned! Every errand fits." : "You fixed it. Well done!"} />}
       {phase === "order" && !full && <VoiceQuestion question={`${rule.text}. Tap the errands in order, then press Go.`} options={tray.map(card => ({ id: String(card), label: errands[card].label }))} onMatched={option => place(Number(option.id))} />}
 
       <div className="flex items-center gap-4 rounded-xl border-2 border-primary/40 bg-primary/5 p-4">
@@ -184,6 +186,7 @@ export default function ErrandRound({ set, onDone }: { set: ErrandSet; onDone: (
           {phase === "order" && <span className="block text-lg font-normal">Change the order and press Go again.</span>}
         </div>
       )}
+      {breaker && <ReadAloud kind="feedback" text={`${rule.hint}. ${phase === "order" ? "Change the order and press Go again." : "One order that works."}`} />}
 
       {phase === "done" && !breaker && preferences.encouragingMessages && <p className="text-center text-2xl font-bold text-green-700 dark:text-green-400">{points === 20 ? "Well planned! Every errand fits." : "You fixed it. Well done!"}</p>}
 

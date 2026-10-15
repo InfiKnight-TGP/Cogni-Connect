@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 interface Activity {
   id: string;
@@ -51,6 +52,7 @@ export default function TodayPath({ plan, best, meta, onOpen }: TodayPathProps) 
 
   return (
     <section aria-label={t("Today’s activities")} className="relative mx-auto max-w-2xl pb-8">
+      <ReadAloud autoRead={false} text={`${t("Today’s activities")}. ${plan.map(activity => `${t(STAGES[activity.level])}: ${t(meta(activity.id).name)}`).join(". ")}. ${allDone ? t("All done for today!") : t("Start")}.`} />
       {allDone && (
         <p className="mb-5 rounded-2xl border-2 border-green-600 bg-green-50 p-5 text-center text-2xl font-bold text-green-900 dark:bg-green-950/50 dark:text-green-100 sm:text-3xl">
           {t("All done for today! ⭐")}

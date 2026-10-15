@@ -202,6 +202,7 @@ export default function ContextQuestions({
           <p className="text-center text-muted-foreground">
             No videos recorded on this date
           </p>
+          <ReadAloud kind="feedback" text="No videos recorded on this date. Let’s try another activity." />
           <Button
             size="lg"
             onClick={() => standalone ? onComplete?.(0) : setProgress(-1)}

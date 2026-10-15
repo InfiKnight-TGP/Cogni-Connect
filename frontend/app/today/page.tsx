@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useState } from "react";
 import { dayKey, toEntries } from "@/lib/progress";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 interface Activity {
   id: string;
@@ -166,6 +167,7 @@ export default function TodayPage() {
         {failed ? (
           <div className="space-y-4">
             <p className="text-2xl">{t("Sorry, we could not load your day.")}</p>
+            <ReadAloud autoRead={false} text={t("Sorry, we could not load your day.")} />
             <Button className="h-14 max-w-full whitespace-normal break-words px-6 text-xl" onClick={() => load(today)}>
               {t("Try again")}
             </Button>

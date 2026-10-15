@@ -8,6 +8,7 @@ import { useCaregiver } from "@/lib/mode";
 import CaregiverPageLabel from "@/components/caregiver/pageLabel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 interface Person {
   id: string;
@@ -64,6 +65,7 @@ export default function PeoplePage() {
         <div className="mx-auto max-w-screen-lg space-y-8 px-4 py-8">
           {caregiver && <CaregiverPageLabel />}
           <h1 className="text-4xl font-bold">{t(caregiver ? "People" : "My People")}</h1>
+          {!caregiver && people && <ReadAloud autoRead={false} text={`${t("My People")}. ${people.map(person => [person.name, person.relation ? t(relationText(person.relation)) : ""].filter(Boolean).join(", ")).join(". ")}`} />}
 
           {loadError ? (
             <p className="text-xl">{t("Sorry, we could not load the people right now.")}</p>
@@ -72,7 +74,7 @@ export default function PeoplePage() {
           ) : caregiver ? (
             <ManagePeople people={people} photoUrl={photoUrl} reload={load} />
           ) : people.length === 0 ? (
-            <p className="text-2xl">{t("No people added yet.")}</p>
+            <><p className="text-2xl">{t("No people added yet.")}</p><ReadAloud autoRead={false} text={t("No people added yet.")} /></>
           ) : (
             <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
               {people.map((p) => (

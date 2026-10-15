@@ -19,6 +19,8 @@ import {
   isSwitchTrial,
   ruleOf,
 } from "./logic";
+import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 const CUE_MS = 3000; // full-screen rule cue
 const CORRECT_MS = 700; // green flash + item drops into bin
@@ -215,6 +217,7 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
           <span className="text-2xl md:text-3xl font-bold text-center">{trial.item.label}</span>
         </div>
       </div>
+      {!cue && <VoiceQuestion question={`Sort ${trial.item.label}. ${rule.sortBy}. Tap the bin that matches.`} options={rule.bins.map((bin, index) => ({ id: String(index), label: bin.label }))} onMatched={option => handlePick(Number(option.id) as BinIndex)} disabled={Boolean(feedback)} />}
 
       {/* Current rule */}
       <div className="text-center" aria-live="polite">
@@ -225,6 +228,7 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
           {rule.sortBy}
         </p>
       </div>
+      {feedback && <ReadAloud kind="feedback" text={feedback.ok ? "Well done! That is the right bin." : `Try again. This belongs in the ${rule.bins[feedback.answer].label} bin.`} />}
 
       {/* Bins */}
       <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -257,6 +261,7 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
           aria-live="assertive"
           className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 backdrop-blur-sm p-6 animate-in fade-in duration-300"
         >
+          <ReadAloud text={`${cue.heading}. ${cue.lead} ${cue.sortBy}.`} options={cue.bins.map(bin => bin.label)} />
           <div className="w-full max-w-xl flex flex-col items-center text-center gap-5 animate-in zoom-in-95 duration-300">
             <p className="text-4xl md:text-6xl font-extrabold text-primary">{cue.heading}</p>
             <p className="text-2xl md:text-3xl font-semibold text-muted-foreground">{cue.lead}</p>

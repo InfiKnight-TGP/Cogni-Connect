@@ -9,6 +9,7 @@ import { ArrowRight, Brain, Image as Images, Star, Users2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 interface ScoreEntry {
   date: string;
@@ -102,6 +103,7 @@ export default function PatientHomePage() {
           <p className="text-xl font-medium text-muted-foreground sm:text-2xl">
             {t("Welcome to CogniConnect")}
           </p>
+          <ReadAloud autoRead={false} text={`${t(hello)} ${t("Welcome to CogniConnect")}. ${t("Today’s Activities")}. ${t("My Memories")}. ${t("My Progress")}. ${t("My People")}.`} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

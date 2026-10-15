@@ -7,6 +7,7 @@ import { useTranslate } from "@/components/interaction/InteractionProvider";
 import { readSkill } from "@/lib/interaction/events";
 import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 import { BigTile } from "./BigTile";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 export type ChoiceRound = {
   prompt: string;
@@ -53,6 +54,7 @@ export default function ChoiceSession({ game, domain, makeRound, finish, count =
     <div className="grid grid-cols-2 gap-4">{round.options.map(option => <BigTile key={option.id} label={t(option.label)} emoji={option.emoji} state={option.id === picked ? "selected" : "default"} disabled={picked !== null} onClick={() => choose(option.id)} className="min-h-28 [&>span:last-child]:text-lg" />)}</div>
     {picked !== null && <>
       <p className="text-xl" role="status">{picked === round.answer ? t("Well done!") : t("The answer is {answer}. Let's keep going.", { answer: t(round.options.find(option => option.id === round.answer)?.label ?? "") })}</p>
+      <ReadAloud kind="feedback" text={picked === round.answer ? t("Well done!") : t("The answer is {answer}. Let's keep going.", { answer: t(round.options.find(option => option.id === round.answer)?.label ?? "") })} />
       <Button className="min-h-14 px-6 text-xl" onClick={next}>{index + 1 === count ? t("Finish") : t("Next")}</Button>
     </>}
   </section>;

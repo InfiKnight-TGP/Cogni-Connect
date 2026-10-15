@@ -8,6 +8,7 @@ import { API_URL } from "@/lib/api";
 import { useInteraction, usePreferences, useTranslate, type LanguageCode } from "@/components/interaction/InteractionProvider";
 import { LANGUAGES } from "@/components/siteLinks";
 import type { Preferences } from "@/lib/interaction/preferences";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 function ToggleRow({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (next: boolean) => void; disabled?: boolean }) {
   return <div className={`flex min-h-14 items-center justify-between gap-4 py-2 ${disabled ? "opacity-50" : ""}`}>
@@ -53,6 +54,7 @@ export default function PatientSettingsPage() {
       {caregiverReady && caregiver ? <p className="rounded-2xl border border-border bg-card p-6 text-lg">{t("Patient preferences are available in patient mode.")}</p> : !caregiverReady ? <p className="text-lg">{t("Loading…")}</p> : <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
           <h2 className="mb-5 text-2xl font-bold">{t("Preferences")}</h2>
+          <ReadAloud autoRead={false} text={`${t("Activity experience")}. ${t("Sound effects")}. ${t("Animations")}. ${t("Encouraging messages")}. ${t("Accessibility")}. ${t("Read questions aloud")}. ${t("Answer by speaking")}. ${t("Listen automatically")}. ${t("Speech speed")}. ${t("Text size")}. ${t("Appearance")}. ${t("Theme")}. ${t("Language")}. ${t("Help")}. ${t("About")}. ${t("Terms")}. ${t("Privacy")}. ${t("Need help? Ask your caregiver.")}`} />
           <section aria-labelledby="activity-heading" className="mb-8">
             <h3 id="activity-heading" className="text-xl font-bold">{t("Activity experience")}</h3><hr className="my-3 border-border" />
             <ToggleRow label={t("Sound effects")} checked={preferences.soundEffects} onChange={value => set("soundEffects", value)} />
@@ -82,7 +84,7 @@ export default function PatientSettingsPage() {
                 {LANGUAGES.map(item => <option key={item.code} value={item.code} disabled={!item.selectable}>{item.code.toUpperCase()} – {item.name}{item.selectable ? "" : ` (${t("Coming soon")})`}</option>)}
               </select>
             </label>
-            {languageError && <p role="alert" className="mt-2 text-sm text-destructive">{t("Could not save language. Try again.")}</p>}
+            {languageError && <><p role="alert" className="mt-2 text-sm text-destructive">{t("Could not save language. Try again.")}</p><ReadAloud autoRead={false} text={t("Could not save language. Try again.")} /></>}
           </section>
         </div>
         <aside className="h-fit rounded-2xl border border-border bg-card p-6 shadow-sm">

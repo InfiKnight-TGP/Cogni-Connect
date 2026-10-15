@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { API_URL } from "@/lib/api";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 const PARTS = [
   { id: "face-recognition", skill: "face recognition", title: "Face Recognition" },
@@ -89,7 +90,8 @@ export default function MyDayRunner() {
         {(finishBundle, sessionDate) => (
           <div>
             <p className="mb-5 max-w-full break-words text-lg font-bold text-primary">{t("Part {part} of 2 · {activity}", { part: part + 1, activity: t(PARTS[part].title) })}</p>
-            {saveError && <p role="alert" className="mb-4 text-base text-destructive">{t("Could not save this part. Please try again.")}</p>}
+            <ReadAloud kind="feedback" text={`${t("Part {part} of 2 · {activity}", { part: part + 1, activity: t(PARTS[part].title) })}. ${t(PARTS[part].title) === t("Face Recognition") ? t("On this day, who did you talk to? Select all that apply.") : t("Recall details from your memories.")}`} />
+            {saveError && <><p role="alert" className="mb-4 text-base text-destructive">{t("Could not save this part. Please try again.")}</p><ReadAloud kind="feedback" text={t("Could not save this part. Please try again.")} /></>}
             {part === 0 ? (
               <PersonSelect
                 date={dateFromLocalKey(sessionDate)}

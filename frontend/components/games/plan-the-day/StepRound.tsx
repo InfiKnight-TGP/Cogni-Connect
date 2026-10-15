@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { GRID_COLS, useSlots } from "./useSlots";
 import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 import { usePreferences } from "@/components/interaction/InteractionProvider";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 // An everyday step, a caregiver's routine step, or a photo from the user's own day.
 export type StepCard =
@@ -79,7 +80,7 @@ export default function StepRound({
         <h2 className="text-2xl font-bold md:text-3xl">{title}</h2>
         <p className="mt-1 text-xl">{prompt}</p>
       </div>
-      {!full && <VoiceQuestion question={`${title}. ${prompt}`} options={tray.map((cardIndex, position) => { const card = cards[cardIndex]; return { id: String(cardIndex), label: card.kind === "step" ? card.label : `Photo ${position + 1}` }; })} onMatched={option => place(Number(option.id))} />}
+      <VoiceQuestion question={`${title}. ${prompt}`} options={tray.map((cardIndex, position) => { const card = cards[cardIndex]; return { id: String(cardIndex), label: card.kind === "step" ? card.label : `Photo ${position + 1}` }; })} onMatched={option => place(Number(option.id))} disabled={full} />
 
       <div className={`grid grid-cols-2 gap-4 ${GRID_COLS[cards.length]}`}>
         {slots.map((card, i) => (
@@ -120,6 +121,7 @@ export default function StepRound({
             {correct === cards.length ? preferences.encouragingMessages ? "All in the right order. Well done!" : `${correct} of ${cards.length} in the right place` : `${correct} of ${cards.length} in the right place`}
           </p>
         )}
+        {checked && <ReadAloud kind="feedback" text={correct === cards.length ? "All in the right order. Well done!" : `${correct} of ${cards.length} in the right place.`} />}
         {checked ? (
           <Button size="lg" className="h-14 px-12 text-xl" onClick={() => onDone((correct / cards.length) * 20)}>
             Next

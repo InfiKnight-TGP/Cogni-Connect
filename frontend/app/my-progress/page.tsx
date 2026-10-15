@@ -7,6 +7,7 @@ import { addDays, format, startOfWeek } from "date-fns";
 import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 interface ScoreEntry {
   date: string;
@@ -122,6 +123,7 @@ export default function MyProgressPage() {
           <p className="text-2xl font-medium text-muted-foreground">
             {t("A look at your activities this week")}
           </p>
+          <ReadAloud autoRead={false} text={`${t("My Progress")}. ${t("A look at your activities this week")}. ${t("You played {count} {days} this week!", { count: daysCount, days: t(daysCount === 1 ? "day" : "days") })}. ${t(encouragingMessage())}`} />
         </header>
 
         {loading ? (

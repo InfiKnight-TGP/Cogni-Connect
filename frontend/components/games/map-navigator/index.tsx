@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import GameShell from "../_shared/GameShell";
 import { GameProps } from "../_shared/types";
 import { cn } from "@/lib/utils";
+import ReadAloud from "@/components/interaction/ReadAloud";
 import { Button } from "@/components/ui/button";
 import {
   JUNCTIONS,
@@ -220,7 +221,14 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
           {phase === "memorise" ? `Memorise: ${timer}s` : `Hints: ${sessionHints}`}
         </span>
       </div>
-
+      <ReadAloud kind={goalReachedMsg ? "feedback" : "question"} text={goalReachedMsg ?? (phase === "memorise"
+        ? `Remember where to go. Memorise these places before navigating: ${setup.goalKeys.map(key => LANDMARK_POOL.find(item => item.key === key)?.name).filter(Boolean).join(", ")}.`
+        : phase === "round_end"
+          ? "Round complete!"
+          : isGoingHomeStep
+            ? "Now find your way back home. Tap the map to choose a direction."
+            : `Go to ${LANDMARK_POOL.find(item => item.key === setup.goalKeys[activeGoalIdx])?.name ?? "the next place"}. Tap the map to find your way.`)} />
+      {hintingLandmarkKey && <ReadAloud kind="feedback" text={`Hint: move closer to ${LANDMARK_POOL.find(item => item.key === hintingLandmarkKey)?.name ?? "the highlighted place"}.`} />}
       {/* Instruction Banner */}
       <div className="w-full bg-secondary/50 border border-border rounded-xl p-3 text-center min-h-[64px] flex items-center justify-center">
         {phase === "memorise" && (

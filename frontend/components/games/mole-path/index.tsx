@@ -8,6 +8,7 @@ import { GameProps } from "../_shared/types";
 import { Button } from "@/components/ui/button";
 import { moleLevel2Config } from "./data";
 import { makePath } from "./logic";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 function MolePathSession({ onDone }: { onDone: (score: number) => void }) {
   const [roundIndex, setRoundIndex] = useState(0); // 0 to 4 (5 rounds)
@@ -170,6 +171,10 @@ function MolePathSession({ onDone }: { onDone: (score: number) => void }) {
           </Button>
         )}
       </div>
+      {phase === "round-end"
+        ? <ReadAloud kind="feedback" text={feedback} />
+        : <ReadAloud text={phase === "ready" ? `Remember ${currentPathLength} circles. Press Show the path when you are ready.` : phase === "preview" ? "Watch carefully. Remember the circles in order." : `Your turn. Tap the holes in order. ${selected.length} of ${currentPathLength}.`} />}
+      {feedback && phase === "playing" && <ReadAloud kind="feedback" text={feedback} />}
 
       <div
         role="group"

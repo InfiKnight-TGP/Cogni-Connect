@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { API_URL } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
 import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
+import ReadAloud from "@/components/interaction/ReadAloud";
 import { usePreferences } from "@/components/interaction/InteractionProvider";
 import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 import type { AnswerInput } from "@/components/interaction/VoiceQuestion";
@@ -115,11 +116,11 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
   };
 
   if (loading) return <p className="py-10 text-center text-xl text-muted-foreground" role="status">Loading familiar people…</p>;
-  if (loadError) return <p className="py-10 text-center text-xl text-muted-foreground" role="alert">Could not load people. Please try again.</p>;
+  if (loadError) return <div><p className="py-10 text-center text-xl text-muted-foreground" role="alert">Could not load people. Please try again.</p><ReadAloud kind="feedback" text="Could not load people. Please try again." /></div>;
   if (rounds.length < 3) {
-    return <p className="py-10 text-center text-xl text-muted-foreground">
+    return <div><p className="py-10 text-center text-xl text-muted-foreground">
       {caregiver ? "Add at least 3 people to play" : "Let’s try another activity today. Your caregiver can add familiar people so you can play this game next time."}
-    </p>;
+    </p><ReadAloud kind="feedback" text={caregiver ? "Add at least three people to play." : "Let’s try another activity today. Your caregiver can add familiar people so you can play this game next time."} /></div>;
   }
 
   const activeRound = rounds[roundIndex];
@@ -137,6 +138,7 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
     <div>
       <p className="text-base font-semibold uppercase tracking-wide text-muted-foreground">Round {roundIndex + 1} of 3</p>
       <h2 className="mt-2 text-2xl font-bold text-foreground">{reinforcement && preferences.encouragingMessages ? "Well remembered" : prompt}</h2>
+      {reinforcement && <ReadAloud kind="feedback" text={`${preferences.encouragingMessages ? "Well remembered. " : ""}${shownName}`} />}
     </div>
 
     {reinforcement ? <div className="flex flex-col items-center gap-3" role="status">
@@ -160,8 +162,8 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
         </button>)}
       </div>}
 
-      {wrongCount === 1 && !revealed && <p className="text-lg text-muted-foreground" role="status">Hint: the name starts with {activeRound.target.name.trim().charAt(0).toUpperCase()}…</p>}
-      {revealed && <p className="text-lg text-muted-foreground" role="status">Here’s the answer. Tap the highlighted choice when you’re ready.</p>}
+      {wrongCount === 1 && !revealed && <><p className="text-lg text-muted-foreground" role="status">Hint: the name starts with {activeRound.target.name.trim().charAt(0).toUpperCase()}…</p><ReadAloud kind="feedback" text={`Hint: the name starts with ${activeRound.target.name.trim().charAt(0).toUpperCase()}.`} /></>}
+      {revealed && <><p className="text-lg text-muted-foreground" role="status">Here’s the answer. Tap the highlighted choice when you’re ready.</p><ReadAloud kind="feedback" text={`Here’s the answer. ${shownName}. Tap the highlighted choice when you’re ready.`} /></>}
     </>}
   </section>;
 }

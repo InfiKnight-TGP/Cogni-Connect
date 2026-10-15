@@ -13,6 +13,7 @@ import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 import type { AnswerInput } from "@/components/interaction/VoiceQuestion";
 import { usePreferences } from "@/components/interaction/InteractionProvider";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 function getRandomPair<T>(array: T[]): [T, T] {
   const firstIndex = Math.floor(Math.random() * array.length);
@@ -160,6 +161,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
                   : `The missing word is “${story.blanks[blankIndex].answer}.”`}
               </div>
             )}
+            {pickedCorrect !== null && <ReadAloud kind="feedback" text={pickedCorrect ? preferences.encouragingMessages ? "That’s right!" : `The missing word is ${story.blanks[blankIndex].answer}.` : `The missing word is ${story.blanks[blankIndex].answer}.`} />}
             {pickedCorrect !== null && (
               <Button className="mt-4 min-h-12 w-full sm:w-auto" onClick={next}>
                 {blankIndex === story.blanks.length - 1 && currentStoryIdx === 1

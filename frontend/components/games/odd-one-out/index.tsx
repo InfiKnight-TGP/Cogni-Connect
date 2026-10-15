@@ -9,6 +9,7 @@ import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 import { readSkill } from "@/lib/interaction/events";
 import type { GameProps } from "../_shared/types";
 import questions from "./questions.json";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 function Session({ finish }: { finish: (score: number) => void }) {
   const [round, setRound] = useState(0);
@@ -37,7 +38,7 @@ function Session({ finish }: { finish: (score: number) => void }) {
     <h2 className="text-3xl font-bold">{t(questions.prompt)}</h2>
     <VoiceQuestion question={questions.prompt} options={options.map(option => ({ id: option.label, label: option.label }))} onMatched={(option, input) => choose(option.id, input)} disabled={picked !== null} />
     <div className="grid grid-cols-2 gap-4">{options.map(option => <BigTile key={option.label} emoji={option.emoji} label={t(option.label)} disabled={picked !== null} state={picked === option.label ? "selected" : "default"} onClick={() => choose(option.label)} className="min-h-28 [&>span:last-child]:text-xl" />)}</div>
-    {picked !== null && <div className="space-y-3"><p className="text-xl" role="status">{picked === question.odd.label ? t("Well done!") : t("The different one is {answer}. Let's try another.", { answer: t(question.odd.label) })}</p><Button className="min-h-14 px-8 text-xl" onClick={next}>{round === questions.rounds.length - 1 ? t("Finish") : t("Next")}</Button></div>}
+    {picked !== null && <div className="space-y-3"><p className="text-xl" role="status">{picked === question.odd.label ? t("Well done!") : t("The different one is {answer}. Let's try another.", { answer: t(question.odd.label) })}</p><ReadAloud kind="feedback" text={picked === question.odd.label ? t("Well done!") : t("The different one is {answer}. Let's try another.", { answer: t(question.odd.label) })} /><Button className="min-h-14 px-8 text-xl" onClick={next}>{round === questions.rounds.length - 1 ? t("Finish") : t("Next")}</Button></div>}
   </section>;
 }
 

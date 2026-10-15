@@ -17,6 +17,7 @@ import { Separator } from "../ui/separator";
 import { Badge } from "../ui/badge";
 import { API_URL } from "@/lib/api";
 import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 interface KnownFace {
   name: string;
@@ -205,6 +206,7 @@ export default function PersonSelect({
           <p className="text-center text-muted-foreground">
             No recognized people in videos from this date
           </p>
+          <ReadAloud kind="feedback" text="No recognized people in videos from this date. Let’s try another activity." />
           <Button
             size="lg"
             onClick={advance}
@@ -267,6 +269,7 @@ export default function PersonSelect({
               <div className="font-medium">
                 Correct! You remembered everyone you talked to on this day.
               </div>
+              <ReadAloud kind="feedback" text="Correct! You remembered everyone you talked to on this day." />
             </div>
           ) : (
             <div className="mt-8 flex items-center text-red-600">
@@ -275,6 +278,7 @@ export default function PersonSelect({
                 Your selection was incorrect. Try again, or choose to see the
                 correct answer.
               </div>
+              <ReadAloud kind="feedback" text="Your selection was incorrect. Try again, or choose to see the correct answer." />
             </div>
           )}
         </>

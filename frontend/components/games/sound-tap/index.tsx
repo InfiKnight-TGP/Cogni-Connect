@@ -8,6 +8,7 @@ import { useTranslate } from "@/components/interaction/InteractionProvider";
 import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 import { readSkill } from "@/lib/interaction/events";
 import type { GameProps } from "../_shared/types";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 function Sounds({ finish }: { finish: (score: number) => void }) {
   const [round, setRound] = useState(0);
@@ -57,6 +58,7 @@ function Sounds({ finish }: { finish: (score: number) => void }) {
     <VoiceQuestion question="How many beats?" options={options} disabled={!ready || picked} onMatched={(option, input) => choose(option.id, input)} />
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[1, 2, 3, 4].map(value => <BigTile key={value} label={String(value)} disabled={!ready || picked} onClick={() => choose(String(value))} className="min-h-20 min-w-20 text-3xl" />)}</div>
     <p role="status" className="text-lg">{t(notice)}</p>
+    {notice && <ReadAloud kind="feedback" text={t(notice)} />}
     {picked && <Button className="min-h-14 px-8 text-xl" onClick={next}>{round === 5 ? t("Finish") : t("Next")}</Button>}
   </section>;
 }

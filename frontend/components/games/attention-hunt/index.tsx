@@ -12,6 +12,7 @@ import {
   newSession,
   pluralize,
 } from "./logic";
+import ReadAloud from "@/components/interaction/ReadAloud";
 
 function computeScore(foundTotal: number, totalTargets: number, wrongTaps: number): number {
   if (totalTargets === 0) return 0;
@@ -152,6 +153,8 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
           </div>
         </div>
       </div>
+      <ReadAloud text={`Find all the ${pluralize(target.label)}. Target: ${target.label}. ${started ? "Scan the board carefully. Tap the matching pictures." : "Press start when you are ready."}`} />
+      {feedback && <ReadAloud kind="feedback" text={feedback} />}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium">
