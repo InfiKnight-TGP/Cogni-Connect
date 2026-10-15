@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import GameShell from "../_shared/GameShell";
+import { useContext, useEffect, useState } from "react";
+import GameShell, { PreviewContext } from "../_shared/GameShell";
 import ChoiceSession from "../_shared/ChoiceSession";
 import type { GameProps } from "../_shared/types";
 import { API_URL } from "@/lib/api";
@@ -18,6 +18,7 @@ function localDay(value?: string): string | null {
 function Yesterday({ date, finish }: { date: string; finish: (score: number) => void }) {
   const [memories, setMemories] = useState<YesterdayMemory[] | null>(null);
   const { t, caregiver } = useTranslate();
+  const preview = useContext(PreviewContext);
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -56,9 +57,22 @@ function Yesterday({ date, finish }: { date: string; finish: (score: number) => 
   const targetDate = new Date(date + "T12:00:00");
   targetDate.setDate(targetDate.getDate() - 1);
   const yesterday = targetDate.getFullYear() + "-" + String(targetDate.getMonth() + 1).padStart(2, "0") + "-" + String(targetDate.getDate()).padStart(2, "0");
-  const targets = memories.filter(memory => validMemoryDay(memory.day) && memory.day === yesterday).slice(0, 5);
-  if (!targets.length) return <p className="text-xl" role="status">{caregiver ? t("Add a video or a few people first.") : t("There isn't a saved memory from yesterday yet. Let's try another activity.")}</p>;
-  return <ChoiceSession game="yesterday-quiz" domain="Memory" count={targets.length} finish={finish} makeRound={(index, knob) => ({ prompt: "Which memory did you save yesterday?", answer: targets[index].id, options: buildYesterdayChoices(memories, targets[index].id, knob, index) })} />;
+  const eligible = memories.filter(memory => validMemoryDay(memory.day) && memory.day <= yesterday);
+  const previewDay = preview && eligible.length ? eligible.reduce((latest, memory) => memory.day > latest ? memory.day : latest, eligible[0].day) : yesterday;
+  const targets = eligible.filter(memory => memory.day === previewDay).slice(0, 5);
+  const sample = preview && targets.length === 0;
+  const sampleMemories: YesterdayMemory[] = [
+    { id: "sample:tea", label: "You shared a cup of tea with your family.", day: yesterday },
+    { id: "sample:market", label: "You went to the market and chose fresh vegetables.", day: yesterday },
+    { id: "sample:music", label: "You listened to a familiar song at home.", day: yesterday },
+  ];
+  const roundMemories = sample ? sampleMemories : memories;
+  const roundTargets = sample ? sampleMemories : targets;
+  if (!roundTargets.length) return <p className="text-xl" role="status">{caregiver ? t("Add a video or a few people first.") : t("There isn't a saved memory from yesterday yet. Let's try another activity.")}</p>;
+  return <div className="space-y-4">
+    {preview && <p className="rounded-lg bg-muted px-4 py-3 text-base text-muted-foreground" role="status">{sample ? "Example preview. This sample is not a saved memory." : `Previewing saved memories from ${previewDay}.`}</p>}
+    <ChoiceSession game="yesterday-quiz" domain="Memory" count={roundTargets.length} finish={finish} makeRound={(index, knob) => ({ prompt: sample ? "Which sample memory sounds familiar?" : preview && previewDay !== yesterday ? "Which memory was saved on this day?" : "Which memory did you save yesterday?", answer: roundTargets[index].id, options: buildYesterdayChoices(roundMemories, roundTargets[index].id, knob, index) })} />
+  </div>;
 }
 
 export default function YesterdayQuiz({ date, onFinish }: GameProps) {

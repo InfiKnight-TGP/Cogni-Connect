@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import GameShell from "../_shared/GameShell";
+import { useContext, useEffect, useMemo, useState } from "react";
+import GameShell, { PreviewContext } from "../_shared/GameShell";
 import { Button } from "@/components/ui/button";
 import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
@@ -13,7 +13,22 @@ type CrosswordEntry = { number: number; direction: "across" | "down"; clue: stri
 type CrosswordPuzzle = {
   date: string; available: boolean; rows: number; cols: number;
   grid: { letter: string; number: number }[][]; entries: CrosswordEntry[];
+  sample?: boolean;
 };
+
+function samplePreviewPuzzle(date: string): CrosswordPuzzle {
+  const words = [
+    { word: "ZOO", clue: "A place where you can see many animals." },
+    { word: "TIGER", clue: "A large striped cat." },
+    { word: "LION", clue: "A big cat with a mane." },
+    { word: "BIRD", clue: "An animal with feathers and wings." },
+    { word: "MONKEY", clue: "An animal that can climb trees." },
+  ];
+  const cols = Math.max(...words.map(item => item.word.length));
+  const entries = words.map((item, index) => ({ number: index + 1, direction: "across" as const, clue: item.clue, word: item.word, row: index, col: 0 }));
+  const grid = words.map((item, index) => Array.from({ length: cols }, (_, col) => ({ letter: item.word[col] ?? "", number: col === 0 ? index + 1 : 0 })));
+  return { date, available: true, rows: words.length, cols, grid, entries, sample: true };
+}
 
 function Crossword({ date, finish }: { date: string; finish: (score: number) => void }) {
   const [puzzle, setPuzzle] = useState<CrosswordPuzzle | null>(null);
@@ -27,24 +42,43 @@ function Crossword({ date, finish }: { date: string; finish: (score: number) => 
   const [knob] = useState(() => readSkill("Memory").knob);
   const [listShown, setListShown] = useState(() => knob === 1);
   const { t, caregiver } = useTranslate();
+  const preview = useContext(PreviewContext);
   const log = useAnswerLog("memory-crossword", "Memory", String(selected), knob, true);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(API_URL + "/crossword?date=" + encodeURIComponent(date), { cache: "no-store" })
-      .then(async response => {
+    const load = async () => {
+      let puzzleDate = date;
+      if (preview) {
+        try {
+          const response = await fetch(API_URL + "/journals", { cache: "no-store" });
+          if (response.ok) {
+            const journals = await response.json() as Record<string, { date?: string }>;
+            const savedDays = Object.values(journals).map(journal => journal.date?.slice(0, 10) ?? "").filter(day => /^\d{4}-\d{2}-\d{2}$/.test(day) && day <= date).sort();
+            if (savedDays.length) puzzleDate = savedDays[savedDays.length - 1];
+          }
+        } catch { /* The selected date and sample preview remain available offline. */ }
+      }
+      try {
+        const response = await fetch(API_URL + "/crossword?date=" + encodeURIComponent(puzzleDate), { cache: "no-store" });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Crossword unavailable");
-        if (!cancelled) setPuzzle(data as CrosswordPuzzle);
-      })
-      .catch(() => { if (!cancelled) setPuzzle({ date, available: false, rows: 0, cols: 0, grid: [], entries: [] }); });
+        if (!cancelled) {
+          const loaded = data as CrosswordPuzzle;
+          setPuzzle(preview && (!loaded.available || loaded.entries.length < 4) ? samplePreviewPuzzle(puzzleDate) : loaded);
+        }
+      } catch {
+        if (!cancelled) setPuzzle(preview ? samplePreviewPuzzle(puzzleDate) : { date, available: false, rows: 0, cols: 0, grid: [], entries: [] });
+      }
+    };
+    void load();
     return () => { cancelled = true; };
-  }, [date]);
+  }, [date, preview]);
 
   const wordLimit = knob === 1 ? 4 : knob === 2 ? 5 : knob === 3 ? 6 : 8;
   const entries = useMemo(() => puzzle?.entries.slice(0, wordLimit) ?? [], [puzzle, wordLimit]);
   useEffect(() => {
-    if (puzzle?.available && knob <= 2) setHinted(entries.map((_, index) => index));
+    if (puzzle?.available && !puzzle.sample && knob <= 2) setHinted(entries.map((_, index) => index));
   }, [entries, knob, puzzle]);
   const current = entries[selected];
   const shuffled = useMemo(() => [...entries].sort(() => Math.random() - 0.5), [entries]);
@@ -97,6 +131,7 @@ function Crossword({ date, finish }: { date: string; finish: (score: number) => 
   const firstLetterCell = current.row + ":" + current.col;
   const helped = hinted.includes(selected) || listShown;
   return <section className="space-y-5">
+    {puzzle.sample && <p className="rounded-lg bg-muted px-4 py-3 text-base text-muted-foreground" role="status">{t("Example preview. This sample is not a saved memory.")}</p>}
     <div className="overflow-x-auto rounded-xl border border-border bg-muted/20 p-3" aria-label={t("Crossword grid")}>
       <div className="mx-auto grid w-max gap-1" style={{ gridTemplateColumns: "repeat(" + puzzle.cols + ", minmax(48px, 48px))" }}>
         {puzzle.grid.flatMap((row, rowIndex) => row.map((cell, colIndex) => {
