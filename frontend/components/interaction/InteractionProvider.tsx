@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Eye, Mic, Volume2 } from "lucide-react";
 import { useTheme } from "next-themes";
-import type { Locale } from "@/lib/interaction/locale";
+import { translate, type Locale } from "@/lib/interaction/locale";
 import { BrowserSpeechProvider } from "@/lib/interaction/speech";
 import { defaultPreferences, mergePreferences, readPreferences, writePreferences, type Preferences } from "@/lib/interaction/preferences";
 import EmergencyButton from "@/components/support/EmergencyButton";
@@ -40,6 +40,7 @@ export function InteractionProvider({ locales, children }: { locales: Locale[]; 
     return () => { speaker.cancel(); window.removeEventListener("cogni:patient-change", load); window.removeEventListener("storage", load); };
   }, [speaker]);
   useEffect(() => { document.documentElement.style.fontSize = preferences.textSize === "larger" ? "22px" : "18px"; }, [preferences.textSize]);
+  useEffect(() => { document.documentElement.lang = locale.code; }, [locale.code]);
   useEffect(() => {
     if (!ready || patient === "local-patient") return;
     const mergeRemote = () => {
@@ -81,9 +82,9 @@ export function InteractionProvider({ locales, children }: { locales: Locale[]; 
               void speaker.speak(locale[mode], locale.speechLanguage).catch(() => setNotice(locale.fallback));
             }}><Icon className="mr-3 inline h-8 w-8" />{locale[mode]}</button>;
           })}
-          <label>Language<select className="mt-1 min-h-14 w-full rounded-lg border bg-background p-2" value={locale.code} onChange={e => update({ language: e.target.value })}>{locales.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}</select></label>
-          <label>Text size<select className="mt-1 min-h-14 w-full rounded-lg border bg-background p-2" value={preferences.textSize} onChange={e => update({ textSize: e.target.value as Preferences["textSize"] })}><option value="large">Large</option><option value="larger">Larger</option></select></label>
-          <label>Theme<select className="mt-1 min-h-14 w-full rounded-lg border bg-background p-2" value={theme ?? "system"} onChange={e => setTheme(e.target.value)}><option value="light">Light</option><option value="dark">Dark</option><option value="system">System</option></select></label>
+          <label>{translate(locale, "Language")}<select className="mt-1 min-h-14 w-full rounded-lg border bg-background p-2" value={locale.code} onChange={e => update({ language: e.target.value })}>{locales.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}</select></label>
+          <label>{translate(locale, "Text size")}<select className="mt-1 min-h-14 w-full rounded-lg border bg-background p-2" value={preferences.textSize} onChange={e => update({ textSize: e.target.value as Preferences["textSize"] })}><option value="large">{translate(locale, "Large")}</option><option value="larger">{translate(locale, "Larger")}</option></select></label>
+          <label>{translate(locale, "Theme")}<select className="mt-1 min-h-14 w-full rounded-lg border bg-background p-2" value={theme ?? "system"} onChange={e => setTheme(e.target.value)}><option value="light">{translate(locale, "Light")}</option><option value="dark">{translate(locale, "Dark")}</option><option value="system">{translate(locale, "System")}</option></select></label>
           <p role="status">{notice}</p>
           <button className="min-h-14 rounded-lg bg-primary px-4 text-primary-foreground" onClick={() => { if (!preferences.updatedAt) update({ mode: "read" }); setOpen(false); }}>{locale.yes}</button>
         </div>

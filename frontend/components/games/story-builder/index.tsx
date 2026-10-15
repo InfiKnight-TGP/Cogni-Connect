@@ -118,7 +118,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
 
       {phase === "read" ? (
         <section aria-labelledby="story-title">
-          <VoiceQuestion prompt={`${story.title}. ${story.sentences.join(" ")}. Say ready when you want to remember.`} options={[{ id: "ready", label: "Ready", synonyms: ["I am ready", "remember"] }]} onAnswer={() => { stopSpeech(); setPhase("recall"); }} />
+          <VoiceQuestion prompt={`${story.title}. ${story.sentences.join(" ")}. Say ready when you want to remember.`} translatePrompt={false} options={[{ id: "ready", label: "Ready", synonyms: ["I am ready", "remember"] }]} onAnswer={() => { stopSpeech(); setPhase("recall"); }} />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="story-title" className="text-2xl font-semibold">
               {story.title}
@@ -163,7 +163,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
           </ol>
           <Card className="mt-6 p-5">
             <p className="mb-4 font-medium">Choose the missing word:</p>
-            <VoiceQuestion prompt={`Choose the missing word. ${hideWord(story.sentences[story.blanks[blankIndex].sentence], story.blanks[blankIndex].answer)}`} options={story.blanks[blankIndex].options.map(label => ({ id: label, label }))} onAnswer={choose} disabled={pickedCorrect !== null} />
+            <VoiceQuestion prompt={`Choose the missing word. ${hideWord(story.sentences[story.blanks[blankIndex].sentence], story.blanks[blankIndex].answer)}`} translatePrompt={false} translateOptions={false} options={story.blanks[blankIndex].options.map(label => ({ id: label, label }))} onAnswer={choose} disabled={pickedCorrect !== null} />
             <div className="grid gap-3 sm:grid-cols-3">
               {story.blanks[blankIndex].options.map((option) => {
                 const selected = pickedCorrect !== null && option === story.blanks[blankIndex].answer;

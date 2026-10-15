@@ -1,4 +1,4 @@
-export type PersonalWord = { answer: string; clue: string };
+export type PersonalWord = { answer: string; clue: string; clueKey?: "initial" | "place" };
 export type CrosswordWord = PersonalWord & { row: number; col: number; direction: "across" | "down" };
 export function summarize(text: string): string { return text.trim().split(/(?<=[.!?।])\s+/u).slice(0, 2).join(" ").slice(0, 300); }
 export function crossword(words: PersonalWord[], size = 15): { grid: (string | null)[][]; words: CrosswordWord[] } {

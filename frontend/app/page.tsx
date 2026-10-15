@@ -8,6 +8,8 @@ import { format, startOfWeek, addDays } from "date-fns";
 import { ArrowRight, Brain, Image as Images, Star, Users2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
+import { translate } from "@/lib/interaction/locale";
 
 interface ScoreEntry {
   date: string;
@@ -23,6 +25,8 @@ function greeting() {
 }
 
 export default function PatientHomePage() {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const router = useRouter();
   const [hello, setHello] = useState("");
   const [doneCount, setDoneCount] = useState(0);
@@ -96,9 +100,9 @@ export default function PatientHomePage() {
       <div className="mx-auto flex max-w-screen-xl gap-8 px-4 pb-16 pt-24 lg:pt-8">
       <main className="min-w-0 flex-1 space-y-8">
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold sm:text-5xl">{hello}</h1>
+          <h1 className="text-4xl font-bold sm:text-5xl">{tr(hello)}</h1>
           <p className="text-xl font-medium text-muted-foreground sm:text-2xl">
-            Welcome to CogniConnect
+            {tr("Welcome to CogniConnect")}
           </p>
         </div>
 
@@ -112,11 +116,11 @@ export default function PatientHomePage() {
           >
             <Brain className="absolute -bottom-6 -right-6 -z-10 h-36 w-36 text-blue-300 opacity-30 dark:opacity-40" />
             <div className="flex items-center justify-between text-2xl font-bold sm:text-3xl">
-              <span>Today&apos;s Activities</span>
+              <span>{tr("Today’s Activities")}</span>
               <ArrowRight className="ml-2 h-7 w-7 shrink-0" />
             </div>
             <p className="text-xl font-medium text-blue-100 sm:text-2xl">
-              {doneCount} of {totalCount} done today
+            {tr("{done} of {total} done today").replace("{done}", String(doneCount)).replace("{total}", String(totalCount))}
             </p>
           </DashboardCard>
 
@@ -128,11 +132,11 @@ export default function PatientHomePage() {
           >
             <Images className="absolute -bottom-6 -right-6 -z-10 h-36 w-36 text-primary opacity-30 dark:opacity-40" />
             <div className="flex items-center justify-between text-2xl font-bold sm:text-3xl">
-              <span>My Memories</span>
+              <span>{tr("My Memories")}</span>
               <ArrowRight className="ml-2 h-7 w-7 shrink-0" />
             </div>
             <p className="text-xl font-medium text-muted-foreground sm:text-2xl">
-              Look back at your days
+              {tr("Look back at your days")}
             </p>
           </DashboardCard>
 
@@ -144,11 +148,11 @@ export default function PatientHomePage() {
           >
             <Star className="absolute -bottom-6 -right-6 -z-10 h-36 w-36 text-primary opacity-30 dark:opacity-40" />
             <div className="flex items-center justify-between text-2xl font-bold sm:text-3xl">
-              <span>My Progress</span>
+              <span>{tr("My Progress")}</span>
               <ArrowRight className="ml-2 h-7 w-7 shrink-0" />
             </div>
             <p className="text-xl font-medium text-muted-foreground sm:text-2xl">
-              Played {daysPlayedThisWeek} {daysPlayedThisWeek === 1 ? "day" : "days"} this week
+              {tr("Played {count} {days} this week").replace("{count}", String(daysPlayedThisWeek)).replace("{days}", tr(daysPlayedThisWeek === 1 ? "day" : "days"))}
             </p>
           </DashboardCard>
 
@@ -160,11 +164,11 @@ export default function PatientHomePage() {
           >
             <Users2 className="absolute -bottom-6 -right-6 -z-10 h-36 w-36 text-primary opacity-30 dark:opacity-40" />
             <div className="flex items-center justify-between text-2xl font-bold sm:text-3xl">
-              <span>My People</span>
+              <span>{tr("My People")}</span>
               <ArrowRight className="ml-2 h-7 w-7 shrink-0" />
             </div>
             <p className="text-xl font-medium text-muted-foreground sm:text-2xl">
-              Your family and friends
+              {tr("Your family and friends")}
             </p>
           </DashboardCard>
         </div>

@@ -1,6 +1,26 @@
 /** Match every available choice, never just the correct choice. Recognition is not scoring. */
 export type AnswerOption = { id: string; label: string; synonyms?: string[] };
 export type AnswerMatch = { kind: "accept" | "confirm"; option: AnswerOption; similarity: number } | { kind: "retry" };
+export const SOS_OPTION_ID = "\u0000cogni-sos";
+
+export function optionsWithHelp(options: AnswerOption[], help: string[]): AnswerOption[] {
+  return [...options, { id: SOS_OPTION_ID, label: "Help", synonyms: Array.from(new Set(help)) }];
+}
+
+export function localizeAnswerOptions(
+  options: AnswerOption[],
+  localize: (label: string) => string,
+  localeSynonyms: Record<string, string[]>,
+): AnswerOption[] {
+  return options.map(option => {
+    const label = localize(option.label);
+    return {
+      ...option,
+      label,
+      synonyms: Array.from(new Set([...(option.synonyms ?? []), ...(localeSynonyms[option.label] ?? []), ...(localeSynonyms[label] ?? [])])),
+    };
+  });
+}
 
 export function normalizeAnswer(text: string): string {
   // Preserve vowel marks in Indic scripts. Removing all combining marks corrupts words.

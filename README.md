@@ -35,11 +35,13 @@ cd ../backend
 .venv\Scripts\python.exe -c "import app"
 ```
 
-Playwright requires Chromium (`npx playwright install chromium --no-shell`).
+Playwright requires Chromium (`npx playwright install chromium`).
 Set `PLAYWRIGHT_BASE_URL` when using a different port. Browser speech tests use
 deterministic mocks; they do not validate a physical microphone or native voices.
 The support suite routes browser API requests to its isolated Flask test server;
 it does not populate the working patient database or verify the production proxy.
+For a safe production-browser workflow, including stale-build checks and port
+ownership checks, see [local test-server workflow](docs/LOCAL_TEST_WORKFLOW.md).
 
 To seed a local caregiver demo, run `.venv\Scripts\python.exe seed_platform.py`
 from `backend`.

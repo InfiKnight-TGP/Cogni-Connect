@@ -6,6 +6,8 @@ import { API_URL } from "@/lib/api";
 import { addDays, format, startOfWeek } from "date-fns";
 import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
+import { translate } from "@/lib/interaction/locale";
 
 interface ScoreEntry {
   date: string;
@@ -31,6 +33,8 @@ const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const calcStars = (score: number) => (score >= 80 ? 3 : score >= 50 ? 2 : 1);
 
 export default function MyProgressPage() {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const [loading, setLoading] = useState(true);
   const [playedDays, setPlayedDays] = useState<boolean[]>([false, false, false, false, false, false, false]);
   const [daysCount, setDaysCount] = useState(0);
@@ -116,9 +120,9 @@ export default function MyProgressPage() {
       <Nav />
       <main className="mx-auto max-w-screen-lg space-y-8 px-4 pb-16 pt-28 lg:pt-8">
         <header className="space-y-2">
-          <h1 className="text-4xl font-bold sm:text-5xl">My Progress</h1>
+          <h1 className="text-4xl font-bold sm:text-5xl">{tr("My Progress")}</h1>
           <p className="text-2xl font-medium text-muted-foreground">
-            A look at your activities this week
+            {tr("A look at your activities this week")}
           </p>
         </header>
 
@@ -129,7 +133,7 @@ export default function MyProgressPage() {
             {/* Mon-Sun Weekly Row */}
             <div className="rounded-2xl border-2 border-primary/30 bg-card p-6 shadow-sm sm:p-8 space-y-6">
               <h2 className="text-2xl font-bold sm:text-3xl text-foreground">
-                You played {daysCount} {daysCount === 1 ? "day" : "days"} this week!
+                {translate(locale, "You played {count} {days} this week!", { count: daysCount, days: tr(daysCount === 1 ? "day" : "days") })}
               </h2>
 
               <div className="grid grid-cols-7 gap-2 sm:gap-4">
@@ -141,7 +145,7 @@ export default function MyProgressPage() {
                       className="flex flex-col items-center justify-center gap-3 rounded-xl border bg-background/50 p-3 sm:p-4 text-center"
                     >
                       <span className="text-lg font-bold sm:text-2xl text-foreground">
-                        {dayName}
+                        {tr(dayName)}
                       </span>
                       <div
                         className={`flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full text-2xl font-bold shadow-sm ${
@@ -149,7 +153,7 @@ export default function MyProgressPage() {
                             ? "bg-green-600 text-white"
                             : "border-2 border-dashed border-muted-foreground/30 text-muted-foreground/30"
                         }`}
-                        aria-label={played ? `${dayName}: Played` : `${dayName}: Not played`}
+                        aria-label={played ? `${tr(dayName)}: ${tr("Played")}` : `${tr(dayName)}: ${tr("Not played")}`}
                       >
                         {played ? "✓" : "—"}
                       </div>
@@ -164,21 +168,21 @@ export default function MyProgressPage() {
               {/* Stars Earned */}
               <div className="flex flex-col justify-between rounded-2xl border-2 border-amber-500/40 bg-amber-500/10 p-6 sm:p-8 space-y-3">
                 <span className="text-xl font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
-                  Stars Earned This Week
+                  {tr("Stars Earned This Week")}
                 </span>
                 <div className="flex items-center gap-3 text-4xl sm:text-5xl font-bold text-amber-600 dark:text-amber-400">
                   <span className="text-5xl sm:text-6xl" aria-hidden>⭐</span>
-                  <span>{totalStars} {totalStars === 1 ? "star" : "stars"}</span>
+                  <span>{totalStars} {tr(totalStars === 1 ? "star" : "stars")}</span>
                 </div>
                 <p className="text-lg sm:text-xl font-medium text-amber-900/80 dark:text-amber-200">
-                  Earned from your completed daily activities.
+                  {tr("Earned from your completed daily activities.")}
                 </p>
               </div>
 
               {/* Best Game This Week */}
               <div className="flex flex-col justify-between rounded-2xl border-2 border-primary/40 bg-primary/10 p-6 sm:p-8 space-y-3">
                 <span className="text-xl font-bold uppercase tracking-wider text-primary">
-                  Your Best This Week
+                  {tr("Your Best This Week")}
                 </span>
                 {bestGame ? (
                   <div className="space-y-2">
@@ -191,18 +195,18 @@ export default function MyProgressPage() {
                   </div>
                 ) : (
                   <p className="text-2xl font-bold text-muted-foreground">
-                    Play an activity today to see your best!
+                    {tr("Play an activity today to see your best!")}
                   </p>
                 )}
                 <p className="text-lg sm:text-xl font-medium text-muted-foreground">
-                  Your top performance across this week&apos;s games.
+                  {tr("Your top performance across this week's games.")}
                 </p>
               </div>
             </div>
 
             {/* Encouraging Message Banner */}
             <div className="rounded-2xl border-2 border-green-500/40 bg-green-50 p-6 text-center text-2xl font-bold text-green-900 dark:bg-green-950/40 dark:text-green-100 sm:text-3xl shadow-sm">
-              {encouragingMessage()}
+              {tr(encouragingMessage())}
             </div>
 
             {/* Quick Link to Today's Activities */}
@@ -211,7 +215,7 @@ export default function MyProgressPage() {
                 href="/today"
                 className="inline-flex min-h-16 items-center justify-center rounded-2xl bg-primary px-8 text-2xl font-bold text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary"
               >
-                Go to Today&apos;s Activities →
+                {tr("Go to Today’s Activities →")}
               </Link>
             </div>
           </div>

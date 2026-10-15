@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { API_URL } from "@/lib/api";
 import CaregiverPageLabel from "@/components/caregiver/pageLabel";
 import { useEffect, useState } from "react";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
+import { translate } from "@/lib/interaction/locale";
 
 const MAX_STEPS = 5;
 const MIN_STEPS = 3;
@@ -23,6 +25,8 @@ export default function RoutinePage() {
 }
 
 function Routine() {
+  const { locale } = useInteraction();
+  const tr = (phrase: string) => translate(locale, phrase);
   const [steps, setSteps] = useState<string[] | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -31,7 +35,7 @@ function Routine() {
     fetch(`${API_URL}/routine`)
       .then((r) => r.json())
       .then((d) => setSteps(d.steps?.length ? d.steps : ["", "", ""]))
-      .catch(() => setStatus({ ok: false, text: "Could not load the routine. Is the backend running?" }));
+      .catch(() => setStatus({ ok: false, text: tr("Could not load the routine. Is the backend running?") }));
   }, []);
 
   const filled = (steps ?? []).map((s) => s.trim()).filter(Boolean);
@@ -49,9 +53,9 @@ function Routine() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setSteps(data.steps);
-      setStatus({ ok: true, text: "Saved. Plan the Day will use these steps." });
+      setStatus({ ok: true, text: tr("Saved. Plan the Day will use these steps.") });
     } catch (err) {
-      setStatus({ ok: false, text: `Could not save: ${(err as Error).message || "server not reachable"}` });
+      setStatus({ ok: false, text: translate(locale, "Could not save: {error}", { error: (err as Error).message || "server not reachable" }) });
     } finally {
       setSaving(false);
     }
@@ -69,11 +73,9 @@ function Routine() {
     <main className="mx-auto max-w-2xl space-y-6 px-4 pb-16 pt-24 lg:pt-8">
       <div>
         <CaregiverPageLabel />
-        <h1 className="text-3xl font-bold">Daily Routine</h1>
+        <h1 className="text-3xl font-bold">{tr("Daily Routine")}</h1>
         <p className="mt-1 text-muted-foreground">
-          Write {MIN_STEPS} to {MAX_STEPS} steps of the patient&apos;s own day, in order (for example &quot;Wake up&quot;,
-          &quot;Have tea&quot;, &quot;Take tablets&quot;). Plan the Day mixes them up and asks the patient to put them back in
-          order. Each step can be up to 40 letters.
+          {tr("Write 3 to 5 steps of the patient’s own day, in order (for example ‘Wake up’, ‘Have tea’, ‘Take tablets’). Plan the Day mixes them up and asks the patient to put them back in order. Each step can be up to 40 letters.")}
         </p>
       </div>
 
@@ -87,13 +89,13 @@ function Routine() {
                   value={step}
                   maxLength={40}
                   onChange={(e) => update(i, e.target.value)}
-                  aria-label={`Step ${i + 1}`}
+                  aria-label={translate(locale, "Step {number}", { number: i + 1 })}
                   className="h-11 text-base"
                 />
-                <Button type="button" variant="outline" size="icon" disabled={i === 0} onClick={() => move(i, -1)} aria-label={`Move step ${i + 1} up`}>
+                <Button type="button" variant="outline" size="icon" disabled={i === 0} onClick={() => move(i, -1)} aria-label={translate(locale, "Move step {number} up", { number: i + 1 })}>
                   ↑
                 </Button>
-                <Button type="button" variant="outline" size="icon" disabled={i === steps.length - 1} onClick={() => move(i, 1)} aria-label={`Move step ${i + 1} down`}>
+                <Button type="button" variant="outline" size="icon" disabled={i === steps.length - 1} onClick={() => move(i, 1)} aria-label={translate(locale, "Move step {number} down", { number: i + 1 })}>
                   ↓
                 </Button>
                 <Button
@@ -102,7 +104,7 @@ function Routine() {
                   size="icon"
                   disabled={steps.length <= MIN_STEPS}
                   onClick={() => setSteps(steps.filter((_, j) => j !== i))}
-                  aria-label={`Remove step ${i + 1}`}
+                  aria-label={translate(locale, "Remove step {number}", { number: i + 1 })}
                 >
                   ✕
                 </Button>
@@ -111,10 +113,10 @@ function Routine() {
           </ol>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" disabled={steps.length >= MAX_STEPS} onClick={() => setSteps([...steps, ""])}>
-              Add a step
+              {tr("Add a step")}
             </Button>
             <Button type="submit" disabled={saving || filled.length < MIN_STEPS}>
-              {saving ? "Saving…" : "Save routine"}
+              {saving ? tr("Saving…") : tr("Save routine")}
             </Button>
           </div>
         </form>
