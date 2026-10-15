@@ -65,6 +65,8 @@ for _path, _default in {
 VIDEO_CHUNKS_ROOT = "video_chunks"  
 SUMMARY_ROOT = "summary"
 FRAMES_ROOT = "frames"  # process_video writes frames/<video>_chunks/chunk_SSSS_EEEE/<n>.jpg
+JOURNALS_PATH = "video_journals.json"
+CROSSWORDS_PATH = "crosswords.json"
 
 
 def allowed_file(filename):
@@ -465,9 +467,9 @@ def upload_video():
         
         # Save journal entry and date if provided
         if journal_entry or video_date:
-            journal_file = 'video_journals.json'
+            journal_file = JOURNALS_PATH
             if os.path.exists(journal_file):
-                with open(journal_file, 'r') as f:
+                with open(journal_file, 'r', encoding='utf-8') as f:
                     journals = json.load(f)
             else:
                 journals = {}
@@ -480,8 +482,9 @@ def upload_video():
                 "date": video_date
             }
             
-            with open(journal_file, 'w') as f:
-                json.dump(journals, f, indent=2)
+            with open(journal_file, 'w', encoding='utf-8') as f:
+                json.dump(journals, f, indent=2, ensure_ascii=False)
+            invalidate_crossword_cache(video_date)
         
         # Initialize processing status
         processing_status[filename] = {
@@ -500,6 +503,7 @@ def upload_video():
                 result = process_uploaded_video(filepath)
                 
                 if result["success"]:
+                    invalidate_crossword_cache(video_date)
                     processing_status[filename]["status"] = "completed"
                     processing_status[filename]["message"] = "Video processed successfully"
                     processing_status[filename]["progress"] = 100
@@ -773,10 +777,10 @@ def _local_date(value):
 
 def _videos_for_date(date_str):
     """(filename, journal) pairs recorded on date_str (YYYY-MM-DD), oldest upload first."""
-    journal_file = 'video_journals.json'
+    journal_file = JOURNALS_PATH
     if not os.path.exists(journal_file):
         return []
-    with open(journal_file, 'r') as f:
+    with open(journal_file, 'r', encoding='utf-8') as f:
         journals = json.load(f)
     matches = [(name, j) for name, j in journals.items() if _local_date(j.get('date', '')) == date_str]
     return sorted(matches, key=lambda m: m[1].get('timestamp', ''))
@@ -785,6 +789,290 @@ def _videos_for_date(date_str):
 def _chunks_folder(video_filename):
     """process_video names the chunk folder after the uploaded file."""
     return os.path.splitext(video_filename)[0] + '_chunks'
+
+
+_CROSSWORD_SENSITIVE = {
+    'alzheimer', 'alzheimer’s', 'alzheimer\'s', 'dementia', 'disease', 'diagnosis',
+    'medical', 'medicine', 'medication', 'tablet', 'tablets', 'pill', 'pills',
+    'doctor', 'hospital', 'clinic', 'patient', 'symptom', 'symptoms', 'treatment',
+    'therapy', 'pain', 'injury', 'illness', 'blood', 'death', 'died', 'funeral',
+}
+_CROSSWORD_STOP = {'the', 'and', 'for', 'with', 'from', 'your', 'you', 'something', 'every', 'each', 'morning', 'afternoon', 'evening', 'today', 'daily'}
+
+
+def _crossword_clean_word(value):
+    """Return one A-Z answer of 3-9 letters, or None for unsafe/invalid words."""
+    if not isinstance(value, str):
+        return None
+    word = value.strip().upper()
+    if not 3 <= len(word) <= 9 or not re.fullmatch(r'[A-Z]+', word):
+        return None
+    if word.lower() in _CROSSWORD_SENSITIVE:
+        return None
+    return word
+
+
+def _crossword_word_in_sources(word, sources, people):
+    pattern = re.compile(r'(?<![A-Za-z])' + re.escape(word) + r'(?![A-Za-z])', re.IGNORECASE)
+    if any(pattern.search(source) for source in sources if isinstance(source, str)):
+        return True
+    return any(pattern.search(str(person.get('name', ''))) for person in people if isinstance(person, dict))
+
+
+def _validate_crossword_candidates(candidates, sources, people):
+    if not isinstance(candidates, list):
+        return []
+    result, seen = [], set()
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        word = _crossword_clean_word(candidate.get('word'))
+        clue = candidate.get('clue')
+        if not word or word in seen or not _crossword_word_in_sources(word, sources, people):
+            continue
+        if not isinstance(clue, str) or not 4 <= len(clue.strip()) <= 100 or not re.search(r'\b(you|your|you’ve|you\'ve)\b', clue, re.IGNORECASE):
+            continue
+        if any(re.search(r'\b' + re.escape(term) + r'\b', clue, re.IGNORECASE) for term in _CROSSWORD_SENSITIVE):
+            continue
+        result.append({'word': word, 'clue': clue.strip()})
+        seen.add(word)
+        if len(result) == 8:
+            break
+    return result
+
+
+def _crossword_fallback(people, routine_steps):
+    candidates, seen = [], set()
+    for person in people if isinstance(people, list) else []:
+        if not isinstance(person, dict):
+            continue
+        relation = str(person.get('relation', '')).strip()
+        clue = 'Your ' + relation.lower() if relation and relation.lower() not in _CROSSWORD_SENSITIVE else 'Someone you know'
+        for name in re.findall(r'[A-Za-z]+', str(person.get('name', ''))):
+            word = _crossword_clean_word(name)
+            if word and word not in seen:
+                candidates.append({'word': word, 'clue': clue})
+                seen.add(word)
+    for step in routine_steps if isinstance(routine_steps, list) else []:
+        for token in re.findall(r'[A-Za-z]+', str(step)):
+            word = _crossword_clean_word(token)
+            if word and word.lower() not in _CROSSWORD_STOP and word not in seen:
+                candidates.append({'word': word, 'clue': 'Something you do each day'})
+                seen.add(word)
+    return candidates[:8]
+
+
+def _crossword_layout(candidates):
+    """Place answers in a compact 9x9 crossword, preferring intersecting entries."""
+    size = 9
+    cells = {}
+    placed = []
+
+    def legal(word, row, col, direction, require_cross=False):
+        dr, dc = (0, 1) if direction == 'across' else (1, 0)
+        if row < 0 or col < 0 or row + dr * (len(word) - 1) >= size or col + dc * (len(word) - 1) >= size:
+            return False
+        intersections = 0
+        for index, letter in enumerate(word):
+            r, c = row + dr * index, col + dc * index
+            existing = cells.get((r, c))
+            if existing is not None:
+                if existing != letter:
+                    return False
+                intersections += 1
+            else:
+                # Do not place parallel words directly alongside each other.
+                side = ((1, 0), (-1, 0)) if direction == 'across' else ((0, 1), (0, -1))
+                if any((r + sr, c + sc) in cells for sr, sc in side):
+                    return False
+        before = (row - dr, col - dc)
+        after = (row + dr * len(word), col + dc * len(word))
+        if before in cells or after in cells:
+            return False
+        return intersections > 0 if require_cross else True
+
+    def place(item, row, col, direction):
+        dr, dc = (0, 1) if direction == 'across' else (1, 0)
+        for index, letter in enumerate(item['word']):
+            cells[(row + dr * index, col + dc * index)] = letter
+        placed.append({**item, 'row': row, 'col': col, 'direction': direction})
+
+    for item in candidates[:8]:
+        word = item['word']
+        if not placed:
+            place(item, size // 2, max(0, (size - len(word)) // 2), 'across')
+            continue
+        success = False
+        # Try every matching letter against existing cells, alternating orientation.
+        for direction in ('down', 'across'):
+            dr, dc = (0, 1) if direction == 'across' else (1, 0)
+            for (r, c), letter in list(cells.items()):
+                for index, char in enumerate(word):
+                    if char != letter:
+                        continue
+                    row, col = r - dr * index, c - dc * index
+                    if legal(word, row, col, direction, require_cross=True):
+                        place(item, row, col, direction)
+                        success = True
+                        break
+                if success:
+                    break
+            if success:
+                break
+        if not success:
+            for direction in ('across', 'down'):
+                for row in range(size):
+                    for col in range(size):
+                        if legal(word, row, col, direction):
+                            place(item, row, col, direction)
+                            success = True
+                            break
+                    if success:
+                        break
+                if success:
+                    break
+
+    if not placed:
+        return {'rows': 0, 'cols': 0, 'grid': [], 'entries': []}
+    min_row = min(r for r, _ in cells); max_row = max(r for r, _ in cells)
+    min_col = min(c for _, c in cells); max_col = max(c for _, c in cells)
+    numbered, entries = {}, []
+    for item in placed:
+        key = (item['row'], item['col'])
+        if key not in numbered:
+            numbered[key] = len(numbered) + 1
+        entries.append({**item, 'number': numbered[key], 'row': item['row'] - min_row, 'col': item['col'] - min_col})
+    rows, cols = max_row - min_row + 1, max_col - min_col + 1
+    grid = [[{'letter': '', 'number': 0} for _ in range(cols)] for _ in range(rows)]
+    for (row, col), letter in cells.items():
+        grid[row - min_row][col - min_col]['letter'] = letter
+    for (row, col), number in numbered.items():
+        grid[row - min_row][col - min_col]['number'] = number
+    return {'rows': rows, 'cols': cols, 'grid': grid, 'entries': entries}
+
+
+def invalidate_crossword_cache(date_value):
+    """Forget puzzles for the changed memory day and the following day."""
+    from datetime import date, timedelta
+    date_str = _local_date(date_value) if date_value else None
+    if not date_str:
+        return
+    try:
+        base = date.fromisoformat(date_str)
+        affected = {base.isoformat(), (base + timedelta(days=1)).isoformat()}
+        if not os.path.exists(CROSSWORDS_PATH):
+            return
+        with open(CROSSWORDS_PATH, 'r', encoding='utf-8') as f:
+            cache = json.load(f)
+        if not isinstance(cache, dict):
+            return
+        changed = False
+        for key in affected:
+            changed = cache.pop(key, None) is not None or changed
+        if changed:
+            with open(CROSSWORDS_PATH, 'w', encoding='utf-8') as f:
+                json.dump(cache, f, indent=2, ensure_ascii=False)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return
+
+
+def _crossword_sources(date_str):
+    from datetime import date, timedelta
+    current = date.fromisoformat(date_str)
+    dates = {current.isoformat(), (current - timedelta(days=1)).isoformat()}
+    texts, video_folders = [], []
+    for day in dates:
+        for filename, journal in _videos_for_date(day):
+            if journal.get('entry'):
+                texts.append(str(journal['entry']))
+            folder = _chunks_folder(filename)
+            folder_path = os.path.join(VIDEO_CHUNKS_ROOT, folder)
+            transcript_path = os.path.join(folder_path, 'full_transcript.json')
+            if not os.path.exists(transcript_path) and os.path.isdir(VIDEO_CHUNKS_ROOT):
+                normalized = re.sub(r'[^a-z0-9]', '', os.path.splitext(filename)[0].lower())
+                for candidate in os.listdir(VIDEO_CHUNKS_ROOT):
+                    if normalized and normalized in re.sub(r'[^a-z0-9]', '', candidate.lower()):
+                        transcript_path = os.path.join(VIDEO_CHUNKS_ROOT, candidate, 'full_transcript.json')
+                        break
+            if os.path.exists(transcript_path):
+                try:
+                    with open(transcript_path, 'r', encoding='utf-8') as f:
+                        transcripts = json.load(f)
+                    if isinstance(transcripts, dict):
+                        texts.extend(str(value) for value in transcripts.values() if isinstance(value, str))
+                except (OSError, ValueError):
+                    pass
+    people = _load_people()
+    try:
+        with open(ROUTINES_PATH, 'r', encoding='utf-8') as f:
+            routine = json.load(f).get('steps', [])
+    except (OSError, ValueError, AttributeError):
+        routine = []
+    return texts, people, routine
+
+
+def _make_crossword(date_str):
+    texts, people, routine = _crossword_sources(date_str)
+    routine_text = [' '.join(step for step in routine if isinstance(step, str))] if isinstance(routine, list) else []
+    sources = texts + routine_text
+    candidates = []
+    if client.api_key and client.api_key != 'not_configured' and texts:
+        prompt = (
+            'Create 5 to 8 crossword answer/clue pairs as a JSON array [{"word":"...","clue":"..."}]. '
+            'Use only words that appear exactly in the source text below, or a person name from People. '
+            'Answers must be A-Z letters only after uppercasing, 3 to 9 letters, and nouns, names, places, or activities. '
+            'Avoid sensitive or medical words. Clues must be short, warm, and address the player as you/your. '
+            'Never invent an answer. Return only the JSON array.\n\n'
+            'Source text: ' + '\n'.join(texts + routine_text) + '\nPeople: ' + json.dumps(people, ensure_ascii=False)
+        )
+        try:
+            response = client.chat.completions.create(
+                model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
+                messages=[{'role': 'system', 'content': 'Create a gentle, source-grounded memory crossword. Never infer facts not stated in the sources.'}, {'role': 'user', 'content': prompt}],
+                max_completion_tokens=800,
+            )
+            raw = response.choices[0].message.content or ''
+            raw = re.sub(r'^\s*```(?:json)?|```\s*$', '', raw.strip(), flags=re.IGNORECASE)
+            candidates = _validate_crossword_candidates(json.loads(raw), sources, people)
+        except Exception:
+            candidates = []
+    if len(candidates) < 4:
+        candidates = _crossword_fallback(people, routine)
+    if len(candidates) < 4:
+        return {'date': date_str, 'available': False, **_crossword_layout([])}
+    layout = _crossword_layout(candidates)
+    if len(layout['entries']) < 4:
+        return {'date': date_str, 'available': False, **_crossword_layout([])}
+    return {'date': date_str, 'available': True, **layout}
+
+
+@api.route('/crossword', methods=['GET'])
+def get_crossword():
+    from datetime import date
+    date_str = request.args.get('date', '')
+    try:
+        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date_str):
+            raise ValueError
+        date.fromisoformat(date_str)
+    except ValueError:
+        return jsonify({'error': 'date must be YYYY-MM-DD'}), 400
+    try:
+        if os.path.exists(CROSSWORDS_PATH):
+            with open(CROSSWORDS_PATH, 'r', encoding='utf-8') as f:
+                cache = json.load(f)
+        else:
+            cache = {}
+        if isinstance(cache, dict) and date_str in cache:
+            return jsonify(cache[date_str])
+    except (OSError, ValueError):
+        cache = {}
+    puzzle = _make_crossword(date_str)
+    if not isinstance(cache, dict):
+        cache = {}
+    cache[date_str] = puzzle
+    with open(CROSSWORDS_PATH, 'w', encoding='utf-8') as f:
+        json.dump(cache, f, indent=2, ensure_ascii=False)
+    return jsonify(puzzle)
 
 
 @api.route('/faces-for-date', methods=['GET'])

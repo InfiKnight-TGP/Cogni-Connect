@@ -3,7 +3,7 @@ import { Brain, Compass, Eye, ListChecks, type LucideIcon } from "lucide-react";
 export const COGNITIVE_AREAS = [
   {
     name: "Memory",
-    gameIds: ["story-builder", "context-recall", "memory-cards", "yesterday-quiz", "mole-path", "word-association"],
+    gameIds: ["story-builder", "context-recall", "memory-cards", "memory-crossword", "yesterday-quiz", "mole-path", "word-association"],
     shortDescription: "Remembering words, stories and paths",
     icon: Brain,
     chartColors: { light: "#2a78d6", dark: "#3987e5" },

@@ -20,6 +20,7 @@ const GAME_AREA: Record<string, Area> = {
   "name-recognition": "Recognition & Orientation",
   "context-recall": "Memory",
   "memory-cards": "Memory",
+  "memory-crossword": "Memory",
   "yesterday-quiz": "Memory",
   "sound-tap": "Attention",
   "pattern-completion": "Executive Function",

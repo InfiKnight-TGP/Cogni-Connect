@@ -32,4 +32,5 @@ Thumbs.db
 # Project specific
 frames/
 video_chunks/
+crosswords.json
 content/*_chunks/

@@ -5,6 +5,7 @@
     { "id": "name-recognition", "levels": [1], "status": "ready", "area": "Recognition & Orientation" },
     { "id": "context-recall", "levels": [1], "status": "ready", "area": "Memory", "bundle": "daily_recall" },
     { "id": "memory-cards", "levels": [2], "status": "ready", "area": "Memory" },
+    { "id": "memory-crossword", "levels": [2], "status": "ready", "area": "Memory" },
     { "id": "yesterday-quiz", "levels": [1], "status": "ready", "area": "Memory" },
     { "id": "story-builder", "levels": [1], "status": "ready", "area": "Memory" },
     { "id": "plan-the-day", "levels": [1], "status": "ready", "area": "Executive Function" },

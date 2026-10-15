@@ -45,6 +45,7 @@ function AllGames() {
   const molePath = getGameById("mole-path")!;
   const contextRecall = getGameById("context-recall")!;
   const memoryCards = getGameById("memory-cards")!;
+  const memoryCrossword = getGameById("memory-crossword")!;
   const yesterdayQuiz = getGameById("yesterday-quiz")!;
 
   const oddOneOut = getGameById("odd-one-out")!;
@@ -133,7 +134,7 @@ function AllGames() {
             </Button>
           </GameCard>
 
-          {[memoryCards, yesterdayQuiz].map((game) => <GameCard key={game.id} emoji={game.emoji} name={game.name} trains={game.trains} level={game.levels[0]} comingSoon={game.comingSoon}>
+          {[memoryCards, memoryCrossword, yesterdayQuiz].map((game) => <GameCard key={game.id} emoji={game.emoji} name={game.name} trains={game.trains} level={game.levels[0]} comingSoon={game.comingSoon}>
             <Button variant="outline" className="w-full" onClick={() => setActive({ game, level: game.levels[0] })}>Preview</Button>
           </GameCard>)}
         </div>

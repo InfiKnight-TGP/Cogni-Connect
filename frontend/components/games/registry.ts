@@ -16,6 +16,7 @@ import SoundTap from "./sound-tap";
 import PatternCompletion from "./pattern-completion";
 import ObjectNaming from "./object-naming";
 import YesterdayQuiz from "./yesterday-quiz";
+import MemoryCrossword from "./memory-crossword";
 import { GameProps } from "./_shared/types";
 import { Area } from "@/lib/progress";
 
@@ -61,6 +62,10 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
   {
     id: "memory-cards", name: "Matching Pictures", skill: "working memory", area: "Memory", levels: [2], component: MemoryCards,
     comingSoon: false, emoji: "🃏", description: "Turn over cards and find familiar picture pairs.", trains: "Visual working memory: remember where pictures are",
+  },
+  {
+    id: "memory-crossword", name: "Memory Crossword", skill: "personal memory", area: "Memory", levels: [2], component: MemoryCrossword,
+    comingSoon: false, emoji: "🧩", description: "Recall words from your own recent memories.", trains: "Recall words from your own recent memories",
   },
   {
     id: "yesterday-quiz", name: "Remember Yesterday", skill: "personal memory", area: "Memory", levels: [1], component: YesterdayQuiz,
