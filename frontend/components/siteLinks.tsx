@@ -6,27 +6,28 @@ import { useTheme } from "next-themes";
 import { Check, ChevronDown, Globe, Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { API_URL } from "@/lib/api";
+import { useTranslate, type LanguageCode as SupportedLanguage } from "@/components/interaction/InteractionProvider";
 
 const LANGUAGES = [
-  { code: "en", name: "English" },
-  { code: "hi", name: "हिन्दी" },
-  { code: "bn", name: "বাংলা" },
-  { code: "mr", name: "मराठी" },
-  { code: "te", name: "తెలుగు" },
-  { code: "ta", name: "தமிழ்" },
-  { code: "gu", name: "ગુજરાતી" },
-  { code: "ur", name: "اردو" },
-  { code: "kn", name: "ಕನ್ನಡ" },
-  { code: "or", name: "ଓଡ଼ିଆ" },
-  { code: "ml", name: "മലയാളം" },
-  { code: "pa", name: "ਪੰਜਾਬੀ" },
-  { code: "as", name: "অসমীয়া" },
-  { code: "ne", name: "नेपाली" },
-  { code: "mni-Mtei", name: "ꯃꯤꯇꯩꯂꯣꯟ" },
+  { code: "en", name: "English", englishName: "English", selectable: true },
+  { code: "hi", name: "हिन्दी", englishName: "Hindi", selectable: true },
+  { code: "bn", name: "বাংলা", englishName: "Bengali", selectable: false },
+  { code: "mr", name: "मराठी", englishName: "Marathi", selectable: false },
+  { code: "te", name: "తెలుగు", englishName: "Telugu", selectable: false },
+  { code: "ta", name: "தமிழ்", englishName: "Tamil", selectable: false },
+  { code: "gu", name: "ગુજરાતી", englishName: "Gujarati", selectable: false },
+  { code: "ur", name: "اردو", englishName: "Urdu", selectable: false },
+  { code: "kn", name: "ಕನ್ನಡ", englishName: "Kannada", selectable: false },
+  { code: "or", name: "ଓଡ଼ିଆ", englishName: "Odia", selectable: false },
+  { code: "ml", name: "മലയാളം", englishName: "Malayalam", selectable: false },
+  { code: "pa", name: "ਪੰਜਾਬੀ", englishName: "Punjabi", selectable: false },
+  { code: "as", name: "অসমীয়া", englishName: "Assamese", selectable: true },
+  { code: "ne", name: "नेपाली", englishName: "Nepali", selectable: false },
+  { code: "mni-Mtei", name: "ꯃꯤꯇꯩꯂꯣꯟ", englishName: "Meitei", selectable: false },
 ] as const;
 
-type LanguageCode = (typeof LANGUAGES)[number]["code"];
 type ThemeChoice = "system" | "light" | "dark";
+type LanguageItemCode = (typeof LANGUAGES)[number]["code"];
 
 const THEME_CHOICES: { value: ThemeChoice; label: string; Icon: typeof Monitor }[] = [
   { value: "system", label: "System", Icon: Monitor },
@@ -34,19 +35,14 @@ const THEME_CHOICES: { value: ThemeChoice; label: string; Icon: typeof Monitor }
   { value: "dark", label: "Dark", Icon: Moon },
 ];
 
-function languageLabel(code: LanguageCode) {
+function languageLabel(code: LanguageItemCode) {
   return code === "mni-Mtei" ? "MNI" : code.toUpperCase();
-}
-
-function isLanguageCode(code: unknown): code is LanguageCode {
-  return LANGUAGES.some((language) => language.code === code);
 }
 
 function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column" }) {
   const { theme, setTheme } = useTheme();
+  const { t, language, ready: languageLoaded, setLanguage, caregiver } = useTranslate();
   const [mounted, setMounted] = useState(false);
-  const [language, setLanguage] = useState<LanguageCode | "">("");
-  const [languageLoaded, setLanguageLoaded] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
@@ -57,22 +53,6 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
 
   useEffect(() => {
     setMounted(true);
-    let active = true;
-    fetch(`${API_URL}/settings`)
-      .then((response) => (response.ok ? response.json() : {}))
-      .then((settings: { language?: unknown }) => {
-        if (!active) return;
-        setLanguage(isLanguageCode(settings.language) ? settings.language : "en");
-      })
-      .catch(() => {
-        if (active) setLanguage("en");
-      })
-      .finally(() => {
-        if (active) setLanguageLoaded(true);
-      });
-    return () => {
-      active = false;
-    };
   }, []);
 
   useEffect(() => {
@@ -99,7 +79,7 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
         return;
       }
       if (!menu || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
-      const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('button[role="menuitemradio"]'));
+      const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('button[role="menuitemradio"]:not(:disabled)'));
       if (!items.length) return;
       const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
       const delta = event.key === "ArrowDown" ? 1 : -1;
@@ -130,9 +110,7 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
     }
   }, [languageMenuOpen, themeMenuOpen]);
 
-  const saveLanguage = async (code: LanguageCode) => {
-    const previous = language || "en";
-    setLanguage(code);
+  const saveLanguage = async (code: SupportedLanguage) => {
     setSaveError(false);
     try {
       const response = await fetch(`${API_URL}/settings`, {
@@ -141,10 +119,8 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
         body: JSON.stringify({ language: code }),
       });
       if (!response.ok) throw new Error("Could not save language");
-      const settings = await response.json();
-      setLanguage(isLanguageCode(settings.language) ? settings.language : code);
+      setLanguage(code);
     } catch {
-      setLanguage(previous);
       setSaveError(true);
     }
   };
@@ -153,14 +129,14 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
   const CurrentThemeIcon = THEME_CHOICES.find(({ value }) => value === currentTheme)?.Icon ?? Monitor;
 
   return (
-    <section className={`w-full text-center ${placement === "right-column" ? "" : "mx-auto"}`} aria-label="Site links and preferences">
+    <section className={`w-full text-center ${placement === "right-column" ? "" : "mx-auto"}`} aria-label={t("Site links and preferences")}>
       <div className="mx-auto flex w-full flex-col items-center gap-3">
         <nav className="flex min-h-11 flex-wrap items-center justify-center gap-x-2 text-base font-bold tracking-wide text-muted-foreground" aria-label="Information">
-          <Link className="flex min-h-11 items-center rounded px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" href="/about">About</Link>
+          <Link className="flex min-h-11 items-center rounded px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" href="/about">{t("About")}</Link>
           <span aria-hidden="true">·</span>
-          <Link className="flex min-h-11 items-center rounded px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" href="/terms">Terms</Link>
+          <Link className="flex min-h-11 items-center rounded px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" href="/terms">{t("Terms")}</Link>
           <span aria-hidden="true">·</span>
-          <Link className="flex min-h-11 items-center rounded px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" href="/privacy">Privacy</Link>
+          <Link className="flex min-h-11 items-center rounded px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" href="/privacy">{t("Privacy")}</Link>
         </nav>
 
         <div className="flex w-full flex-wrap items-center justify-center gap-x-6 gap-y-2">
@@ -168,7 +144,7 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
             <button
               ref={languageTriggerRef}
               type="button"
-              aria-label={`Language: ${languageLabel(language || "en")}`}
+              aria-label={`${t("Language")}: ${languageLabel(language)}`}
               aria-haspopup="menu"
               aria-expanded={languageMenuOpen}
               disabled={!languageLoaded}
@@ -183,7 +159,7 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
               <ChevronDown aria-hidden="true" className="h-4 w-4" />
             </button>
             {languageMenuOpen && (
-              <div role="menu" aria-label="Choose language" className="absolute left-1/2 top-full z-50 mt-1 max-h-72 w-max min-w-52 -translate-x-1/2 overflow-y-auto rounded-md border border-border bg-card p-1 text-left shadow-lg">
+              <div role="menu" aria-label={t("Choose language")} className="absolute left-1/2 top-full z-50 mt-1 max-h-72 w-max min-w-52 max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-x-hidden overflow-y-auto rounded-md border border-border bg-card p-1 text-left shadow-lg">
                 {LANGUAGES.map((item) => {
                   const selected = language === item.code;
                   return (
@@ -192,14 +168,16 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
                       type="button"
                       role="menuitemradio"
                       aria-checked={selected}
+                      disabled={!item.selectable}
                       onClick={() => {
                         setLanguageMenuOpen(false);
-                        void saveLanguage(item.code);
+                        if (item.selectable) void saveLanguage(item.code as SupportedLanguage);
                       }}
-                      className="flex min-h-11 w-full items-center gap-2 rounded px-3 py-2 text-left text-base text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded px-3 py-2 text-left text-base text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <span className="w-10 shrink-0 font-semibold">{languageLabel(item.code)}</span>
-                      <span>– {item.name}</span>
+                      <span className="min-w-0 break-words">– {caregiver ? item.englishName : item.name}</span>
+                      {!item.selectable && <span className="ml-auto shrink-0 text-xs">{t("Coming soon")}</span>}
                       {selected && <Check aria-hidden="true" className="ml-auto h-4 w-4" />}
                     </button>
                   );
@@ -212,7 +190,7 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
             <button
               ref={themeTriggerRef}
               type="button"
-              aria-label={`Theme: ${THEME_CHOICES.find(({ value }) => value === currentTheme)?.label}`}
+              aria-label={`${t("Theme")}: ${t(THEME_CHOICES.find(({ value }) => value === currentTheme)?.label ?? "System")}`}
               aria-haspopup="menu"
               aria-expanded={themeMenuOpen}
               onClick={() => {
@@ -222,11 +200,11 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
               className="flex min-h-11 items-center gap-2 px-2 text-base text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <CurrentThemeIcon aria-hidden="true" className="h-5 w-5" />
-              <span>Theme</span>
+              <span>{t("Theme")}</span>
               <ChevronDown aria-hidden="true" className="h-4 w-4" />
             </button>
             {themeMenuOpen && (
-              <div role="menu" aria-label="Choose theme" className="absolute left-1/2 top-full z-50 mt-1 max-h-72 w-max min-w-52 -translate-x-1/2 overflow-y-auto rounded-md border border-border bg-card p-1 text-left shadow-lg">
+              <div role="menu" aria-label={t("Choose theme")} className="absolute left-1/2 top-full z-50 mt-1 max-h-72 w-max min-w-52 max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-x-hidden overflow-y-auto rounded-md border border-border bg-card p-1 text-left shadow-lg">
                 {THEME_CHOICES.map(({ value, label, Icon }) => {
                   const selected = mounted && currentTheme === value;
                   return (
@@ -242,7 +220,7 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
                       className="flex min-h-11 w-full items-center gap-2 rounded px-3 py-2 text-left text-base text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     >
                       <Icon aria-hidden="true" className="h-5 w-5 shrink-0" />
-                      <span>{label}</span>
+                      <span>{t(label)}</span>
                       {selected && <Check aria-hidden="true" className="ml-auto h-4 w-4" />}
                     </button>
                   );
@@ -251,7 +229,7 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
             )}
           </div>
         </div>
-        {saveError && <p className="text-sm text-destructive" role="status">Could not save language. Try again.</p>}
+        {saveError && <p className="text-sm text-destructive" role="status">{t("Could not save language. Try again.")}</p>}
       </div>
     </section>
   );

@@ -7,6 +7,7 @@ import { API_URL } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
 import CaregiverPageLabel from "@/components/caregiver/pageLabel";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslate } from "@/components/interaction/InteractionProvider";
 
 interface Person {
   id: string;
@@ -32,6 +33,7 @@ const relationText = (rel: string) => {
 };
 
 export default function PeoplePage() {
+  const { t } = useTranslate();
   const [people, setPeople] = useState<Person[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [version, setVersion] = useState(0); // busts the photo cache after an edit
@@ -61,16 +63,16 @@ export default function PeoplePage() {
       <main className="min-h-screen pt-24 lg:pt-8">
         <div className="mx-auto max-w-screen-lg space-y-8 px-4 py-8">
           {caregiver && <CaregiverPageLabel />}
-          <h1 className="text-4xl font-bold">{caregiver ? "People" : "My People"}</h1>
+          <h1 className="text-4xl font-bold">{t(caregiver ? "People" : "My People")}</h1>
 
           {loadError ? (
-            <p className="text-xl">Sorry, we could not load the people right now.</p>
+            <p className="text-xl">{t("Sorry, we could not load the people right now.")}</p>
           ) : people === null ? (
-            <p className="text-xl">Loading…</p>
+            <p className="text-xl">{t("Loading…")}</p>
           ) : caregiver ? (
             <ManagePeople people={people} photoUrl={photoUrl} reload={load} />
           ) : people.length === 0 ? (
-            <p className="text-2xl">No people added yet.</p>
+            <p className="text-2xl">{t("No people added yet.")}</p>
           ) : (
             <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
               {people.map((p) => (
@@ -81,7 +83,7 @@ export default function PeoplePage() {
                     <p className="text-3xl font-bold">{p.name}</p>
                     {p.relation && (
                       <p className="text-2xl font-semibold text-muted-foreground">
-                        {relationText(p.relation)}
+                        {t(relationText(p.relation))}
                       </p>
                     )}
                     {p.phone && (
@@ -94,7 +96,7 @@ export default function PeoplePage() {
                         href={`tel:${p.phone.replace(/\s/g, "")}`}
                         className="flex h-16 w-full items-center justify-center rounded-xl bg-green-600 px-6 text-2xl font-bold text-white transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-green-500 shadow-sm"
                       >
-                        📞 Call
+                        📞 {t("Call")}
                       </a>
                     )}
                   </div>

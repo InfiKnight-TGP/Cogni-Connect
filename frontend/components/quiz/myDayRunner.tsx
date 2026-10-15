@@ -10,6 +10,7 @@ import ContextQuestions from "./contextQuestions";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { API_URL } from "@/lib/api";
+import { useTranslate } from "@/components/interaction/InteractionProvider";
 
 const PARTS = [
   { id: "face-recognition", skill: "face recognition", title: "Face Recognition" },
@@ -17,6 +18,7 @@ const PARTS = [
 ] as const;
 
 export default function MyDayRunner() {
+  const { t } = useTranslate();
   const router = useRouter();
   const [date] = useState(localDateKey());
   const [part, setPart] = useState(0);
@@ -70,15 +72,15 @@ export default function MyDayRunner() {
 
   return (
     <main className="mx-auto max-w-screen-lg space-y-6 px-4 pb-16 pt-24 lg:pt-8">
-      <Button variant="outline" className="min-h-14 px-6 text-xl" onClick={() => router.push("/today")}>
-        <ArrowLeft className="mr-2 h-5 w-5" /> Back to my day
+      <Button variant="outline" className="min-h-14 max-w-full whitespace-normal break-words px-6 text-xl" onClick={() => router.push("/today")}>
+        <ArrowLeft className="mr-2 h-5 w-5 shrink-0" /> {t("Back to my day")}
       </Button>
       {!questionsReady ? (
-        <p className="py-12 text-center text-xl text-muted-foreground" role="status">Getting your day ready…</p>
+        <p className="py-12 text-center text-xl text-muted-foreground" role="status">{t("Getting your day ready…")}</p>
       ) : <GameShell
         gameId="daily_recall"
-        title="My Day"
-        instructions="Enjoy two gentle activities from your memories, one at a time."
+        title={t("My Day")}
+        instructions={t("Enjoy two gentle activities from your memories, one at a time.")}
         level={1}
         skill="personal memory"
         date={date}
@@ -86,8 +88,8 @@ export default function MyDayRunner() {
       >
         {(finishBundle, sessionDate) => (
           <div>
-            <p className="mb-5 text-lg font-bold text-primary">Part {part + 1} of 2 · {PARTS[part].title}</p>
-            {saveError && <p role="alert" className="mb-4 text-base text-destructive">Could not save this part. Please try again.</p>}
+            <p className="mb-5 max-w-full break-words text-lg font-bold text-primary">{t("Part {part} of 2 · {activity}", { part: part + 1, activity: t(PARTS[part].title) })}</p>
+            {saveError && <p role="alert" className="mb-4 text-base text-destructive">{t("Could not save this part. Please try again.")}</p>}
             {part === 0 ? (
               <PersonSelect
                 date={dateFromLocalKey(sessionDate)}

@@ -8,6 +8,7 @@ import { format, startOfWeek, addDays } from "date-fns";
 import { ArrowRight, Brain, Image as Images, Star, Users2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslate } from "@/components/interaction/InteractionProvider";
 
 interface ScoreEntry {
   date: string;
@@ -23,6 +24,7 @@ function greeting() {
 }
 
 export default function PatientHomePage() {
+  const { t } = useTranslate();
   const router = useRouter();
   const [hello, setHello] = useState("");
   const [doneCount, setDoneCount] = useState(0);
@@ -96,9 +98,9 @@ export default function PatientHomePage() {
       <div className="mx-auto flex max-w-screen-xl gap-8 px-4 pb-16 pt-24 lg:pt-8">
       <main className="min-w-0 flex-1 space-y-8">
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold sm:text-5xl">{hello}</h1>
+          <h1 className="text-4xl font-bold sm:text-5xl">{t(hello)}</h1>
           <p className="text-xl font-medium text-muted-foreground sm:text-2xl">
-            Welcome to CogniConnect
+            {t("Welcome to CogniConnect")}
           </p>
         </div>
 
@@ -111,12 +113,12 @@ export default function PatientHomePage() {
             className="flex flex-col justify-between"
           >
             <Brain className="absolute -bottom-6 -right-6 -z-10 h-36 w-36 text-blue-300 opacity-30 dark:opacity-40" />
-            <div className="flex items-center justify-between text-2xl font-bold sm:text-3xl">
-              <span>Today&apos;s Activities</span>
+            <div className="flex min-w-0 items-center justify-between text-2xl font-bold sm:text-3xl">
+              <span className="min-w-0 break-words">{t("Today’s Activities")}</span>
               <ArrowRight className="ml-2 h-7 w-7 shrink-0" />
             </div>
             <p className="text-xl font-medium text-blue-100 sm:text-2xl">
-              {doneCount} of {totalCount} done today
+              {t("{done} of {total} done today", { done: doneCount, total: totalCount })}
             </p>
           </DashboardCard>
 
@@ -127,12 +129,12 @@ export default function PatientHomePage() {
             className="flex flex-col justify-between"
           >
             <Images className="absolute -bottom-6 -right-6 -z-10 h-36 w-36 text-primary opacity-30 dark:opacity-40" />
-            <div className="flex items-center justify-between text-2xl font-bold sm:text-3xl">
-              <span>My Memories</span>
+            <div className="flex min-w-0 items-center justify-between text-2xl font-bold sm:text-3xl">
+              <span className="min-w-0 break-words">{t("My Memories")}</span>
               <ArrowRight className="ml-2 h-7 w-7 shrink-0" />
             </div>
             <p className="text-xl font-medium text-muted-foreground sm:text-2xl">
-              Look back at your days
+              {t("Look back at your days")}
             </p>
           </DashboardCard>
 
@@ -143,12 +145,12 @@ export default function PatientHomePage() {
             className="flex flex-col justify-between"
           >
             <Star className="absolute -bottom-6 -right-6 -z-10 h-36 w-36 text-primary opacity-30 dark:opacity-40" />
-            <div className="flex items-center justify-between text-2xl font-bold sm:text-3xl">
-              <span>My Progress</span>
+            <div className="flex min-w-0 items-center justify-between text-2xl font-bold sm:text-3xl">
+              <span className="min-w-0 break-words">{t("My Progress")}</span>
               <ArrowRight className="ml-2 h-7 w-7 shrink-0" />
             </div>
             <p className="text-xl font-medium text-muted-foreground sm:text-2xl">
-              Played {daysPlayedThisWeek} {daysPlayedThisWeek === 1 ? "day" : "days"} this week
+              {t("Played {count} {days} this week", { count: daysPlayedThisWeek, days: t(daysPlayedThisWeek === 1 ? "day" : "days") })}
             </p>
           </DashboardCard>
 
@@ -159,12 +161,12 @@ export default function PatientHomePage() {
             className="flex flex-col justify-between"
           >
             <Users2 className="absolute -bottom-6 -right-6 -z-10 h-36 w-36 text-primary opacity-30 dark:opacity-40" />
-            <div className="flex items-center justify-between text-2xl font-bold sm:text-3xl">
-              <span>My People</span>
+            <div className="flex min-w-0 items-center justify-between text-2xl font-bold sm:text-3xl">
+              <span className="min-w-0 break-words">{t("My People")}</span>
               <ArrowRight className="ml-2 h-7 w-7 shrink-0" />
             </div>
             <p className="text-xl font-medium text-muted-foreground sm:text-2xl">
-              Your family and friends
+              {t("Your family and friends")}
             </p>
           </DashboardCard>
         </div>

@@ -7,6 +7,7 @@ import { Award, Play, RotateCcw } from "lucide-react";
 import { useCaregiver } from "@/lib/mode";
 import { LEVEL_NAMES, gameArea } from "@/lib/progress";
 import { localDateKey } from "./date";
+import { useTranslate } from "@/components/interaction/InteractionProvider";
 
 /** True on the caregiver's All Games page: games can be tried without saving a score. */
 export const PreviewContext = createContext(false);
@@ -38,6 +39,7 @@ export default function GameShell({
   onFinish,
   children,
 }: GameShellProps) {
+  const { t } = useTranslate();
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
   const [score, setScore] = useState<number | null>(null);
@@ -76,21 +78,21 @@ export default function GameShell({
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto border border-border bg-card rounded-2xl p-6 md:p-8 shadow-md">
+    <div className="mx-auto w-full max-w-2xl min-w-0 rounded-2xl border border-border bg-card p-6 shadow-md md:p-8">
       {/* Header Info */}
       <div className="flex items-center justify-between border-b border-border pb-4 mb-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{title}</h1>
+          <h1 className="min-w-0 break-words text-2xl font-bold tracking-tight md:text-3xl">{t(title)}</h1>
           <p className="text-muted-foreground text-sm md:text-base mt-1">
-            {instructions}
+            {t(instructions)}
           </p>
         </div>
         {caregiver && <div className="flex flex-col items-end gap-1">
           <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
-            {LEVEL_NAMES[level]}
+            {t(LEVEL_NAMES[level])}
           </span>
           <span className="text-xs text-muted-foreground capitalize">
-            {gameArea(gameId, skill) ?? skill}
+            {t(gameArea(gameId, skill) ?? skill)}
           </span>
         </div>}
       </div>
@@ -102,14 +104,14 @@ export default function GameShell({
             🎮
           </div>
           <div className="max-w-md space-y-2">
-            <h2 className="text-xl font-semibold">Ready to begin?</h2>
+            <h2 className="text-xl font-semibold">{t("Ready to begin?")}</h2>
             <p className="text-sm text-muted-foreground">
-              Click Start to launch {title}.{caregiver && level === 1 && " No timers apply in Easy mode."}
+              {t("Click Start to launch {title}.", { title: t(title) })}{caregiver && level === 1 && ` ${t("No timers apply in Easy mode.")}`}
             </p>
           </div>
           {caregiver && preview && showPreviewDatePicker && (
             <label className="flex items-center gap-3 text-sm text-muted-foreground">
-              <span>Preview date</span>
+              <span>{t("Preview date")}</span>
               <input
                 type="date"
                 value={selectedDate}
@@ -120,10 +122,10 @@ export default function GameShell({
           )}
           <Button
             size="lg"
-            className="min-h-[48px] px-8 py-6 text-lg font-bold shadow-lg hover:scale-105 transition-transform"
+            className="min-h-[48px] max-w-full whitespace-normal break-words px-8 py-6 text-center text-lg font-bold shadow-lg transition-transform hover:scale-105"
             onClick={() => setStarted(true)}
           >
-            <Play className="mr-2 h-5 w-5 fill-current" /> Start Game
+            <Play className="mr-2 h-5 w-5 shrink-0 fill-current" /> {t("Start Game")}
           </Button>
         </div>
       )}
@@ -149,22 +151,22 @@ export default function GameShell({
           </div>
           <div className="space-y-1">
             <h2 className="text-2xl font-bold text-green-600 dark:text-green-400">
-              Well done!
+              {t("Well done!")}
             </h2>
             <p className="text-lg text-foreground font-medium">
-              You scored <span className="font-extrabold text-primary">{score}</span> / 100
+              {t("You scored {score} / 100", { score: score ?? 0 })}
             </p>
             {caregiver
-              ? <p className="text-sm text-muted-foreground">Caregiver mode: this score was not saved.</p>
-              : preview && <p className="text-sm text-muted-foreground">Preview: this score was not saved.</p>}
+              ? <p className="text-sm text-muted-foreground">{t("Caregiver mode: this score was not saved.")}</p>
+              : preview && <p className="text-sm text-muted-foreground">{t("Preview: this score was not saved.")}</p>}
           </div>
           <Button
             variant="outline"
             size="lg"
             onClick={handleRestart}
-            className="mt-4 min-h-[48px] px-6 text-lg"
+            className="mt-4 min-h-[48px] max-w-full whitespace-normal break-words px-6 text-lg"
           >
-            <RotateCcw className="mr-2 h-4 w-4" /> Play Again
+            <RotateCcw className="mr-2 h-4 w-4 shrink-0" /> {t("Play Again")}
           </Button>
         </div>
       )}

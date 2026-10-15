@@ -22,6 +22,7 @@ import {
 import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useState } from "react";
 import { dayKey, toEntries } from "@/lib/progress";
+import { useTranslate } from "@/components/interaction/InteractionProvider";
 
 interface Activity {
   id: string;
@@ -63,6 +64,7 @@ function greeting() {
 }
 
 export default function TodayPage() {
+  const { t } = useTranslate();
   const router = useRouter();
   const [hello, setHello] = useState("");
   const [today, setToday] = useState("");
@@ -135,7 +137,7 @@ export default function TodayPage() {
               load(today);
             }}
           >
-            ← Back to my day
+            ← {t("Back to my day")}
           </Button>
           <Game level={playing.level} date={today} />
         </main>
@@ -153,23 +155,23 @@ export default function TodayPage() {
       <main className="min-w-0 flex-1 space-y-6">
         {/* Greeting & Progress */}
         <div className="space-y-1">
-          <h1 className="text-4xl font-bold sm:text-5xl">{hello}</h1>
+          <h1 className="text-4xl font-bold sm:text-5xl">{t(hello)}</h1>
           {plan !== null && !failed && (
             <p className="text-xl font-medium text-muted-foreground sm:text-2xl">
-              {doneCount} of {totalCount} done today
+              {t("{done} of {total} done today", { done: doneCount, total: totalCount })}
             </p>
           )}
         </div>
 
         {failed ? (
           <div className="space-y-4">
-            <p className="text-2xl">Sorry, we could not load your day.</p>
-            <Button className="h-14 px-6 text-xl" onClick={() => load(today)}>
-              Try again
+            <p className="text-2xl">{t("Sorry, we could not load your day.")}</p>
+            <Button className="h-14 max-w-full whitespace-normal break-words px-6 text-xl" onClick={() => load(today)}>
+              {t("Try again")}
             </Button>
           </div>
         ) : plan === null ? (
-          <p className="text-2xl">Loading…</p>
+          <p className="text-2xl">{t("Loading…")}</p>
         ) : (
           <TodayPath
             plan={plan}

@@ -6,6 +6,7 @@ import { API_URL } from "@/lib/api";
 import { addDays, format, startOfWeek } from "date-fns";
 import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
+import { useTranslate } from "@/components/interaction/InteractionProvider";
 
 interface ScoreEntry {
   date: string;
@@ -31,6 +32,7 @@ const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const calcStars = (score: number) => (score >= 80 ? 3 : score >= 50 ? 2 : 1);
 
 export default function MyProgressPage() {
+  const { t } = useTranslate();
   const [loading, setLoading] = useState(true);
   const [playedDays, setPlayedDays] = useState<boolean[]>([false, false, false, false, false, false, false]);
   const [daysCount, setDaysCount] = useState(0);
@@ -116,20 +118,20 @@ export default function MyProgressPage() {
       <Nav />
       <main className="mx-auto max-w-screen-lg space-y-8 px-4 pb-16 pt-28 lg:pt-8">
         <header className="space-y-2">
-          <h1 className="text-4xl font-bold sm:text-5xl">My Progress</h1>
+          <h1 className="text-4xl font-bold sm:text-5xl">{t("My Progress")}</h1>
           <p className="text-2xl font-medium text-muted-foreground">
-            A look at your activities this week
+            {t("A look at your activities this week")}
           </p>
         </header>
 
         {loading ? (
-          <p className="text-2xl font-medium">Loading your progress…</p>
+          <p className="text-2xl font-medium">{t("Loading your progress…")}</p>
         ) : (
           <div className="space-y-8">
             {/* Mon-Sun Weekly Row */}
             <div className="rounded-2xl border-2 border-primary/30 bg-card p-6 shadow-sm sm:p-8 space-y-6">
               <h2 className="text-2xl font-bold sm:text-3xl text-foreground">
-                You played {daysCount} {daysCount === 1 ? "day" : "days"} this week!
+                {t("You played {count} {days} this week!", { count: daysCount, days: t(daysCount === 1 ? "day" : "days") })}
               </h2>
 
               <div className="grid grid-cols-7 gap-2 sm:gap-4">
@@ -140,8 +142,8 @@ export default function MyProgressPage() {
                       key={dayName}
                       className="flex flex-col items-center justify-center gap-3 rounded-xl border bg-background/50 p-3 sm:p-4 text-center"
                     >
-                      <span className="text-lg font-bold sm:text-2xl text-foreground">
-                        {dayName}
+                      <span className="max-w-full break-words text-center text-sm font-bold text-foreground sm:text-2xl">
+                        {t(dayName)}
                       </span>
                       <div
                         className={`flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full text-2xl font-bold shadow-sm ${
@@ -149,7 +151,7 @@ export default function MyProgressPage() {
                             ? "bg-green-600 text-white"
                             : "border-2 border-dashed border-muted-foreground/30 text-muted-foreground/30"
                         }`}
-                        aria-label={played ? `${dayName}: Played` : `${dayName}: Not played`}
+                        aria-label={`${t(dayName)}: ${t(played ? "Played" : "Not played")}`}
                       >
                         {played ? "✓" : "—"}
                       </div>
@@ -164,45 +166,45 @@ export default function MyProgressPage() {
               {/* Stars Earned */}
               <div className="flex flex-col justify-between rounded-2xl border-2 border-amber-500/40 bg-amber-500/10 p-6 sm:p-8 space-y-3">
                 <span className="text-xl font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
-                  Stars Earned This Week
+                  {t("Stars Earned This Week")}
                 </span>
                 <div className="flex items-center gap-3 text-4xl sm:text-5xl font-bold text-amber-600 dark:text-amber-400">
                   <span className="text-5xl sm:text-6xl" aria-hidden>⭐</span>
-                  <span>{totalStars} {totalStars === 1 ? "star" : "stars"}</span>
+                  <span>{totalStars} {t(totalStars === 1 ? "star" : "stars")}</span>
                 </div>
                 <p className="text-lg sm:text-xl font-medium text-amber-900/80 dark:text-amber-200">
-                  Earned from your completed daily activities.
+                  {t("Earned from your completed daily activities.")}
                 </p>
               </div>
 
               {/* Best Game This Week */}
               <div className="flex flex-col justify-between rounded-2xl border-2 border-primary/40 bg-primary/10 p-6 sm:p-8 space-y-3">
                 <span className="text-xl font-bold uppercase tracking-wider text-primary">
-                  Your Best This Week
+                  {t("Your Best This Week")}
                 </span>
                 {bestGame ? (
                   <div className="space-y-2">
                     <p className="text-3xl sm:text-4xl font-bold text-foreground">
-                      {bestGame.name}
+                      {t(bestGame.name)}
                     </p>
-                    <div className="text-3xl sm:text-4xl text-amber-500" aria-label={`${bestGame.stars} stars`}>
+                    <div className="text-3xl sm:text-4xl text-amber-500" aria-label={`${bestGame.stars} ${t("stars")}`}>
                       {"★".repeat(bestGame.stars)}
                     </div>
                   </div>
                 ) : (
                   <p className="text-2xl font-bold text-muted-foreground">
-                    Play an activity today to see your best!
+                    {t("Play an activity today to see your best!")}
                   </p>
                 )}
                 <p className="text-lg sm:text-xl font-medium text-muted-foreground">
-                  Your top performance across this week&apos;s games.
+                  {t("Your top performance across this week’s games.")}
                 </p>
               </div>
             </div>
 
             {/* Encouraging Message Banner */}
             <div className="rounded-2xl border-2 border-green-500/40 bg-green-50 p-6 text-center text-2xl font-bold text-green-900 dark:bg-green-950/40 dark:text-green-100 sm:text-3xl shadow-sm">
-              {encouragingMessage()}
+              {t(encouragingMessage())}
             </div>
 
             {/* Quick Link to Today's Activities */}
@@ -211,7 +213,7 @@ export default function MyProgressPage() {
                 href="/today"
                 className="inline-flex min-h-16 items-center justify-center rounded-2xl bg-primary px-8 text-2xl font-bold text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary"
               >
-                Go to Today&apos;s Activities →
+                {t("Go to Today’s Activities →")}
               </Link>
             </div>
           </div>
