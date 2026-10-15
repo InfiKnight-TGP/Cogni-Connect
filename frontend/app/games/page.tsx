@@ -44,18 +44,23 @@ function AllGames() {
   const wordAssociation = getGameById("word-association")!;
   const molePath = getGameById("mole-path")!;
   const contextRecall = getGameById("context-recall")!;
+  const memoryCards = getGameById("memory-cards")!;
+  const yesterdayQuiz = getGameById("yesterday-quiz")!;
 
   const oddOneOut = getGameById("odd-one-out")!;
+  const soundTap = getGameById("sound-tap")!;
   const whackAMole = getGameById("whack-a-mole")!;
   const attentionHunt = getGameById("attention-hunt")!;
 
   const planTheDay = getGameById("plan-the-day")!;
   const sortingStation = getGameById("sorting-station")!;
+  const patternCompletion = getGameById("pattern-completion")!;
   const pillBoxPlanner = getGameById("pill-box-planner")!;
 
   const mapNavigator = getGameById("map-navigator")!;
   const faceRecognition = getGameById("face-recognition")!;
   const nameRecognition = getGameById("name-recognition")!;
+  const objectNaming = getGameById("object-naming")!;
 
   const builtCount = GAME_REGISTRY.filter((game) => !game.comingSoon).length;
   const comingSoonCount = GAME_REGISTRY.filter((game) => game.comingSoon).length;
@@ -127,6 +132,10 @@ function AllGames() {
               Preview
             </Button>
           </GameCard>
+
+          {[memoryCards, yesterdayQuiz].map((game) => <GameCard key={game.id} emoji={game.emoji} name={game.name} trains={game.trains} level={game.levels[0]} comingSoon={game.comingSoon}>
+            <Button variant="outline" className="w-full" onClick={() => setActive({ game, level: game.levels[0] })}>Preview</Button>
+          </GameCard>)}
         </div>
       </section>
 
@@ -140,7 +149,11 @@ function AllGames() {
             trains={oddOneOut.trains}
             level={oddOneOut.levels[0]}
             comingSoon={oddOneOut.comingSoon}
-          />
+          ><Button variant="outline" className="w-full" onClick={() => setActive({ game: oddOneOut, level: oddOneOut.levels[0] })}>Preview</Button></GameCard>
+
+          <GameCard emoji={soundTap.emoji} name={soundTap.name} trains={soundTap.trains} level={soundTap.levels[0]} comingSoon={soundTap.comingSoon}>
+            <Button variant="outline" className="w-full" onClick={() => setActive({ game: soundTap, level: soundTap.levels[0] })}>Preview</Button>
+          </GameCard>
 
           <GameCard
             emoji={whackAMole.emoji}
@@ -204,6 +217,10 @@ function AllGames() {
             </Button>
           </GameCard>
 
+          <GameCard emoji={patternCompletion.emoji} name={patternCompletion.name} trains={patternCompletion.trains} level={patternCompletion.levels[0]} comingSoon={patternCompletion.comingSoon}>
+            <Button variant="outline" className="w-full" onClick={() => setActive({ game: patternCompletion, level: patternCompletion.levels[0] })}>Preview</Button>
+          </GameCard>
+
           <GameCard
             emoji={pillBoxPlanner.emoji}
             name={pillBoxPlanner.name}
@@ -240,6 +257,10 @@ function AllGames() {
             <Button variant="outline" className="w-full" onClick={() => setActive({ game: nameRecognition, level: nameRecognition.levels[0] })}>
               Preview
             </Button>
+          </GameCard>
+
+          <GameCard emoji={objectNaming.emoji} name={objectNaming.name} trains={objectNaming.trains} level={objectNaming.levels[0]} comingSoon={objectNaming.comingSoon}>
+            <Button variant="outline" className="w-full" onClick={() => setActive({ game: objectNaming, level: objectNaming.levels[0] })}>Preview</Button>
           </GameCard>
 
           <GameCard

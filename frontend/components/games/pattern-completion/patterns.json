@@ -1,0 +1,127 @@
+{
+    "items":  [
+                  {
+                      "id":  "tea",
+                      "label":  "Tea",
+                      "emoji":  "🍵"
+                  },
+                  {
+                      "id":  "rice",
+                      "label":  "Rice",
+                      "emoji":  "🍚"
+                  },
+                  {
+                      "id":  "flower",
+                      "label":  "Flower",
+                      "emoji":  "🌼"
+                  },
+                  {
+                      "id":  "banana",
+                      "label":  "Banana",
+                      "emoji":  "🍌"
+                  },
+                  {
+                      "id":  "drum",
+                      "label":  "Drum",
+                      "emoji":  "🥁"
+                  },
+                  {
+                      "id":  "basket",
+                      "label":  "Basket",
+                      "emoji":  "🧺"
+                  },
+                  {
+                      "id":  "mango",
+                      "label":  "Mango",
+                      "emoji":  "🥭"
+                  },
+                  {
+                      "id":  "umbrella",
+                      "label":  "Umbrella",
+                      "emoji":  "☂️"
+                  }
+              ],
+    "rounds":  [
+                   {
+                       "sequence":  [
+                                        "tea",
+                                        "tea",
+                                        "rice",
+                                        "tea",
+                                        "tea"
+                                    ],
+                       "answer":  "rice"
+                   },
+                   {
+                       "sequence":  [
+                                        "flower",
+                                        "banana",
+                                        "flower",
+                                        "banana",
+                                        "flower"
+                                    ],
+                       "answer":  "banana"
+                   },
+                   {
+                       "sequence":  [
+                                        "drum",
+                                        "drum",
+                                        "basket",
+                                        "drum",
+                                        "drum"
+                                    ],
+                       "answer":  "basket"
+                   },
+                   {
+                       "sequence":  [
+                                        "mango",
+                                        "tea",
+                                        "flower",
+                                        "mango",
+                                        "tea"
+                                    ],
+                       "answer":  "flower"
+                   },
+                   {
+                       "sequence":  [
+                                        "rice",
+                                        "rice",
+                                        "banana",
+                                        "rice",
+                                        "rice"
+                                    ],
+                       "answer":  "banana"
+                   },
+                   {
+                       "sequence":  [
+                                        "basket",
+                                        "umbrella",
+                                        "tea",
+                                        "basket",
+                                        "umbrella"
+                                    ],
+                       "answer":  "tea"
+                   },
+                   {
+                       "sequence":  [
+                                        "flower",
+                                        "flower",
+                                        "mango",
+                                        "flower",
+                                        "flower"
+                                    ],
+                       "answer":  "mango"
+                   },
+                   {
+                       "sequence":  [
+                                        "banana",
+                                        "drum",
+                                        "basket",
+                                        "banana",
+                                        "drum"
+                                    ],
+                       "answer":  "basket"
+                   }
+               ],
+    "prompt":  "What comes next?"
+}

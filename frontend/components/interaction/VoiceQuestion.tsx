@@ -16,12 +16,14 @@ export function VoiceQuestion({
   onTranscript,
   onMatched,
   allowAnswer = true,
+  disabled = false,
 }: {
   question: string;
   options?: AnswerOption[];
   onTranscript?: (text: string) => void;
   onMatched?: (option: AnswerOption, input: AnswerInput) => void;
   allowAnswer?: boolean;
+  disabled?: boolean;
 }) {
   const { t, locale, caregiver, caregiverReady } = useTranslate();
   const { preferences } = usePreferences();
@@ -48,7 +50,7 @@ export function VoiceQuestion({
   }, [preferences.readAloud, preferences.speechRate, caregiver, caregiverReady, prompt, provider, speechLanguage, t]);
 
   const listen = useCallback(async () => {
-    if (!allowAnswer || !preferences.answerBySpeaking || caregiver || !caregiverReady || listening) return;
+    if (!allowAnswer || disabled || !preferences.answerBySpeaking || caregiver || !caregiverReady || listening) return;
     setListening(true); setMessage("");
     const signalController = new AbortController(); controller.current?.abort(); controller.current = signalController;
     try {
@@ -77,11 +79,11 @@ export function VoiceQuestion({
           ? t("I didn't hear anything. Try again or tap your answer.")
           : t("Voice is not available here. You can still tap your answer."));
     } finally { if (controller.current === signalController) controller.current = null; setListening(false); }
-  }, [allowAnswer, preferences.answerBySpeaking, caregiver, caregiverReady, listening, provider, speechLanguage, options, onMatched, onTranscript, locale.synonyms, t]);
+  }, [allowAnswer, disabled, preferences.answerBySpeaking, caregiver, caregiverReady, listening, provider, speechLanguage, options, onMatched, onTranscript, locale.synonyms, t]);
 
   useEffect(() => {
-    const automaticRead = allowAnswer && preferences.answerBySpeaking && preferences.listenAutomatically;
-    if ((!preferences.readAloud && !automaticRead) || caregiver || !caregiverReady) return;
+    const automaticRead = allowAnswer && !disabled && preferences.answerBySpeaking && preferences.listenAutomatically;
+    if (disabled || (!preferences.readAloud && !automaticRead) || caregiver || !caregiverReady) return;
     let cancelled = false;
     void (async () => {
       const read = await speak(automaticRead);
@@ -89,17 +91,17 @@ export function VoiceQuestion({
     })();
     return () => { cancelled = true; controller.current?.abort(); provider.cancel(); browserFallback.current.cancel(); };
     // Question identity triggers one read; settings changes are intentionally included.
-  }, [question, preferences.readAloud, preferences.answerBySpeaking, preferences.listenAutomatically, speak, provider, caregiver, caregiverReady, allowAnswer]);
+  }, [question, preferences.readAloud, preferences.answerBySpeaking, preferences.listenAutomatically, speak, provider, caregiver, caregiverReady, allowAnswer, disabled]);
 
   useEffect(() => () => { controller.current?.abort(); provider.cancel(); browserFallback.current.cancel(); }, [provider]);
 
   if (caregiver || !caregiverReady) return null;
   return (
     <div className="my-3 flex flex-wrap items-center gap-3">
-      {preferences.readAloud && <Button type="button" variant="outline" className="min-h-12 max-w-full whitespace-normal break-words text-center text-lg" onClick={() => void speak()} disabled={speaking}>
+      {preferences.readAloud && <Button type="button" variant="outline" className="min-h-12 max-w-full whitespace-normal break-words text-center text-lg" onClick={() => void speak()} disabled={speaking || disabled}>
         <Volume2 className="mr-2 h-5 w-5" />{t(speaking ? "Reading aloud…" : "Hear the question")}
       </Button>}
-      {allowAnswer && preferences.answerBySpeaking && <Button type="button" variant="outline" className="min-h-12 max-w-full whitespace-normal break-words text-center text-lg" onClick={() => void listen()} disabled={listening}>
+      {allowAnswer && preferences.answerBySpeaking && <Button type="button" variant="outline" className="min-h-12 max-w-full whitespace-normal break-words text-center text-lg" onClick={() => void listen()} disabled={listening || disabled}>
         <Mic className="mr-2 h-5 w-5" />{t(listening ? "Listening…" : "Speak an answer")}
       </Button>}
       {(listening || speaking) && <Button type="button" variant="outline" className="min-h-12" onClick={() => { controller.current?.abort(); provider.cancel(); browserFallback.current.cancel(); }}>{t("Stop")}</Button>}

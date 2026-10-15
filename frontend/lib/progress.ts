@@ -19,6 +19,11 @@ const GAME_AREA: Record<string, Area> = {
   "face-recognition": "Recognition & Orientation",
   "name-recognition": "Recognition & Orientation",
   "context-recall": "Memory",
+  "memory-cards": "Memory",
+  "yesterday-quiz": "Memory",
+  "sound-tap": "Attention",
+  "pattern-completion": "Executive Function",
+  "object-naming": "Recognition & Orientation",
 };
 
 const SKILL_AREA: Record<string, Area> = {

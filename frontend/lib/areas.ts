@@ -3,6 +3,7 @@ import { Brain, Compass, Eye, ListChecks, type LucideIcon } from "lucide-react";
 export const COGNITIVE_AREAS = [
   {
     name: "Memory",
+    gameIds: ["story-builder", "context-recall", "memory-cards", "yesterday-quiz", "mole-path", "word-association"],
     shortDescription: "Remembering words, stories and paths",
     icon: Brain,
     chartColors: { light: "#2a78d6", dark: "#3987e5" },
@@ -10,6 +11,7 @@ export const COGNITIVE_AREAS = [
   },
   {
     name: "Attention",
+    gameIds: ["sound-tap", "odd-one-out", "whack-a-mole", "attention-hunt"],
     shortDescription: "Spotting and finding things carefully",
     icon: Eye,
     chartColors: { light: "#eb6834", dark: "#d95926" },
@@ -17,6 +19,7 @@ export const COGNITIVE_AREAS = [
   },
   {
     name: "Executive Function",
+    gameIds: ["plan-the-day", "sorting-station", "pattern-completion", "pill-box-planner"],
     shortDescription: "Planning the day and adapting to changes",
     icon: ListChecks,
     chartColors: { light: "#1baf7a", dark: "#199e70" },
@@ -24,6 +27,7 @@ export const COGNITIVE_AREAS = [
   },
   {
     name: "Recognition & Orientation",
+    gameIds: ["object-naming", "face-recognition", "name-recognition", "map-navigator"],
     shortDescription: "Knowing familiar faces and finding the way",
     icon: Compass,
     chartColors: { light: "#eda100", dark: "#c98500" },
@@ -31,6 +35,7 @@ export const COGNITIVE_AREAS = [
   },
 ] as const satisfies readonly {
   name: string;
+  gameIds: readonly string[];
   shortDescription: string;
   icon: LucideIcon;
   chartColors: { light: string; dark: string };

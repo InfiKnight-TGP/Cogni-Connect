@@ -1,0 +1,10 @@
+{"prompt":"Which picture does not belong with the others?","rounds":[
+ {"similar":[{"label":"Apple","emoji":"🍎"},{"label":"Banana","emoji":"🍌"},{"label":"Orange","emoji":"🍊"},{"label":"Mango","emoji":"🥭"}],"odd":{"label":"Bus","emoji":"🚌"}},
+ {"similar":[{"label":"Dog","emoji":"🐕"},{"label":"Cat","emoji":"🐈"},{"label":"Cow","emoji":"🐄"},{"label":"Goat","emoji":"🐐"}],"odd":{"label":"Tea","emoji":"🍵"}},
+ {"similar":[{"label":"Shirt","emoji":"👕"},{"label":"Shoe","emoji":"👞"},{"label":"Hat","emoji":"👒"},{"label":"Socks","emoji":"🧦"}],"odd":{"label":"Rice","emoji":"🍚"}},
+ {"similar":[{"label":"Tea","emoji":"🍵"},{"label":"Coffee","emoji":"☕"},{"label":"Lassi","emoji":"🥛"},{"label":"Lemonade","emoji":"🍋"}],"odd":{"label":"Bicycle","emoji":"🚲"}},
+ {"similar":[{"label":"Bus","emoji":"🚌"},{"label":"Train","emoji":"🚆"},{"label":"Bicycle","emoji":"🚲"},{"label":"Car","emoji":"🚗"}],"odd":{"label":"Mango","emoji":"🥭"}},
+ {"similar":[{"label":"Rose","emoji":"🌹"},{"label":"Lotus","emoji":"🪷"},{"label":"Marigold","emoji":"🌼"},{"label":"Jasmine","emoji":"🌸"}],"odd":{"label":"Drum","emoji":"🥁"}},
+ {"similar":[{"label":"Spoon","emoji":"🥄"},{"label":"Plate","emoji":"🍽️"},{"label":"Bowl","emoji":"🥣"},{"label":"Cup","emoji":"☕"}],"odd":{"label":"Elephant","emoji":"🐘"}},
+ {"similar":[{"label":"Elephant","emoji":"🐘"},{"label":"Tiger","emoji":"🐅"},{"label":"Monkey","emoji":"🐒"},{"label":"Deer","emoji":"🦌"}],"odd":{"label":"Umbrella","emoji":"☂️"}}
+]}

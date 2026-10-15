@@ -11,6 +11,11 @@ import MapNavigator from "./map-navigator";
 import FaceRecognition from "./face-recognition";
 import NameRecognition from "./name-recognition";
 import ContextRecall from "./context-recall";
+import MemoryCards from "./memory-cards";
+import SoundTap from "./sound-tap";
+import PatternCompletion from "./pattern-completion";
+import ObjectNaming from "./object-naming";
+import YesterdayQuiz from "./yesterday-quiz";
 import { GameProps } from "./_shared/types";
 import { Area } from "@/lib/progress";
 
@@ -54,6 +59,14 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     trains: "Recall details of the day's videos in your own words",
   },
   {
+    id: "memory-cards", name: "Matching Pictures", skill: "working memory", area: "Memory", levels: [2], component: MemoryCards,
+    comingSoon: false, emoji: "🃏", description: "Turn over cards and find familiar picture pairs.", trains: "Visual working memory: remember where pictures are",
+  },
+  {
+    id: "yesterday-quiz", name: "Remember Yesterday", skill: "personal memory", area: "Memory", levels: [1], component: YesterdayQuiz,
+    comingSoon: false, emoji: "🌤️", description: "Recall a journal note or moment from yesterday.", trains: "Recall words from your recent memories",
+  },
+  {
     id: "plan-the-day",
     name: "Plan the Day",
     skill: "sequencing",
@@ -84,10 +97,14 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     area: "Attention",
     levels: [1],
     component: OddOneOut,
-    comingSoon: true,
+    comingSoon: false,
     emoji: "🔍",
     description: "Find the item that doesn't belong in the group.",
     trains: "Selective attention and categorising",
+  },
+  {
+    id: "sound-tap", name: "Listen to the Beats", skill: "attention", area: "Attention", levels: [1], component: SoundTap,
+    comingSoon: false, emoji: "🔔", description: "Listen to a short sound or look at the dots, then choose the count.", trains: "Attention: listen and count carefully",
   },
   {
     id: "mole-path",
@@ -112,6 +129,10 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     emoji: "📦",
     description: "Adapt to changing rules to sort items correctly.",
     trains: "Cognitive flexibility: switching rules",
+  },
+  {
+    id: "pattern-completion", name: "Finish the Pattern", skill: "reasoning", area: "Executive Function", levels: [2], component: PatternCompletion,
+    comingSoon: false, emoji: "🧩", description: "Look at familiar pictures and choose what comes next.", trains: "Reasoning: notice and continue patterns",
   },
   {
     id: "pill-box-planner",
@@ -183,6 +204,10 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     emoji: "🏷️",
     description: "Match a familiar face to the right name.",
     trains: "Match a familiar face to the right name",
+  },
+  {
+    id: "object-naming", name: "Name the Picture", skill: "recognition", area: "Recognition & Orientation", levels: [1], component: ObjectNaming,
+    comingSoon: false, emoji: "🫖", description: "Name familiar everyday objects.", trains: "Recognition: name familiar objects",
   },
 ];
 

@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import { adapt, initialSkill, median, slope, declineAlert } from './adaptive.ts';
+const event = { correct: true, errorType: 'none', method: 'tap', responseMs: 1000, difficulty: 2 };
+assert.equal(median([3, 1, 2]), 2);
+assert.equal(median([100, 2, 1, 3]), 2.5);
+assert.equal(median([]), null);
+let state = initialSkill();
+for (let i = 0; i < 5; i++) state = adapt(state, { ...event, correct: false });
+assert.equal(state.knob, 1);
+assert.equal(state.decision, 'down');
+assert.equal(state.recent.length, 0);
+for (let i = 0; i < 5; i++) state = adapt(state, event);
+assert.equal(state.knob, 2);
+assert.equal(state.baselines.tap.length, 5);
+const before = state;
+assert.equal(adapt(state, { ...event, errorType: 'recognition', correct: null }), before);
+state = adapt(state, { ...event, method: 'voice', responseMs: 9000 });
+assert.deepEqual(state.baselines.voice, [9000]);
+assert.deepEqual(state.baselines.tap, [1000, 1000, 1000, 1000, 1000]);
+for (let i = 0; i < 20; i++) state = adapt(state, { ...event, responseMs: 20000 });
+assert.ok(state.knob >= 2); // slowness alone never reduces difficulty
+assert.ok(state.baselines.tap.length <= 21);
+assert.equal(slope([1, 2, 3]), 1);
+assert.equal(declineAlert([90, 85, 80, 75, 70, 65, 60, 55]), true);
+assert.equal(declineAlert([90, 90, 90, 90, 90, 90, 90, 0]), false);
+assert.equal(declineAlert([90, 80, 70]), false);
+assert.equal(declineAlert([70, 75, 80, 85, 80, 85, 90, 95]), false);
+console.log('adaptive checks passed: separate baselines, recognition exclusion, one-knob changes and sustained slopes');
