@@ -156,6 +156,8 @@ def questions():
 def accuracy():
     given = request.args.get('given')
     real = request.args.get('real')
+    if not given or not real:
+        return jsonify(error="Both answers are required"), 400
     video_path = request.args.get('video')  # Get video path to find journal
     journal = None
     
@@ -166,7 +168,7 @@ def accuracy():
             video_name = video_path.split('/')[-2].replace('_chunks', '')
             journal_file = 'video_journals.json'
             if os.path.exists(journal_file):
-                with open(journal_file, 'r') as f:
+                with open(journal_file, 'r', encoding='utf-8') as f:
                     journals = json.load(f)
                     # Try to find matching journal
                     for vid_name, journal_data in journals.items():
@@ -177,20 +179,21 @@ def accuracy():
             pass  # If journal retrieval fails, continue without it
     
     score = gpt_accuracy(given, real, journal)
-    # Ensure score is an integer
+    # An unavailable evaluator or invalid response is not a cognitive score.
     try:
         score_int = int(score)
-    except:
-        score_int = 5  # Default middle score if parsing fails
+        if isinstance(score, bool) or (isinstance(score, float) and not score.is_integer()) or not 0 <= score_int <= 10:
+            raise ValueError("Score out of range")
+    except (ValueError, TypeError, OverflowError):
+        return jsonify(error="Answer evaluation is unavailable. Your answer has not been scored."), 503
     
     return jsonify(score_int)
 
 
 def gpt_accuracy(answer1, answer2, journal_context=None):
-    # If API key is not configured, return a mock accuracy score
+    # An unavailable evaluator must never fabricate cognitive performance.
     if not client.api_key or client.api_key == 'not_configured':
-        import random
-        return str(random.randint(6, 10))
+        return None
     try:
         # Build the prompt with journal context if available
         prompt = (
@@ -206,7 +209,7 @@ def gpt_accuracy(answer1, answer2, journal_context=None):
         prompt += f"\nGiven answer: {answer1}\nTrue answer: {answer2}\n\nOnly return the number (1-10)."
         
         response = client.chat.completions.create(
-            model='gpt-4o-mini',
+            model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
             messages=[
                 {"role": "system", "content": "You are an accuracy evaluator for memory quiz answers. Consider the semantic meaning and key details rather than exact wording."},
                 {"role": "user", "content": prompt}
@@ -1358,4 +1361,4 @@ def generate_questions():
 
 
 if __name__ == '__main__':
-    api.run(host='0.0.0.0', port=5000, debug=True)
+    api.run(host=os.getenv('COGNI_HOST', '127.0.0.1'), port=5000, debug=os.getenv('FLASK_DEBUG') == '1')

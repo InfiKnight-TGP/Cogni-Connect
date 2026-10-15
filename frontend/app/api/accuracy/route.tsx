@@ -23,6 +23,7 @@ export async function POST(request: Request) {
       },
     );
     const data = await res.json();
+    if (!res.ok) return Response.json({ error: data.error || "Evaluation unavailable" }, { status: res.status });
 
     return Response.json({ data });
   } catch (err) {

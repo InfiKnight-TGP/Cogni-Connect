@@ -1,0 +1,2535 @@
+COGNICONNECT — CODE TO PORT FROM THE voice-ai-journal-platform BRANCH
+===================================================================
+
+Source: friend's branch feature/voice-ai-journal-platform (exported as all_code.txt).
+If that branch is available locally, prefer:  git show origin/feature/voice-ai-journal-platform:<path>
+This file is the reviewed subset for 5 features ONLY:
+  1) Voice mode + text-to-speech (accessibility)   2) 5 new games   3) Languages
+  4) Adaptive engine                                5) /accuracy no-fake-score fix + Flask loopback/debug fix
+
+DO NOT PORT (next phase): backend/platform_api.py, seed_platform.py, support workspace
+(components/support/*, app/support), lib/interaction/support-store.ts, sync.ts, content.ts,
+trends.ts, EmergencyButton (SOS), location tracking, OfflineSetup + public/sw.js +
+scripts/offline-assets.mjs, app/play, Playwright e2e tests, /platform-api rewrite,
+PLATFORM_* env vars.
+
+GLOBAL CHANGES NEEDED WHEN PORTING
+- Remove every import/use of support-store (putSupport, readSupport, syncSupport),
+  EmergencyButton, OfflineSetup and SOS (SOS_OPTION_ID / optionsWithHelp / "cogni:sos").
+- Remove localStorage "cogni:role" / "cogni:patient" account logic; use a fixed
+  patient id "local-patient" for now.
+- Caregiver mode must never record answers or scores (keep isCaregiverUnlocked checks).
+- Language source of truth = our existing backend /settings "language" (SiteLinks picker),
+  not a second picker inside the accessibility panel.
+- The accessibility controls go into the patient SiteLinks/settings area (like the
+  Language and Theme menus), NOT the floating bottom-right panel.
+- Speech-to-text: add a Whisper provider (see NOTES in speech.ts section).
+- Area/level adjustments for the new games are listed in the games section.
+
+
+
+==============================================================================
+FILE: frontend/lib/interaction/speech.ts
+NOTES: KEEP as the SpeechProvider interface + BrowserSpeechProvider (TTS via speechSynthesis, browser STT fallback).
+ADD WhisperSpeechProvider implementing the same interface:
+  - speak(): delegate to BrowserSpeechProvider (speechSynthesis). If no browser voice for the language
+    (SpeechError "language"), optionally call backend POST /speak (OpenAI TTS) and play the returned audio.
+  - listen(): MediaRecorder (audio/webm) + simple silence detection (AnalyserNode RMS; stop after ~1.2 s
+    silence or 10 s max); POST multipart to backend /transcribe with language code; return
+    { text, confidence: 0.9, speechStartedAt } (Whisper gives no per-utterance confidence; exact matches
+    accept, fuzzy matches still ask for confirmation via matchAnswer).
+  - Map HTTP 503 (no API key) -> SpeechError("unsupported") so the UI falls back to browser STT / tap.
+==============================================================================
+export type SpeechFailure = "unsupported" | "offline" | "permission" | "microphone" | "language" | "silence" | "cancelled";
+export class SpeechError extends Error {
+  reason: SpeechFailure;
+  constructor(reason: SpeechFailure) { super(reason); this.reason = reason; }
+}
+export type SpeechResult = { text: string; confidence: number; speechStartedAt: number | null };
+export interface SpeechProvider {
+  speak(text: string, language: string, signal?: AbortSignal): Promise<number>;
+  listen(language: string, signal?: AbortSignal): Promise<SpeechResult>;
+  cancel(): void;
+}
+
+interface Recognition {
+  lang: string; interimResults: boolean; continuous: boolean;
+  onresult: ((event: { results: { [n: number]: { [n: number]: { transcript: string; confidence: number } } } }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null; onspeechstart: (() => void) | null;
+  start(): void; abort(): void;
+}
+type SpeechWindow = Window & { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
+
+export function recognitionFailure(code: string): SpeechFailure {
+  return ({ "not-allowed": "permission", "service-not-allowed": "permission", "audio-capture": "microphone", "language-not-supported": "language", network: "offline", "no-speech": "silence", aborted: "cancelled" } as Record<string, SpeechFailure>)[code] ?? "unsupported";
+}
+
+// Web Speech uses one browser-wide audio channel. Only its owner may cancel it.
+let owner: BrowserSpeechProvider | null = null;
+export class BrowserSpeechProvider implements SpeechProvider {
+  private cancelPending: (() => void) | null = null;
+  private generation = 0;
+  cancel() {
+    this.generation++;
+    this.cancelPending?.();
+    this.cancelPending = null;
+    if (owner === this) owner = null;
+  }
+  private acquire() {
+    this.cancel();
+    owner?.cancel();
+    owner = this;
+    return this.generation;
+  }
+  private release() {
+    this.cancelPending = null;
+    if (owner === this) owner = null;
+  }
+  async speak(text: string, language: string, signal?: AbortSignal): Promise<number> {
+    if (signal?.aborted) throw new SpeechError("cancelled");
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) throw new SpeechError("unsupported");
+    const generation = this.acquire();
+    const synthesis = window.speechSynthesis;
+    try {
+      // Voice discovery is cancellable too; navigation must not start stale audio later.
+      if (!synthesis.getVoices().length) await new Promise<void>((resolve, reject) => {
+        const cleanup = () => { clearTimeout(timer); synthesis.removeEventListener("voiceschanged", finish); signal?.removeEventListener("abort", abort); };
+        const finish = () => { cleanup(); resolve(); };
+        const abort = () => { cleanup(); reject(new SpeechError("cancelled")); };
+        const timer = setTimeout(finish, 700);
+        this.cancelPending = abort;
+        signal?.addEventListener("abort", abort, { once: true });
+        synthesis.addEventListener("voiceschanged", finish);
+      });
+      if (signal?.aborted || generation !== this.generation) throw new SpeechError("cancelled");
+      const voice = synthesis.getVoices().find(v => v.lang.toLowerCase().split("-")[0] === language.toLowerCase().split("-")[0]);
+      if (!voice) throw new SpeechError("language");
+      return await new Promise<number>((resolve, reject) => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = language; utterance.voice = voice; utterance.rate = 0.85;
+        let settled = false;
+        const finish = (failure?: SpeechFailure) => {
+          if (settled) return; settled = true;
+          clearTimeout(timer); signal?.removeEventListener("abort", abort);
+          utterance.onend = null; utterance.onerror = null;
+          if (failure) { try { synthesis.cancel(); } catch {} reject(new SpeechError(failure)); }
+          else resolve(performance.now());
+        };
+        const abort = () => finish("cancelled");
+        // Watchdog for missing browser callbacks, never a patient answer deadline.
+        const timer = setTimeout(() => finish("unsupported"), Math.max(30000, text.length * 150 + 10000));
+        this.cancelPending = abort;
+        signal?.addEventListener("abort", abort, { once: true });
+        utterance.onend = () => finish();
+        utterance.onerror = () => finish("unsupported");
+        try { synthesis.speak(utterance); } catch { finish("unsupported"); }
+      });
+    } finally {
+      if (generation === this.generation) this.release();
+    }
+  }
+  listen(language: string, signal?: AbortSignal): Promise<SpeechResult> {
+    if (signal?.aborted) return Promise.reject(new SpeechError("cancelled"));
+    if (typeof navigator === "undefined" || !navigator.onLine) return Promise.reject(new SpeechError("offline"));
+    const SpeechRecognition = (window as SpeechWindow).SpeechRecognition ?? (window as SpeechWindow).webkitSpeechRecognition;
+    if (!SpeechRecognition) return Promise.reject(new SpeechError("unsupported"));
+    const generation = this.acquire();
+    return new Promise<SpeechResult>((resolve, reject) => {
+      const recognition = new SpeechRecognition();
+      recognition.lang = language; recognition.interimResults = false; recognition.continuous = false;
+      let started: number | null = null, settled = false;
+      const finish = (result?: SpeechResult, failure: SpeechFailure = "silence") => {
+        if (settled) return; settled = true;
+        clearTimeout(timer); signal?.removeEventListener("abort", abort);
+        recognition.onend = null; recognition.onresult = null; recognition.onerror = null; recognition.onspeechstart = null;
+        try { recognition.abort(); } catch { /* Some engines throw after recognition has already stopped. */ }
+        if (result) resolve(result); else reject(new SpeechError(failure));
+      };
+      const abort = () => finish(undefined, "cancelled");
+      const timer = setTimeout(() => finish(), 15000);
+      this.cancelPending = abort;
+      recognition.onspeechstart = () => { started = performance.now(); };
+      recognition.onresult = event => finish({ text: event.results[0][0].transcript, confidence: event.results[0][0].confidence, speechStartedAt: started });
+      recognition.onerror = event => finish(undefined, recognitionFailure(event.error));
+      recognition.onend = () => finish();
+      signal?.addEventListener("abort", abort, { once: true });
+      try { recognition.start(); } catch { finish(undefined, "microphone"); }
+    }).finally(() => { if (generation === this.generation) this.release(); });
+  }
+}
+
+
+==============================================================================
+FILE: frontend/lib/interaction/matching.ts
+NOTES: KEEP. Remove SOS_OPTION_ID and optionsWithHelp (SOS is next phase).
+==============================================================================
+/** Match every available choice, never just the correct choice. Recognition is not scoring. */
+export type AnswerOption = { id: string; label: string; synonyms?: string[] };
+export type AnswerMatch = { kind: "accept" | "confirm"; option: AnswerOption; similarity: number } | { kind: "retry" };
+export const SOS_OPTION_ID = "\u0000cogni-sos";
+
+export function optionsWithHelp(options: AnswerOption[], help: string[]): AnswerOption[] {
+  return [...options, { id: SOS_OPTION_ID, label: "Help", synonyms: Array.from(new Set(help)) }];
+}
+
+export function localizeAnswerOptions(
+  options: AnswerOption[],
+  localize: (label: string) => string,
+  localeSynonyms: Record<string, string[]>,
+): AnswerOption[] {
+  return options.map(option => {
+    const label = localize(option.label);
+    return {
+      ...option,
+      label,
+      synonyms: Array.from(new Set([...(option.synonyms ?? []), ...(localeSynonyms[option.label] ?? []), ...(localeSynonyms[label] ?? [])])),
+    };
+  });
+}
+
+export function normalizeAnswer(text: string): string {
+  // Preserve vowel marks in Indic scripts. Removing all combining marks corrupts words.
+  return text.normalize("NFKC").toLocaleLowerCase().replace(/[\p{P}\p{S}]/gu, " ").replace(/\s+/g, " ").trim();
+}
+
+export function similarity(left: string, right: string): number {
+  const a = Array.from(normalizeAnswer(left)), b = Array.from(normalizeAnswer(right));
+  if (!a.length || !b.length) return 0;
+  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+  a.forEach((letter, i) => {
+    const row = [i + 1];
+    b.forEach((other, j) => row.push(Math.min(row[j] + 1, previous[j + 1] + 1, previous[j] + (letter === other ? 0 : 1))));
+    previous = row;
+  });
+  return 1 - previous[b.length] / Math.max(a.length, b.length);
+}
+
+export function matchAnswer(text: string, options: AnswerOption[], confidence = 0): AnswerMatch {
+  const normalized = normalizeAnswer(text);
+  if (!normalized) return { kind: "retry" };
+  const ranked = options.map(option => ({ option, similarity: Math.max(...[option.label, ...(option.synonyms ?? [])].map(label => similarity(normalized, label))) }))
+    .sort((a, b) => b.similarity - a.similarity);
+  const best = ranked[0];
+  if (!best || best.similarity < 0.65) return { kind: "retry" };
+  if (ranked[1] && best.similarity - ranked[1].similarity < 0.12) return { kind: "confirm", ...best };
+  // Fuzzy and unknown-confidence transcripts always require confirmation.
+  return { kind: best.similarity === 1 && confidence >= 0.8 ? "accept" : "confirm", ...best };
+}
+
+
+==============================================================================
+FILE: frontend/lib/interaction/locale.ts
+NOTES: KEEP as the translation helper (translate(locale, phrase, values)). Replaces the earlier next-intl plan.
+==============================================================================
+export type Locale = {
+  code: string; speechLanguage: string; name: string;
+  read: string; voice: string; mixed: string; choose: string; mic: string; replay: string;
+  listening: string; speaking: string; retry: string; fallback: string; confirm: string;
+  yes: string; no: string; heard: string; saved: string; storageError: string;
+  help: string[]; synonyms: Record<string, string[]>; ui?: Record<string, string>;
+};
+
+/** Translate a visible UI phrase when this locale provides it; English remains the fallback. */
+export function translate(locale: Locale, phrase: string, values: Record<string, string | number> = {}): string {
+  let translated = locale.ui?.[phrase] ?? phrase;
+  const resolvedValues: Record<string, string | number> = { ...values };
+  if (!locale.ui?.[phrase]) {
+    const templates = Object.entries(locale.ui ?? {}).map(([template, value], index) => ({
+      template,
+      value,
+      index,
+      placeholders: Array.from(template.matchAll(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g)),
+      literalLength: template.replace(/\{[a-zA-Z][a-zA-Z0-9_]*\}/g, "").length,
+    })).sort((a, b) => b.literalLength - a.literalLength || a.placeholders.length - b.placeholders.length || a.index - b.index);
+    for (const { template, value } of templates) {
+      const names: string[] = [];
+      const pattern = new RegExp(`^${template.split(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g).map((part, index) => {
+        if (index % 2) { names.push(part); return "([\\s\\S]*?)"; }
+        return part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }).join("")}$`);
+      const match = phrase.match(pattern);
+      if (!match) continue;
+      translated = value;
+      names.forEach((name, index) => {
+        if (!Object.prototype.hasOwnProperty.call(values, name)) resolvedValues[name] = match[index + 1];
+      });
+      break;
+    }
+  }
+  return translated.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (token, name: string) =>
+    Object.prototype.hasOwnProperty.call(resolvedValues, name) ? String(resolvedValues[name]) : token,
+  );
+}
+
+
+==============================================================================
+FILE: frontend/lib/interaction/load-locales.ts
+NOTES: KEEP.
+==============================================================================
+// Server-only discovery: add a JSON file with the same schema, then restart/build.
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { Locale } from "./locale";
+export function loadLocales(): Locale[] {
+  const directory = join(process.cwd(), "lib", "interaction", "locales");
+  return readdirSync(directory).filter(name => name.endsWith(".json")).sort()
+    .map(name => JSON.parse(readFileSync(join(directory, name), "utf8")) as Locale);
+}
+
+
+==============================================================================
+FILE: frontend/lib/interaction/locales/en.json
+NOTES: KEEP.
+==============================================================================
+{
+  "code": "en", "speechLanguage": "en-IN", "name": "English",
+  "read": "Read and tap", "voice": "Listen and speak", "mixed": "Mixed",
+  "choose": "How would you like to use the app?", "mic": "Speak an answer", "replay": "Hear the question",
+  "listening": "Listening…", "speaking": "Reading the question…", "retry": "I did not catch that. Please try once more, or tap your answer.",
+  "fallback": "Voice is not available here. You can still read and tap every answer.",
+  "confirm": "Did you mean", "yes": "Yes", "no": "Try again", "heard": "I heard",
+  "saved": "Saved on this device", "storageError": "This device could not save your choice. Please ask your caregiver to check storage.",
+  "help": ["help", "help me", "SOS"],
+  "synonyms": { "Tea": ["chai"], "Rice": ["chawal", "bhaat"], "Start Game": ["start", "begin"], "Next": ["continue"], "Done": ["finished", "complete"] }
+}
+
+
+==============================================================================
+FILE: frontend/lib/interaction/locales/hi.json
+NOTES: KEEP (machine translation — needs native review).
+==============================================================================
+{
+  "code": "hi",
+  "speechLanguage": "hi-IN",
+  "name": "हिन्दी",
+  "read": "पढ़ें और चुनें",
+  "voice": "सुनें और बोलें",
+  "mixed": "दोनों",
+  "choose": "आप ऐप कैसे इस्तेमाल करना चाहेंगे?",
+  "mic": "जवाब बोलें",
+  "replay": "सवाल सुनें",
+  "listening": "सुन रहे हैं…",
+  "speaking": "सवाल पढ़ रहे हैं…",
+  "retry": "सुनाई नहीं दिया। फिर से बोलें या जवाब चुनें।",
+  "fallback": "यहाँ आवाज़ की सुविधा उपलब्ध नहीं है। आप पढ़कर जवाब चुन सकते हैं।",
+  "confirm": "क्या आपका मतलब है",
+  "yes": "हाँ",
+  "no": "फिर कोशिश करें",
+  "heard": "मैंने सुना",
+  "saved": "इस उपकरण पर सहेजा गया",
+  "storageError": "आपकी पसंद सहेजी नहीं गई। कृपया देखभालकर्ता से सहायता लें।",
+  "help": [
+    "मदद",
+    "बचाओ",
+    "madad"
+  ],
+  "synonyms": {
+    "Tea": [
+      "चाय",
+      "chai"
+    ],
+    "Rice": [
+      "चावल",
+      "chawal"
+    ],
+    "Start Game": [
+      "शुरू",
+      "shuru"
+    ],
+    "Next": [
+      "आगे"
+    ],
+    "Done": [
+      "हो गया"
+    ],
+    "Thank you": [
+      "धन्यवाद",
+      "shukriya"
+    ],
+    "Please call me": [
+      "मुझे फ़ोन करें",
+      "फोन कीजिए"
+    ]
+  },
+  "ui": {
+    "Play": "खेलें",
+    "My Support": "मेरी सहायता",
+    "Home": "होम",
+    "Today": "आज",
+    "My Memories": "मेरी यादें",
+    "My Progress": "मेरी प्रगति",
+    "My People": "मेरे अपने लोग",
+    "Caregiver": "देखभालकर्ता",
+    "Exit caregiver": "देखभालकर्ता मोड से बाहर",
+    "Support": "सहायता",
+    "Support Accounts": "सहायता खाते",
+    "Progress & Reports": "प्रगति और रिपोर्ट",
+    "Add Videos": "वीडियो जोड़ें",
+    "People": "लोग",
+    "Daily Routine": "रोज़ की दिनचर्या",
+    "All Games": "सभी खेल",
+    "Settings": "सेटिंग्स",
+    "Language": "भाषा",
+    "Text size": "अक्षरों का आकार",
+    "Theme": "रंग रूप",
+    "Large": "बड़ा",
+    "Larger": "और बड़ा",
+    "Light": "हल्का",
+    "Dark": "गहरा",
+    "System": "सिस्टम",
+    "My support space": "मेरी सहायता",
+    "Choose an activity": "कोई गतिविधि चुनें",
+    "Tell me about your day": "मुझे अपने दिन के बारे में बताएं",
+    "Your memory or transcript": "आपकी याद या बोला हुआ पाठ",
+    "Record audio": "ऑडियो रिकॉर्ड करें",
+    "Record video": "वीडियो रिकॉर्ड करें",
+    "Stop recording": "रिकॉर्डिंग रोकें",
+    "Save memory": "याद सहेजें",
+    "How are you feeling?": "आप कैसा महसूस कर रहे हैं?",
+    "Happy": "खुश",
+    "Okay": "ठीक",
+    "Sad": "उदास",
+    "Things to do": "आज के काम",
+    "Reminder": "याद दिलाने वाली बात",
+    "Kind": "प्रकार",
+    "Time": "समय",
+    "Add reminder": "याद दिलाएं",
+    "Done": "हो गया",
+    "Family messages": "परिवार के संदेश",
+    "Your written or spoken message": "अपना लिखा या बोला हुआ संदेश",
+    "Record a voice message": "आवाज़ में संदेश रिकॉर्ड करें",
+    "Cancel recording": "रिकॉर्डिंग रद्द करें",
+    "Voice message recorded. Save it to share it with the patient.": "आवाज़ का संदेश रिकॉर्ड हो गया। इसे साझा करने के लिए सहेजें।",
+    "Voice message removed. You can record again or write a message.": "आवाज़ का संदेश हटाया गया। फिर से रिकॉर्ड करें या लिखकर संदेश दें।",
+    "Record again": "फिर से रिकॉर्ड करें",
+    "Share with patient": "मरीज़ के साथ साझा करें",
+    "Thank you": "धन्यवाद",
+    "Please call me": "कृपया मुझे फ़ोन करें",
+    "No family messages yet.": "परिवार का कोई संदेश नहीं है।",
+    "Your caregiver can add reminders here.": "देखभालकर्ता यहाँ आपको याद दिलाने वाली बातें जोड़ सकते हैं।",
+    "My places": "मेरी जगहें",
+    "Location is optional. While this screen is open, it can remember places you visit. You can pause at any time.": "जगह साझा करना आपकी मर्ज़ी है। यह पन्ना खुला रहने पर देखी गई जगहें याद रखी जा सकती हैं। आप इसे कभी भी रोक सकते हैं।",
+    "Pause tracking": "जगह याद रखना रोकें",
+    "Start remembering places": "जगहें याद रखना शुरू करें",
+    "SOS · Help": "SOS · मदद",
+    "Requesting help in": "मदद का अनुरोध",
+    "Cancel": "रद्द करें",
+    "Help request saved. Trying to reach your caregiver…": "मदद का अनुरोध सहेजा गया। देखभालकर्ता से संपर्क कर रहे हैं…",
+    "Your help request reached the caregiver account. Please call if you need immediate help.": "आपकी मदद की सूचना देखभालकर्ता तक पहुँच गई। तुरंत मदद चाहिए तो कृपया फ़ोन करें।",
+    "Your request is saved on this device but has NOT reached your caregiver. Please call them or ask someone nearby for help.": "अनुरोध इस उपकरण पर सहेजा है, लेकिन देखभालकर्ता तक नहीं पहुँचा। उन्हें फ़ोन करें या पास के किसी व्यक्ति से मदद माँगें।",
+    "Could not save or send your request. Please call your caregiver or ask someone nearby for help.": "अनुरोध सहेज या भेज नहीं सके। देखभालकर्ता को फ़ोन करें या पास के किसी व्यक्ति से मदद माँगें।",
+    "Family voice message": "परिवार का आवाज़ संदेश",
+    "Recording… Stop when you are ready.": "रिकॉर्डिंग चल रही है… तैयार होने पर रोकें।",
+    "No audio was captured. You can try again or leave a written message.": "आवाज़ रिकॉर्ड नहीं हुई। फिर कोशिश करें या लिखकर संदेश दें।",
+    "Voice message could not be saved. You can leave a written message instead.": "आवाज़ का संदेश सहेजा नहीं जा सका। लिखकर संदेश दें।",
+    "Audio recording is unavailable. You can leave a written message instead.": "आवाज़ रिकॉर्ड नहीं हो सकती। आप लिखकर संदेश दे सकते हैं।",
+    "Microphone unavailable. You can leave a written message instead.": "माइक्रोफ़ोन उपलब्ध नहीं है। आप लिखकर संदेश दे सकते हैं।",
+    "Could not save. Device storage may be full. Please keep this screen open and ask for help.": "सहेजा नहीं जा सका। उपकरण की जगह भर सकती है। यह पन्ना खुला रखें और मदद माँगें।",
+    "I am the caregiver and confirm location collection with the patient.": "मैं देखभालकर्ता हूँ और मरीज़ की सहमति से जगह का विवरण लेने की पुष्टि करता हूँ।",
+    "Also allow location sync to the caregiver account.": "जगह की जानकारी देखभालकर्ता खाते में भी भेजें।",
+    "Memories": "यादें",
+    "Progress": "प्रगति",
+    "Journal": "डायरी",
+    "Reminders": "याद दिलाएँ",
+    "Family": "परिवार",
+    "Places": "जगहें",
+    "Crossword": "शब्द पहेली",
+    "Play a game": "खेल खेलें",
+    "Sign in": "साइन इन करें",
+    "Sign out": "साइन आउट करें",
+    "Stop": "रोकें",
+    "Start Game": "खेल शुरू करें",
+    "Ready to begin?": "शुरू करने के लिए तैयार हैं?",
+    "Click Start to launch {title}.": "{title} शुरू करने के लिए “खेल शुरू करें” दबाएँ।",
+    "No timers apply in Easy mode.": "आसान खेल में समय की कोई सीमा नहीं है।",
+    "Preview date": "देखने की तारीख",
+    "Would you like to play again?": "क्या आप फिर से खेलना चाहेंगे?",
+    "Play Again": "फिर से खेलें",
+    "Well done!": "बहुत अच्छा!",
+    "You scored {score} / 100": "आपका अंक {score} / 100 है",
+    "Caregiver mode: this score was not saved.": "देखभालकर्ता मोड: यह अंक सहेजा नहीं गया।",
+    "Preview: this score was not saved.": "पूर्वावलोकन: यह अंक सहेजा नहीं गया।",
+    "The answer is {answer}. Let's keep going.": "सही जवाब {answer} है। चलिए आगे बढ़ते हैं।",
+    "Finish": "समाप्त करें",
+    "Next": "आगे",
+    "Picture to name": "नाम बताने के लिए चित्र",
+    "What would you like to play?": "आप कौन-सा खेल खेलना चाहेंगे?",
+    "Choose a game": "खेल चुनें",
+    "Choose another game": "दूसरा खेल चुनें",
+    "Matching pictures": "मिलते-जुलते चित्र",
+    "Find matching familiar pictures.": "एक जैसे पहचाने हुए चित्र ढूँढ़ें।",
+    "Listen to the beats": "ताल सुनें",
+    "Count beats or use the visual alternative.": "ताल गिनें या चित्र देखकर गिनें।",
+    "Finish the pattern": "चित्रों का क्रम पूरा करें",
+    "Choose the next picture.": "अगला चित्र चुनें।",
+    "Name the picture": "चित्र का नाम बताएं",
+    "Name a familiar everyday object.": "पहचानी हुई रोज़मर्रा की चीज़ का नाम बताएं।",
+    "Remember yesterday": "कल की बात याद करें",
+    "Recall a real saved journal memory.": "अपनी सहेजी हुई डायरी की बात याद करें।",
+    "Story Builder": "कहानी याद करें",
+    "Read a short everyday story, then recall missing details.": "छोटी-सी रोज़मर्रा की कहानी पढ़ें, फिर छूटी हुई बातें याद करें।",
+    "Relive Memories": "यादों को फिर से याद करें",
+    "Plan the Day": "दिन की योजना बनाएं",
+    "Organize daily tasks in correct logical order.": "रोज़ के काम सही क्रम में रखें।",
+    "Odd One Out": "अलग चीज़ पहचानें",
+    "Find the item that doesn't belong in the group.": "समूह में जो चीज़ बाकी से अलग है, उसे ढूँढ़ें।",
+    "Mole Path": "रास्ता याद रखें",
+    "Watch the circles fill, then tap the path in the same order.": "घेरों को भरते देखें, फिर उसी क्रम में रास्ते पर दबाएं।",
+    "Sorting Station": "चीज़ों को छाँटें",
+    "Adapt to changing rules to sort items correctly.": "बदलते नियम के अनुसार चीज़ें छाँटें।",
+    "Whack-a-Mole": "छछूंदर पर दबाएं",
+    "Tap target moles while suppressing impulses for distractors.": "सही छछूंदर पर दबाएं और बाकी को छोड़ दें।",
+    "Attention Hunt": "ध्यान से ढूँढ़ें",
+    "Find every copy of the target while ignoring distractors.": "दूसरी चीज़ों को छोड़कर दिए गए चित्र की सभी प्रतियाँ ढूँढ़ें।",
+    "Map Navigator": "नक्शे का रास्ता खोजें",
+    "Navigate routes and spatial directions accurately.": "नक्शे पर रास्ता और दिशा खोजें।",
+    "Face Recognition": "चेहरा पहचानें",
+    "Name Recall": "नाम याद करें",
+    "Match a familiar face to the right name.": "पहचाने हुए चेहरे को सही नाम से मिलाएं।",
+    "Easy": "आसान",
+    "Medium": "मध्यम",
+    "Hard": "कठिन",
+    "Where would you like to go?": "आप कहाँ जाना चाहेंगे?",
+    "Exit": "बाहर जाएँ",
+    "Videos": "वीडियो",
+    "Reports": "रिपोर्ट",
+    "Recall details of the day’s videos in your own words.": "आज के वीडियो की बातें अपने शब्दों में याद करें।",
+    "Recognise familiar people from the day’s video.": "आज के वीडियो में पहचाने हुए लोगों को पहचानें।",
+    "Memory": "याददाश्त",
+    "Attention": "ध्यान",
+    "Executive Function": "योजना बनाने की क्षमता",
+    "Recognition & Orientation": "पहचान और दिशा",
+    "working memory": "काम करते समय याद रखना",
+    "personal memory": "अपनी यादें",
+    "spatial": "जगह और दिशा की समझ",
+    "sequencing": "कामों का क्रम",
+    "face recognition": "चेहरा पहचानना",
+    "name recall": "नाम याद करना",
+    "Back to Today": "आज पर लौटें",
+    "Search through your memories...": "अपनी यादों में खोजें…",
+    "Search": "खोजें",
+    "No matching memories found": "कोई मिलती-जुलती याद नहीं मिली",
+    "Showing memories for: {query}": "{query} से जुड़ी यादें दिखाई जा रही हैं",
+    "About this memory:": "इस याद के बारे में:",
+    "Getting your day ready…": "आपके दिन की तैयारी हो रही है…",
+    "Back": "वापस",
+    "My Day": "मेरा दिन",
+    "Daily Recall": "आज की बातें याद करें",
+    "Part 2 of 2": "भाग 2, कुल 2 में से",
+    "Part 3": "भाग 3",
+    "Loading questions...": "सवाल लोड हो रहे हैं…",
+    "No videos recorded on this date": "इस दिन का कोई वीडियो नहीं है",
+    "Question {number}": "सवाल {number}",
+    "Question {number}.": "सवाल {number}।",
+    "Answer the question here.": "यहाँ सवाल का जवाब दें।",
+    "Submit": "जमा करें",
+    "Accuracy of your response:": "आपके जवाब की सटीकता:",
+    "Watch Memory": "याद वाला वीडियो देखें",
+    "Next Question": "अगला सवाल",
+    "Pick a date": "तारीख चुनें",
+    "Select": "चुनें",
+    "Yesterday": "कल",
+    "Back to my day": "मेरे दिन पर लौटें",
+    "Part {part} of 2 · {activity}": "भाग {part}, कुल 2 में से · {activity}",
+    "Could not save this part. Please try again.": "यह भाग सहेजा नहीं जा सका। फिर कोशिश करें।",
+    "Part 1 of 2": "भाग 1, कुल 2 में से",
+    "Part 1": "भाग 1",
+    "On this day, who did you talk to? (Select all that apply)": "इस दिन आपने किन लोगों से बात की? सभी सही लोगों को चुनें।",
+    "Loading faces...": "चेहरे लोड हो रहे हैं…",
+    "No recognized people in videos from this date": "इस दिन के वीडियो में कोई पहचाना हुआ व्यक्ति नहीं मिला",
+    "Finish Game": "खेल समाप्त करें",
+    "Continue to Part 2": "भाग 2 पर जाएँ",
+    "Who did you talk to? Say a name to select or remove it, then say Check.": "आपने किससे बात की? नाम बोलकर व्यक्ति चुनें या हटाएँ, फिर “जाँचें” कहें।",
+    "Check": "जाँचें",
+    "Check My Response": "मेरा जवाब जाँचें",
+    "See Correct Answer": "सही जवाब देखें",
+    "Correct! You remembered everyone you talked to on this day.": "सही! आपको इस दिन जिन लोगों से बात हुई, वे सब याद हैं।",
+    "Your selection was incorrect. Try again, or choose to see the correct answer.": "यह चुनाव सही नहीं है। फिर कोशिश करें या सही जवाब देखें।",
+    "Refresh": "ताज़ा करें",
+    "Select a day:": "दिन चुनें:",
+    "Choose an Activity:": "गतिविधि चुनें:",
+    "Facial Recognition": "चेहरा पहचानना",
+    "Start": "शुरू करें",
+    "Recording is unavailable. You can type your memory instead.": "रिकॉर्डिंग की सुविधा उपलब्ध नहीं है। आप अपनी याद लिख सकते हैं।",
+    "Microphone permission was denied. You can type your memory instead.": "माइक्रोफ़ोन की अनुमति नहीं मिली। आप अपनी याद लिख सकते हैं।",
+    "Recording saved on this device. Review the transcript before saving your entry.": "रिकॉर्डिंग इस उपकरण पर सहेजी गई। डायरी में सहेजने से पहले लिखे हुए पाठ को देख लें।",
+    "Recording could not be saved. Device storage may be full.": "रिकॉर्डिंग सहेजी नहीं जा सकी। उपकरण की जगह भर सकती है।",
+    "Live transcription is unavailable or stopped. You can type or edit the transcript; the recording continues.": "बोले हुए शब्द अपने-आप लिखे नहीं जा सके। आप उन्हें खुद लिख या बदल सकते हैं; रिकॉर्डिंग जारी है।",
+    "Microphone permission was denied. You can leave a written message instead.": "माइक्रोफ़ोन की अनुमति नहीं मिली। आप लिखकर संदेश दे सकते हैं।",
+    "Which picture does not belong with the others?": "कौन-सा चित्र बाकी चित्रों से अलग है?",
+    "What is this?": "यह क्या है?",
+    "What comes next?": "इसके बाद क्या आएगा?",
+    "How many beats?": "कितनी तालें हैं?",
+    "Play the sound": "आवाज़ सुनें",
+    "Show the beats": "तालें दिखाएं",
+    "Choose a card number": "कार्ड का नंबर चुनें",
+    "Repeat the path. Say the row and column.": "रास्ता दोहराएं। पंक्ति और स्तंभ बताएं।",
+    "Remember the places. Say ready when you want to begin.": "जगहों को याद रखें। शुरू करने के लिए तैयार हों तो बताएं।",
+    "Go to {place}. Choose a direction.": "{place} पर जाएँ। दिशा चुनें।",
+    "Find {target}. Say a row and column.": "{target} ढूँढ़ें। पंक्ति और स्तंभ बताएं।",
+    "Row {row} column {column}": "पंक्ति {row}, स्तंभ {column}",
+    "Sort by {rule}. {item}": "{rule} के अनुसार छाँटें। {item}",
+    "Choose the missing word.": "छूटा हुआ शब्द चुनें।",
+    "Say ready when you want to remember.": "याद करने के लिए तैयार हों तो बताएं।",
+    "Ready for the next activity?": "क्या आप अगली गतिविधि के लिए तैयार हैं?",
+    "Picture {number}": "चित्र {number}",
+    "Ready": "तैयार",
+    "Up": "ऊपर",
+    "Down": "नीचे",
+    "Left": "बाएँ",
+    "Right": "दाएँ",
+    "Go": "जाएँ",
+    "Remove {item}": "{item} हटाएं",
+    "Good morning!": "सुप्रभात!",
+    "Good afternoon!": "नमस्कार!",
+    "Good evening!": "शुभ संध्या!",
+    "{done} of {total} done today": "आज {total} में से {done} पूरे हुए",
+    "Sorry, we could not load your day.": "माफ़ कीजिए, आपका दिन नहीं खुल सका।",
+    "Try again": "फिर कोशिश करें",
+    "A look at your activities this week": "इस सप्ताह की आपकी गतिविधियाँ",
+    "You played {count} {days} this week!": "इस सप्ताह आपने {count} {days} खेला!",
+    "day": "दिन",
+    "days": "दिन",
+    "Played": "खेला",
+    "Not played": "नहीं खेला",
+    "Mon": "सोम",
+    "Tue": "मंगल",
+    "Wed": "बुध",
+    "Thu": "गुरु",
+    "Fri": "शुक्र",
+    "Sat": "शनि",
+    "Sun": "रवि",
+    "Stars Earned This Week": "इस सप्ताह मिले सितारे",
+    "star": "सितारा",
+    "stars": "सितारे",
+    "Earned from your completed daily activities.": "आपकी पूरी की गई रोज़ की गतिविधियों से मिले।",
+    "Your Best This Week": "इस सप्ताह आपका सबसे अच्छा",
+    "Play an activity today to see your best!": "अपना सबसे अच्छा देखने के लिए आज एक गतिविधि खेलें!",
+    "No people added yet.": "अभी किसी व्यक्ति को नहीं जोड़ा गया है।",
+    "Call": "कॉल करें",
+    "Edit": "बदलें",
+    "Delete": "हटाएँ",
+    "No relation set": "रिश्ता नहीं चुना गया",
+    "No phone": "फ़ोन नंबर नहीं है",
+    "Name *": "नाम *",
+    "Relation": "रिश्ता",
+    "Phone": "फ़ोन",
+    "Photo *": "तस्वीर *",
+    "Photo (leave empty to keep the current one)": "तस्वीर (मौजूदा तस्वीर रखने के लिए खाली छोड़ें)",
+    "Use a clear photo of the face. It is also used to recognise this person in videos.": "चेहरे की साफ़ तस्वीर दें। वीडियो में इस व्यक्ति को पहचानने के लिए भी इसका उपयोग होगा।",
+    "Add a person": "व्यक्ति जोड़ें",
+    "Add person": "व्यक्ति जोड़ें",
+    "Save changes": "बदलाव सहेजें",
+    "Remove {name}? Their photo will be deleted too.": "क्या {name} को हटाएँ? उनकी तस्वीर भी मिट जाएगी।",
+    "Edit {name}": "{name} बदलें",
+    "Could not remove this person. Please try again.": "इस व्यक्ति को हटाया नहीं जा सका। फिर कोशिश करें।",
+    "Could not reach the server. Please try again.": "सर्वर से संपर्क नहीं हो सका। फिर कोशिश करें।",
+    "Could not save. Please try again.": "सहेजा नहीं जा सका। फिर कोशिश करें।",
+    "Add a step": "एक चरण जोड़ें",
+    "Save routine": "दिनचर्या सहेजें",
+    "Saved. Plan the Day will use these steps.": "सहेज लिया। दिन की योजना में इन चरणों का उपयोग होगा।",
+    "Could not load the routine. Is the backend running?": "दिनचर्या नहीं खुल सकी। क्या बैकएंड चल रहा है?",
+    "Could not save: {error}": "सहेजा नहीं जा सका: {error}",
+    "Step {number}": "चरण {number}",
+    "Move step {number} up": "चरण {number} ऊपर ले जाएँ",
+    "Move step {number} down": "चरण {number} नीचे ले जाएँ",
+    "Remove step {number}": "चरण {number} हटाएँ",
+    "Patient settings": "रोगी की सेटिंग",
+    "Patient name": "रोगी का नाम",
+    "Default language": "डिफ़ॉल्ट भाषा",
+    "Save settings": "सेटिंग सहेजें",
+    "Could not load settings.": "सेटिंग नहीं खुल सकी।",
+    "Settings saved.": "सेटिंग सहेजी गई।",
+    "Change caregiver PIN": "देखभालकर्ता का PIN बदलें",
+    "Enter the current PIN and choose a new four-digit PIN. PINs are never displayed.": "मौजूदा PIN लिखें और नया चार अंकों का PIN चुनें। PIN कभी दिखाए नहीं जाते।",
+    "Current PIN": "मौजूदा PIN",
+    "New PIN": "नया PIN",
+    "Change PIN": "PIN बदलें",
+    "PIN changed.": "PIN बदल दिया गया।",
+    "Could not change PIN.": "PIN नहीं बदला जा सका।",
+    "Could not save settings.": "सेटिंग सहेजी नहीं जा सकी।",
+    "Your top performance across this week's games.": "इस सप्ताह के खेलों में आपका सबसे अच्छा प्रदर्शन।",
+    "Welcome! A fun week of brain games and memory activities is waiting for you.": "स्वागत है! दिमागी खेलों और याददाश्त की गतिविधियों से भरा मज़ेदार सप्ताह आपका इंतज़ार कर रहा है।",
+    "Well done! Every activity you do makes a wonderful difference.": "बहुत अच्छा! आपकी हर गतिविधि बड़ा बदलाव लाती है।",
+    "Great effort! Practicing through the week keeps your memory sharp and energized.": "बहुत बढ़िया! पूरे सप्ताह अभ्यास करने से याददाश्त सक्रिय रहती है।",
+    "Incredible dedication! You are keeping your mind active, bright, and strong.": "शानदार लगन! आप अपने मन को सक्रिय और मज़बूत रख रहे हैं।",
+    "Sorry, we could not load the people right now.": "माफ़ कीजिए, लोगों की जानकारी अभी नहीं खुल सकी।",
+    "Welcome to CogniConnect": "CogniConnect में आपका स्वागत है",
+    "Look back at your days": "अपने दिनों की यादें देखें",
+    "Played {count} {days} this week": "इस सप्ताह {count} {days} खेला",
+    "Your family and friends": "आपका परिवार और मित्र",
+    "Warm up": "शुरुआत करें",
+    "Keep going": "आगे बढ़ें",
+    "Challenge": "आज़माएँ",
+    "START": "शुरू करें",
+    "Treasure chest": "खज़ाने का संदूक",
+    "Loading your progress…": "आपकी प्रगति खुल रही है…",
+    "Your top performance across this week’s games.": "इस सप्ताह के खेलों में आपका सबसे अच्छा प्रदर्शन।",
+    "Choose…": "चुनें…",
+    "Saving…": "सहेज रहे हैं…",
+    "Write 3 to 5 steps of the patient’s own day, in order (for example ‘Wake up’, ‘Have tea’, ‘Take tablets’). Plan the Day mixes them up and asks the patient to put them back in order. Each step can be up to 40 letters.": "रोगी के अपने दिन के 3 से 5 चरण क्रम में लिखें (जैसे ‘जागना’, ‘चाय पीना’, ‘दवा लेना’)। दिन की योजना इन्हें मिलाकर रोगी से सही क्रम में रखने को कहेगी। हर चरण में अधिकतम 40 अक्षर हो सकते हैं।",
+    "Loading…": "लोड हो रहा है…",
+    "Go to Today’s Activities →": "आज की गतिविधियों पर जाएँ →",
+    "Today’s Activities": "आज की गतिविधियाँ",
+    "Today’s activities": "आज की गतिविधियाँ",
+    "All done for today! ⭐": "आज के लिए सब पूरा हुआ! ⭐",
+    "Caregiver portal": "देखभालकर्ता पोर्टल",
+    "Summary": "सारांश",
+    "Trends": "रुझान",
+    "Activity Log": "गतिविधि लॉग",
+    "Doctor’s Report": "डॉक्टर की रिपोर्ट",
+    "A short preview of recorded activity for sharing with a doctor.": "डॉक्टर के साथ साझा करने के लिए दर्ज गतिविधियों का संक्षिप्त विवरण।",
+    "Print / Save as PDF": "प्रिंट करें / PDF के रूप में सहेजें",
+    "Offline. Your saved activities are available on this device.": "ऑफ़लाइन। आपकी सहेजी गई गतिविधियाँ इस डिवाइस पर उपलब्ध हैं।",
+    "Storage is unavailable. Please ask your caregiver for help.": "डिवाइस का संग्रहण उपलब्ध नहीं है। कृपया अपने देखभालकर्ता से मदद माँगें।",
+    "Saved on this device. It will sync when connected.": "इस डिवाइस पर सहेजा गया। कनेक्शन मिलने पर यह सिंक हो जाएगा।",
+    "Changes are saved on this device, but could not sync. Check your connection or sign in again.": "बदलाव इस डिवाइस पर सहेजे गए हैं, लेकिन सिंक नहीं हुए। अपना कनेक्शन जाँचें या फिर से साइन इन करें।",
+    "Accounts created. Sign in with either account.": "खाते बन गए हैं। किसी भी खाते से साइन इन करें।",
+    "Caregiver: set up two accounts": "देखभालकर्ता: दो खाते बनाएँ",
+    "These accounts protect this support space. A caregiver can help you sign in.": "ये खाते इस सहायता जगह को सुरक्षित रखते हैं। साइन इन करने में देखभालकर्ता आपकी मदद कर सकता है।",
+    "Caregiver username": "देखभालकर्ता का उपयोगकर्ता नाम",
+    "Username": "उपयोगकर्ता नाम",
+    "Password": "पासवर्ड",
+    "Patient username": "रोगी का उपयोगकर्ता नाम",
+    "Patient password": "रोगी का पासवर्ड",
+    "Use separate passwords, each at least 12 characters.": "दोनों पासवर्ड अलग रखें। हर पासवर्ड कम से कम 12 अक्षरों का हो।",
+    "Create accounts": "खाते बनाएँ",
+    "Back to sign in": "साइन इन पर वापस जाएँ",
+    "Set up with a caregiver": "देखभालकर्ता के साथ खाता बनाएँ",
+    "1 change waiting to sync": "सिंक होने के लिए 1 बदलाव बाकी है",
+    "{count} changes waiting to sync": "सिंक होने के लिए {count} बदलाव बाकी हैं",
+    "All changes synced": "सभी बदलाव सिंक हो गए",
+    "Sync complete": "सिंक पूरा हुआ",
+    "Sync now": "अभी सिंक करें",
+    "Location is optional. It only runs after your caregiver turns it on and you allow it. It works while this screen is open. It stays on this device unless sharing is enabled. Pause it at any time.": "स्थान की जानकारी लेना वैकल्पिक है। यह तभी शुरू होगा जब देखभालकर्ता इसे चालू करे और आप अनुमति दें। यह स्क्रीन खुली रहने तक चलेगा। साझा करने की अनुमति न हो तो जानकारी इसी डिवाइस पर रहेगी। आप इसे कभी भी रोक सकते हैं।",
+    "Save consent": "सहमति सहेजें",
+    "Location is unavailable on this device.": "इस डिवाइस पर स्थान की सुविधा उपलब्ध नहीं है।",
+    "Location saved on this device only.": "स्थान की जानकारी केवल इस डिवाइस पर सहेजी गई।",
+    "Location permission was denied. Location is paused. You can keep using the app.": "स्थान की अनुमति नहीं मिली। स्थान की जानकारी लेना रोक दिया गया है। आप ऐप का बाकी हिस्सा इस्तेमाल कर सकते हैं।",
+    "Location could not be read. You can keep using the app.": "स्थान की जानकारी नहीं मिल सकी। आप ऐप का बाकी हिस्सा इस्तेमाल कर सकते हैं।",
+    "A caregiver must confirm consent before location is used.": "स्थान की जानकारी लेने से पहले देखभालकर्ता की सहमति ज़रूरी है।",
+    "Location is active while this screen is open.": "यह स्क्रीन खुली रहने तक स्थान की जानकारी ली जा रही है।",
+    "Location collection is paused.": "स्थान की जानकारी लेना रोक दिया गया है।",
+    "Visited place {number}: {count} recorded visits": "देखी गई जगह {number}: {count} बार दर्ज हुई",
+    "Favourite place name": "पसंदीदा जगह का नाम",
+    "This is home (requires location sharing)": "यह घर है (इसके लिए स्थान साझा करना होगा)",
+    "Save favourite": "पसंदीदा जगह सहेजें",
+    "The saved puzzle could not be opened. You can make a new one.": "सहेड़ी गई पहेली नहीं खुल सकी। आप नई पहेली बना सकते हैं।",
+    "Your puzzle could not be saved. Keep this screen open.": "आपकी पहेली सहेजी नहीं जा सकी। यह स्क्रीन खुली रखें।",
+    "Let's try again. You can use the letters as a clue.": "फिर कोशिश करें। अक्षरों से संकेत लें।",
+    "Words from my life": "मेरे जीवन के शब्द",
+    "Add familiar names, places or foods. One word and clue per line.": "जाने-पहचाने लोगों, जगहों या खाने के नाम जोड़ें। हर पंक्ति में एक शब्द और उसका संकेत लिखें।",
+    "Example: MEERA: Your daughter\nTEA: Your favourite warm drink\nRICE: A food you enjoy": "उदाहरण: MEERA: आपकी बेटी\nTEA: आपका पसंदीदा गर्म पेय\nRICE: आपका पसंदीदा भोजन",
+    "Use English letters or Romanized names for this grid.": "इस पहेली में अंग्रेज़ी अक्षर या नामों की रोमन वर्तनी लिखें।",
+    "Make my crossword": "मेरी शब्द पहेली बनाएँ",
+    "A familiar word beginning with {letter}": "पहचाना हुआ शब्द, जो {letter} से शुरू होता है",
+    "One of your favourite places": "आपकी पसंदीदा जगहों में से एक",
+    "Starts at row {row}, column {column}": "पंक्ति {row}, स्तंभ {column} से शुरू",
+    "Add words with 2–14 English letters. Your current setting may prefer shorter words.": "2 से 14 अंग्रेज़ी अक्षरों वाले शब्द जोड़ें। आपकी मौजूदा सेटिंग में छोटे शब्द बेहतर रहेंगे।",
+    "{count} letters": "{count} अक्षर",
+    "Crossword answer": "शब्द पहेली का जवाब",
+    "Across": "आड़ा"
+  }
+}
+
+
+==============================================================================
+FILE: frontend/lib/interaction/locales/as.json
+NOTES: KEEP (machine translation — needs native review).
+==============================================================================
+{
+  "code": "as",
+  "speechLanguage": "as-IN",
+  "name": "অসমীয়া",
+  "read": "পঢ়ক আৰু বাছক",
+  "voice": "শুনক আৰু কওক",
+  "mixed": "দুয়োটা",
+  "choose": "আপুনি এপটো কেনেকৈ ব্যৱহাৰ কৰিব বিচাৰে?",
+  "mic": "উত্তৰ কওক",
+  "replay": "প্ৰশ্নটো শুনক",
+  "listening": "শুনি আছোঁ…",
+  "speaking": "প্ৰশ্নটো পঢ়ি আছোঁ…",
+  "retry": "শুনা নাপালোঁ। আকৌ কওক বা উত্তৰটো বাছক।",
+  "fallback": "ইয়াত কণ্ঠৰ সুবিধা উপলব্ধ নহয়। পঢ়ি উত্তৰ বাছিব পাৰে।",
+  "confirm": "আপুনি এইটো বুজাইছে নেকি",
+  "yes": "হয়",
+  "no": "আকৌ চেষ্টা কৰক",
+  "heard": "মই শুনিলোঁ",
+  "saved": "এই যন্ত্ৰত সাঁচি থোৱা হৈছে",
+  "storageError": "পছন্দ সাঁচিব পৰা নগ'ল। যত্ন লওঁতাৰ সহায় লওক।",
+  "help": [
+    "সহায়",
+    "বচাওক",
+    "sohay"
+  ],
+  "synonyms": {
+    "Tea": [
+      "চাহ",
+      "sah"
+    ],
+    "Rice": [
+      "ভাত",
+      "bhat"
+    ],
+    "Start Game": [
+      "আৰম্ভ"
+    ],
+    "Next": [
+      "পৰৱৰ্তী"
+    ],
+    "Done": [
+      "হ'ল"
+    ],
+    "Thank you": [
+      "ধন্যবাদ",
+      "dhonyobad"
+    ],
+    "Please call me": [
+      "অনুগ্ৰহ কৰি মোক ফোন কৰক",
+      "muk phon korok"
+    ]
+  },
+  "ui": {
+    "Play": "খেলক",
+    "My Support": "মোৰ সহায়",
+    "Home": "ঘৰ",
+    "Today": "আজি",
+    "My Memories": "মোৰ স্মৃতি",
+    "My Progress": "মোৰ অগ্ৰগতি",
+    "My People": "মোৰ আপোনজন",
+    "Caregiver": "যত্ন লওঁতা",
+    "Exit caregiver": "যত্ন লওঁতাৰ পৰা ওলাই যাওক",
+    "Support": "সহায়",
+    "Support Accounts": "সহায়ৰ একাউণ্ট",
+    "Progress & Reports": "অগ্ৰগতি আৰু প্ৰতিবেদন",
+    "Add Videos": "ভিডিঅ’ যোগ কৰক",
+    "People": "লোক",
+    "Daily Routine": "দৈনিক ৰুটিন",
+    "All Games": "সকলো খেল",
+    "Settings": "ছেটিংছ",
+    "Language": "ভাষা",
+    "Text size": "আখৰৰ আকাৰ",
+    "Large": "ডাঙৰ",
+    "Larger": "আৰু ডাঙৰ",
+    "Light": "পাতল",
+    "Dark": "গাঢ়",
+    "System": "ছিষ্টেম",
+    "My support space": "মোৰ সহায়ৰ ঠাই",
+    "Choose an activity": "এটা কাম বাছক",
+    "Tell me about your day": "আজিৰ দিনটোৰ কথা কওক",
+    "Your memory or transcript": "আপোনাৰ স্মৃতি বা কথাৰ লিখনি",
+    "Record audio": "অডিঅ’ ৰেকৰ্ড কৰক",
+    "Record video": "ভিডিঅ’ ৰেকৰ্ড কৰক",
+    "Stop recording": "ৰেকৰ্ডিং বন্ধ কৰক",
+    "Save memory": "স্মৃতি সাঁচক",
+    "How are you feeling?": "আপুনি কেনে অনুভৱ কৰিছে?",
+    "Happy": "সুখী",
+    "Okay": "ভাল",
+    "Sad": "দুখী",
+    "Things to do": "কৰিবলগীয়া কাম",
+    "Reminder": "মনত পেলোৱা কথা",
+    "Kind": "ধৰণ",
+    "Time": "সময়",
+    "Add reminder": "মনত পেলোৱা কথা যোগ কৰক",
+    "Done": "হ’ল",
+    "Family messages": "পৰিয়ালৰ বাৰ্তা",
+    "Your written or spoken message": "আপোনাৰ লিখা বা কোৱা বাৰ্তা",
+    "Record a voice message": "কণ্ঠৰ বাৰ্তা ৰেকৰ্ড কৰক",
+    "Cancel recording": "ৰেকৰ্ডিং বাতিল কৰক",
+    "Voice message recorded. Save it to share it with the patient.": "কণ্ঠৰ বাৰ্তা ৰেকৰ্ড হ’ল। ৰোগীৰ সৈতে ভাগ কৰিবলৈ সাঁচক।",
+    "Voice message removed. You can record again or write a message.": "কণ্ঠৰ বাৰ্তা আঁতৰোৱা হ’ল। পুনৰ ৰেকৰ্ড কৰক বা লিখি বাৰ্তা দিয়ক।",
+    "Record again": "পুনৰ ৰেকৰ্ড কৰক",
+    "Share with patient": "ৰোগীৰ সৈতে ভাগ কৰক",
+    "Thank you": "ধন্যবাদ",
+    "Please call me": "অনুগ্ৰহ কৰি মোক ফোন কৰক",
+    "No family messages yet.": "এতিয়াও পৰিয়ালৰ বাৰ্তা নাই।",
+    "Your caregiver can add reminders here.": "যত্ন লওঁতাই ইয়াত মনত পেলোৱা কথা যোগ কৰিব পাৰে।",
+    "My places": "মোৰ ঠাইসমূহ",
+    "Location is optional. While this screen is open, it can remember places you visit. You can pause at any time.": "অৱস্থান দিয়াটো ঐচ্ছিক। এই পৃষ্ঠা খোলা থাকিলে আপুনি যোৱা ঠাই মনত ৰাখিব পাৰে। যিকোনো সময়তে থমাব পাৰে।",
+    "Pause tracking": "ঠাই মনত ৰখা থমাওক",
+    "Start remembering places": "ঠাই মনত ৰখা আৰম্ভ কৰক",
+    "SOS · Help": "SOS · সহায়",
+    "Requesting help in": "সহায় বিচৰা হ’ব",
+    "Cancel": "বাতিল কৰক",
+    "Help request saved. Trying to reach your caregiver…": "সহায়ৰ অনুৰোধ সাঁচি থোৱা হ’ল। যত্ন লওঁতাৰ সৈতে যোগাযোগৰ চেষ্টা চলিছে…",
+    "Your help request reached the caregiver account. Please call if you need immediate help.": "সহায়ৰ অনুৰোধ যত্ন লওঁতাৰ একাউণ্টত পালে। জৰুৰী সহায়ৰ বাবে ফোন কৰক।",
+    "Your request is saved on this device but has NOT reached your caregiver. Please call them or ask someone nearby for help.": "অনুৰোধ এই যন্ত্ৰত সাঁচি থোৱা হৈছে, কিন্তু যত্ন লওঁতাই পোৱা নাই। তেওঁক ফোন কৰক বা কাষৰ কাৰোবাৰ সহায় লওক।",
+    "Could not save or send your request. Please call your caregiver or ask someone nearby for help.": "অনুৰোধ সাঁচিব বা পঠিয়াব পৰা নগ’ল। যত্ন লওঁতাক ফোন কৰক বা কাষৰ কাৰোবাৰ সহায় লওক।",
+    "Family voice message": "পৰিয়ালৰ কণ্ঠৰ বাৰ্তা",
+    "Recording… Stop when you are ready.": "ৰেকৰ্ডিং চলিছে… সাজু হ’লে বন্ধ কৰক।",
+    "No audio was captured. You can try again or leave a written message.": "কোনো শব্দ ৰেকৰ্ড নহ’ল। পুনৰ চেষ্টা কৰক বা লিখি বাৰ্তা দিয়ক।",
+    "Voice message could not be saved. You can leave a written message instead.": "কণ্ঠৰ বাৰ্তা সাঁচিব পৰা নগ’ল। লিখি বাৰ্তা দিয়ক।",
+    "Audio recording is unavailable. You can leave a written message instead.": "অডিঅ’ ৰেকৰ্ড কৰিব পৰা নাই। লিখি বাৰ্তা দিব পাৰে।",
+    "Microphone unavailable. You can leave a written message instead.": "মাইক্ৰ’ফোন উপলব্ধ নহয়। লিখি বাৰ্তা দিব পাৰে।",
+    "Could not save. Device storage may be full. Please keep this screen open and ask for help.": "সাঁচিব পৰা নগ’ল। যন্ত্ৰৰ ঠাই শেষ হ’ব পাৰে। এই পৃষ্ঠা খোলা ৰাখি সহায় লওক।",
+    "I am the caregiver and confirm location collection with the patient.": "মই যত্ন লওঁতা আৰু ৰোগীৰ সন্মতিত অৱস্থান সংগ্ৰহ নিশ্চিত কৰিছোঁ।",
+    "Also allow location sync to the caregiver account.": "অৱস্থানৰ তথ্য যত্ন লওঁতাৰ একাউণ্টলৈও পঠিয়াব দিয়ক।",
+    "Memories": "স্মৃতিসমূহ",
+    "Progress": "অগ্ৰগতি",
+    "Journal": "ডায়েৰী",
+    "Reminders": "মনত পেলোৱা কথা",
+    "Family": "পৰিয়াল",
+    "Places": "ঠাইসমূহ",
+    "Crossword": "শব্দৰ খেল",
+    "Play a game": "খেল খেলক",
+    "Sign in": "ছাইন ইন কৰক",
+    "Sign out": "ছাইন আউট কৰক",
+    "Theme": "ৰংৰ ৰূপ",
+    "Stop": "বন্ধ কৰক",
+    "Start Game": "খেল আৰম্ভ কৰক",
+    "Ready to begin?": "আৰম্ভ কৰিবলৈ সাজু নে?",
+    "Click Start to launch {title}.": "{title} আৰম্ভ কৰিবলৈ “খেল আৰম্ভ কৰক” বুটাম টিপক।",
+    "No timers apply in Easy mode.": "সহজ খেলত সময়ৰ কোনো সীমা নাই।",
+    "Preview date": "চোৱাৰ তাৰিখ",
+    "Would you like to play again?": "আপুনি পুনৰ খেলিব বিচাৰে নেকি?",
+    "Play Again": "পুনৰ খেলক",
+    "Well done!": "বৰ ভাল!",
+    "You scored {score} / 100": "আপোনাৰ নম্বৰ {score} / 100",
+    "Caregiver mode: this score was not saved.": "যত্ন লওঁতাৰ মোড: এই নম্বৰ সাঁচি থোৱা নহ’ল।",
+    "Preview: this score was not saved.": "পূৰ্বদৰ্শন: এই নম্বৰ সাঁচি থোৱা নহ’ল.",
+    "The answer is {answer}. Let's keep going.": "শুদ্ধ উত্তৰটো হ’ল {answer}। আহক, আগবাঢ়োঁ।",
+    "Finish": "শেষ কৰক",
+    "Next": "পৰৱৰ্তী",
+    "Picture to name": "নাম ক’বলগীয়া ছবি",
+    "What would you like to play?": "আপুনি কি খেলিব বিচাৰে?",
+    "Choose a game": "এটা খেল বাছক",
+    "Choose another game": "আন এটা খেল বাছক",
+    "Matching pictures": "মিলা ছবি",
+    "Find matching familiar pictures.": "চিনাকি একে ধৰণৰ ছবিবোৰ বিচাৰক।",
+    "Listen to the beats": "তাল শুনক",
+    "Count beats or use the visual alternative.": "তাল গণক বা ছবি চাই গণক।",
+    "Finish the pattern": "ছবিৰ ক্ৰম সম্পূৰ্ণ কৰক",
+    "Choose the next picture.": "পৰৱৰ্তী ছবিখন বাছক।",
+    "Name the picture": "ছবিখনৰ নাম কওক",
+    "Name a familiar everyday object.": "চিনাকি দৈনন্দিন বস্তু এটাৰ নাম কওক।",
+    "Remember yesterday": "কালিৰ কথা মনত পেলাওক",
+    "Recall a real saved journal memory.": "সাঁচি থোৱা ডায়েৰীৰ কথাটো মনত পেলাওক।",
+    "Story Builder": "কাহিনী মনত ৰাখক",
+    "Read a short everyday story, then recall missing details.": "চুটি দৈনন্দিন কাহিনী এটা পঢ়ক, তাৰ পাছত বাদ পৰা কথাবোৰ মনত পেলাওক।",
+    "Relive Memories": "স্মৃতিবোৰ মনত পেলাওক",
+    "Plan the Day": "দিনটোৰ পৰিকল্পনা কৰক",
+    "Organize daily tasks in correct logical order.": "দৈনন্দিন কামবোৰ সঠিক ক্ৰমত সজাওক।",
+    "Odd One Out": "বেলেগ বস্তুটো বিচাৰক",
+    "Find the item that doesn't belong in the group.": "গোটটোৰ লগত নিমিলা বস্তুটো বিচাৰক।",
+    "Mole Path": "বাটটো মনত ৰাখক",
+    "Watch the circles fill, then tap the path in the same order.": "বৃত্তবোৰ ভৰোৱা চাওক, তাৰ পাছত একে ক্ৰমত বাটটো টিপক।",
+    "Sorting Station": "বস্তুবোৰ ভাগ কৰক",
+    "Adapt to changing rules to sort items correctly.": "সলনি হোৱা নিয়ম অনুসৰি বস্তুবোৰ ভাগ কৰক।",
+    "Whack-a-Mole": "ছছূন্দৰটো টিপক",
+    "Tap target moles while suppressing impulses for distractors.": "লক্ষ্য ছছূন্দৰটো টিপক আৰু আনবোৰ এৰি দিয়ক।",
+    "Attention Hunt": "মন দি বিচাৰক",
+    "Find every copy of the target while ignoring distractors.": "আনবোৰ এৰি দি লক্ষ্য ছবিখনৰ সকলোবোৰ বিচাৰক।",
+    "Map Navigator": "মানচিত্ৰত বাট বিচাৰক",
+    "Navigate routes and spatial directions accurately.": "মানচিত্ৰত বাট আৰু দিশ বিচাৰক।",
+    "Face Recognition": "মুখ চিনাক্ত কৰক",
+    "Name Recall": "নাম মনত পেলাওক",
+    "Match a familiar face to the right name.": "চিনাকি মুখখনৰ সৈতে সঠিক নামটো মিলাওক।",
+    "Easy": "সহজ",
+    "Medium": "মজলীয়া",
+    "Hard": "কঠিন",
+    "Where would you like to go?": "আপুনি ক’লৈ যাব বিচাৰে?",
+    "Exit": "ওলাই যাওক",
+    "Videos": "ভিডিঅ’",
+    "Reports": "প্ৰতিবেদন",
+    "Recall details of the day’s videos in your own words.": "আজিৰ ভিডিঅ’ৰ কথাবোৰ নিজৰ ভাষাত মনত পেলাওক।",
+    "Recognise familiar people from the day’s video.": "আজিৰ ভিডিঅ’ত চিনাকি মানুহক চিনি পাওক।",
+    "Memory": "স্মৃতি",
+    "Attention": "মনোযোগ",
+    "Executive Function": "পৰিকল্পনাৰ ক্ষমতা",
+    "Recognition & Orientation": "চিনাক্তকৰণ আৰু দিশ",
+    "working memory": "কাম কৰি থাকোঁতে মনত ৰখা",
+    "personal memory": "নিজৰ স্মৃতি",
+    "spatial": "ঠাই আৰু দিশৰ বুজ",
+    "sequencing": "কামৰ ক্ৰম",
+    "face recognition": "মুখ চিনাক্ত কৰা",
+    "name recall": "নাম মনত পেলোৱা",
+    "Back to Today": "আজিলৈ উভতি যাওক",
+    "Search through your memories...": "আপোনাৰ স্মৃতিবোৰত বিচাৰক…",
+    "Search": "বিচাৰক",
+    "No matching memories found": "মিলা স্মৃতি পোৱা নগ’ল",
+    "Showing memories for: {query}": "{query}ৰ বাবে স্মৃতিবোৰ দেখুওৱা হৈছে",
+    "About this memory:": "এই স্মৃতিটোৰ বিষয়ে:",
+    "Getting your day ready…": "আপোনাৰ দিনটোৰ প্ৰস্তুতি চলিছে…",
+    "Back": "উভতি যাওক",
+    "My Day": "মোৰ দিনটো",
+    "Daily Recall": "আজিৰ কথাবোৰ মনত পেলাওক",
+    "Part 2 of 2": "২টা অংশৰ ২য় অংশ",
+    "Part 3": "৩য় অংশ",
+    "Loading questions...": "প্ৰশ্নবোৰ লোড হৈ আছে…",
+    "No videos recorded on this date": "এই দিনটোৰ কোনো ভিডিঅ’ নাই",
+    "Question {number}": "প্ৰশ্ন {number}",
+    "Question {number}.": "প্ৰশ্ন {number}।",
+    "Answer the question here.": "ইয়াত প্ৰশ্নটোৰ উত্তৰ দিয়ক।",
+    "Submit": "জমা দিয়ক",
+    "Accuracy of your response:": "আপোনাৰ উত্তৰৰ শুদ্ধতা:",
+    "Watch Memory": "স্মৃতিৰ ভিডিঅ’ চাওক",
+    "Next Question": "পৰৱৰ্তী প্ৰশ্ন",
+    "Pick a date": "তাৰিখ বাছক",
+    "Select": "বাছক",
+    "Yesterday": "কালি",
+    "Back to my day": "মোৰ দিনটোলৈ উভতি যাওক",
+    "Part {part} of 2 · {activity}": "২টা অংশৰ {part} নং অংশ · {activity}",
+    "Could not save this part. Please try again.": "এই অংশটো সাঁচিব পৰা নগ’ল। পুনৰ চেষ্টা কৰক।",
+    "Part 1 of 2": "২টা অংশৰ ১ম অংশ",
+    "Part 1": "১ম অংশ",
+    "On this day, who did you talk to? (Select all that apply)": "এই দিনটোত আপুনি কাৰ সৈতে কথা পাতিছিল? প্ৰযোজ্য সকলোকে বাছক।",
+    "Loading faces...": "মুখবোৰ লোড হৈ আছে…",
+    "No recognized people in videos from this date": "এই দিনটোৰ ভিডিঅ’ত চিনাকি কোনো লোক পোৱা নগ’ল",
+    "Finish Game": "খেল শেষ কৰক",
+    "Continue to Part 2": "২য় অংশলৈ যাওক",
+    "Who did you talk to? Say a name to select or remove it, then say Check.": "আপুনি কাৰ সৈতে কথা পাতিছিল? এজনক বাছিবলৈ বা আঁতৰাবলৈ নামটো কওক, তাৰ পাছত “পৰীক্ষা” কওক।",
+    "Check": "পৰীক্ষা",
+    "Check My Response": "মোৰ উত্তৰ পৰীক্ষা কৰক",
+    "See Correct Answer": "শুদ্ধ উত্তৰ চাওক",
+    "Correct! You remembered everyone you talked to on this day.": "শুদ্ধ! এই দিনটোত কথা পতা সকলোকে আপুনি মনত পেলালে।",
+    "Your selection was incorrect. Try again, or choose to see the correct answer.": "আপোনাৰ বাছনি শুদ্ধ নহ’ল। পুনৰ চেষ্টা কৰক বা শুদ্ধ উত্তৰ চাওক।",
+    "Refresh": "পুনৰ লোড কৰক",
+    "Select a day:": "এটা দিন বাছক:",
+    "Choose an Activity:": "এটা কাম বাছক:",
+    "Facial Recognition": "মুখ চিনাক্তকৰণ",
+    "Start": "আৰম্ভ কৰক",
+    "Recording is unavailable. You can type your memory instead.": "ৰেকৰ্ডিং সুবিধা উপলব্ধ নহয়। আপুনি নিজৰ স্মৃতি লিখিব পাৰে।",
+    "Microphone permission was denied. You can type your memory instead.": "মাইক্ৰ’ফোনৰ অনুমতি পোৱা নগ’ল। আপুনি নিজৰ স্মৃতি লিখিব পাৰে।",
+    "Recording saved on this device. Review the transcript before saving your entry.": "ৰেকৰ্ডিং এই যন্ত্ৰত সাঁচি থোৱা হৈছে। ডায়েৰীত সাঁচাৰ আগতে লিখিত কথাখিনি চাওক।",
+    "Recording could not be saved. Device storage may be full.": "ৰেকৰ্ডিং সাঁচিব পৰা নগ’ল। যন্ত্ৰৰ ঠাই শেষ হ’ব পাৰে।",
+    "Live transcription is unavailable or stopped. You can type or edit the transcript; the recording continues.": "কোৱা কথাবোৰ নিজে লিখি থোৱা সুবিধা নাই বা বন্ধ হৈছে। আপুনি নিজে লিখিব বা সলনি কৰিব পাৰে; ৰেকৰ্ডিং চলি থাকিব।",
+    "Microphone permission was denied. You can leave a written message instead.": "মাইক্ৰ’ফোনৰ অনুমতি পোৱা নগ’ল। আপুনি লিখি বাৰ্তা দিব পাৰে।",
+    "Which picture does not belong with the others?": "কোনখন ছবি বাকীবোৰৰ লগত নিমিলে?",
+    "What is this?": "এইটো কি?",
+    "What comes next?": "ইয়াৰ পাছত কি আহিব?",
+    "How many beats?": "কিমানটা তাল আছে?",
+    "Play the sound": "শব্দটো বজাওক",
+    "Show the beats": "তালবোৰ দেখুৱাওক",
+    "Choose a card number": "কাৰ্ডৰ নম্বৰ বাছক",
+    "Repeat the path. Say the row and column.": "বাটটো পুনৰ কওক। শাৰী আৰু স্তম্ভৰ নাম কওক।",
+    "Remember the places. Say ready when you want to begin.": "ঠাইবোৰ মনত ৰাখক। আৰম্ভ কৰিবলৈ সাজু হ’লে কওক।",
+    "Go to {place}. Choose a direction.": "{place}লৈ যাওক। এটা দিশ বাছক।",
+    "Find {target}. Say a row and column.": "{target} বিচাৰক। শাৰী আৰু স্তম্ভ কওক।",
+    "Row {row} column {column}": "শাৰী {row}, স্তম্ভ {column}",
+    "Sort by {rule}. {item}": "{rule} অনুসৰি ভাগ কৰক। {item}",
+    "Choose the missing word.": "নথকা শব্দটো বাছক।",
+    "Say ready when you want to remember.": "মনত পেলাবলৈ সাজু হ’লে কওক।",
+    "Ready for the next activity?": "পৰৱৰ্তী কামটোৰ বাবে সাজু নে?",
+    "Picture {number}": "ছবি {number}",
+    "Ready": "সাজু",
+    "Up": "ওপৰলৈ",
+    "Down": "তললৈ",
+    "Left": "বাওঁফালে",
+    "Right": "সোঁফালে",
+    "Go": "যাওক",
+    "Remove {item}": "{item} আঁতৰাওক",
+    "Good morning!": "শুভ ৰাতিপুৱা!",
+    "Good afternoon!": "শুভ দুপৰীয়া!",
+    "Good evening!": "শুভ সন্ধিয়া!",
+    "{done} of {total} done today": "আজি {total} টাৰ ভিতৰত {done}টা সম্পূৰ্ণ",
+    "Sorry, we could not load your day.": "দুঃখিত, আপোনাৰ দিনটো খুলিব পৰা নগ'ল।",
+    "Try again": "আকৌ চেষ্টা কৰক",
+    "A look at your activities this week": "এই সপ্তাহৰ আপোনাৰ কামবোৰ",
+    "You played {count} {days} this week!": "এই সপ্তাহত আপুনি {count} {days} খেলিলে!",
+    "day": "দিন",
+    "days": "দিন",
+    "Played": "খেলিলে",
+    "Not played": "খেলা নাই",
+    "Mon": "সোম",
+    "Tue": "মঙ্গল",
+    "Wed": "বুধ",
+    "Thu": "বৃহ",
+    "Fri": "শুক্ৰ",
+    "Sat": "শনি",
+    "Sun": "দেও",
+    "Stars Earned This Week": "এই সপ্তাহত পোৱা তৰা",
+    "star": "টা তৰা",
+    "stars": "টা তৰা",
+    "Earned from your completed daily activities.": "আপুনি সম্পূৰ্ণ কৰা দৈনিক কামৰ পৰা পোৱা।",
+    "Your Best This Week": "এই সপ্তাহত আপোনাৰ সৰ্বোত্তম",
+    "Play an activity today to see your best!": "আপোনাৰ সৰ্বোত্তম চাবলৈ আজি এটা কাম কৰক!",
+    "No people added yet.": "এতিয়াও কোনো লোক যোগ কৰা হোৱা নাই।",
+    "Call": "ফোন কৰক",
+    "Edit": "সম্পাদনা কৰক",
+    "Delete": "মচি পেলাওক",
+    "No relation set": "সম্পৰ্ক নিৰ্ধাৰণ কৰা হোৱা নাই",
+    "No phone": "ফোন নম্বৰ নাই",
+    "Name *": "নাম *",
+    "Relation": "সম্পৰ্ক",
+    "Phone": "ফোন",
+    "Photo *": "ফটো *",
+    "Photo (leave empty to keep the current one)": "ফটো (বৰ্তমানৰখন ৰাখিবলৈ খালী ৰাখক)",
+    "Use a clear photo of the face. It is also used to recognise this person in videos.": "মুখৰ এখন স্পষ্ট ফটো দিয়ক। ভিডিঅ'ত এই ব্যক্তিক চিনাক্ত কৰিবলৈও ব্যৱহাৰ কৰা হ'ব।",
+    "Add a person": "এজন লোক যোগ কৰক",
+    "Add person": "লোক যোগ কৰক",
+    "Save changes": "সলনি সংৰক্ষণ কৰক",
+    "Remove {name}? Their photo will be deleted too.": "{name}ক আঁতৰাবনে? তেওঁৰ ফটোও মচি পেলোৱা হ'ব।",
+    "Edit {name}": "{name} সম্পাদনা কৰক",
+    "Could not remove this person. Please try again.": "এই ব্যক্তিক আঁতৰাব পৰা নগ'ল। আকৌ চেষ্টা কৰক।",
+    "Could not reach the server. Please try again.": "চাৰ্ভাৰৰ সৈতে সংযোগ কৰিব পৰা নগ'ল। আকৌ চেষ্টা কৰক।",
+    "Could not save. Please try again.": "সংৰক্ষণ কৰিব পৰা নগ'ল। আকৌ চেষ্টা কৰক।",
+    "Add a step": "এটা ধাপ যোগ কৰক",
+    "Save routine": "ৰুটিন সংৰক্ষণ কৰক",
+    "Saved. Plan the Day will use these steps.": "সংৰক্ষণ কৰা হ'ল। দিনৰ পৰিকল্পনাত এই ধাপবোৰ ব্যৱহাৰ হ'ব।",
+    "Could not load the routine. Is the backend running?": "ৰুটিন লোড কৰিব পৰা নগ'ল। বেকএণ্ড চলি আছেনে?",
+    "Could not save: {error}": "সংৰক্ষণ কৰিব পৰা নগ'ল: {error}",
+    "Step {number}": "ধাপ {number}",
+    "Move step {number} up": "ধাপ {number} ওপৰলৈ নিয়ক",
+    "Move step {number} down": "ধাপ {number} তললৈ নিয়ক",
+    "Remove step {number}": "ধাপ {number} আঁতৰাওক",
+    "Patient settings": "ৰোগীৰ ছেটিংছ",
+    "Patient name": "ৰোগীৰ নাম",
+    "Default language": "ডিফল্ট ভাষা",
+    "Save settings": "ছেটিংছ সংৰক্ষণ কৰক",
+    "Could not load settings.": "ছেটিংছ লোড কৰিব পৰা নগ'ল।",
+    "Settings saved.": "ছেটিংছ সংৰক্ষণ কৰা হ'ল।",
+    "Change caregiver PIN": "যত্নদাতাৰ PIN সলনি কৰক",
+    "Enter the current PIN and choose a new four-digit PIN. PINs are never displayed.": "বৰ্তমানৰ PIN লিখক আৰু নতুন চাৰি অংকৰ PIN বাছনি কৰক। PIN কেতিয়াও দেখুওৱা নহয়।",
+    "Current PIN": "বৰ্তমানৰ PIN",
+    "New PIN": "নতুন PIN",
+    "Change PIN": "PIN সলনি কৰক",
+    "PIN changed.": "PIN সলনি কৰা হ'ল।",
+    "Could not change PIN.": "PIN সলনি কৰিব পৰা নগ'ল।",
+    "Could not save settings.": "ছেটিংছ সংৰক্ষণ কৰিব পৰা নগ'ল।",
+    "Your top performance across this week's games.": "এই সপ্তাহৰ খেলবোৰত আপোনাৰ সৰ্বোত্তম প্ৰদৰ্শন।",
+    "Welcome! A fun week of brain games and memory activities is waiting for you.": "স্বাগতম! মগজুৰ খেল আৰু স্মৃতিৰ কামেৰে ভৰা এটা আনন্দৰ সপ্তাহ আপোনাৰ বাবে অপেক্ষা কৰি আছে।",
+    "Well done! Every activity you do makes a wonderful difference.": "বৰ ভাল! আপোনাৰ প্ৰতিটো কামে ভাল পৰিৱৰ্তন আনে।",
+    "Great effort! Practicing through the week keeps your memory sharp and energized.": "বৰ ভাল চেষ্টা! সপ্তাহজুৰি অনুশীলনে স্মৃতি সজীৱ কৰি ৰাখে।",
+    "Incredible dedication! You are keeping your mind active, bright, and strong.": "অসাধাৰণ একাগ্ৰতা! আপুনি মনটো সক্ৰিয় আৰু শক্তিশালী কৰি ৰাখিছে।",
+    "Sorry, we could not load the people right now.": "দুঃখিত, লোকসকলৰ তথ্য এতিয়া লোড কৰিব পৰা নগ'ল।",
+    "Welcome to CogniConnect": "CogniConnect-লৈ আপোনাক স্বাগতম",
+    "Look back at your days": "আপোনাৰ দিনবোৰৰ স্মৃতি চাওক",
+    "Played {count} {days} this week": "এই সপ্তাহত {count} {days} খেলিলে",
+    "Your family and friends": "আপোনাৰ পৰিয়াল আৰু বন্ধু-বান্ধৱ",
+    "Warm up": "আৰম্ভ কৰক",
+    "Keep going": "আগবাঢ়ি যাওক",
+    "Challenge": "চেষ্টা কৰক",
+    "START": "আৰম্ভ কৰক",
+    "Treasure chest": "ধনৰ বাকচ",
+    "Loading your progress…": "আপোনাৰ অগ্ৰগতি লোড হৈ আছে…",
+    "Your top performance across this week’s games.": "এই সপ্তাহৰ খেলবোৰত আপোনাৰ সৰ্বোত্তম প্ৰদৰ্শন।",
+    "Choose…": "বাছনি কৰক…",
+    "Saving…": "সংৰক্ষণ হৈ আছে…",
+    "Write 3 to 5 steps of the patient’s own day, in order (for example ‘Wake up’, ‘Have tea’, ‘Take tablets’). Plan the Day mixes them up and asks the patient to put them back in order. Each step can be up to 40 letters.": "ৰোগীৰ নিজৰ দিনটোৰ ৩ৰ পৰা ৫টা ধাপ ক্ৰম অনুসৰি লিখক (যেনে ‘সাৰ পোৱা’, ‘চাহ খোৱা’, ‘ঔষধ খোৱা’)। দিনৰ পৰিকল্পনাই এইবোৰ মিহলাই ৰোগীক পুনৰ ক্ৰমত সজাবলৈ ক'ব। প্ৰতিটো ধাপত সৰ্বাধিক ৪০টা আখৰ থাকিব পাৰে।",
+    "Loading…": "লোড হৈ আছে…",
+    "Go to Today’s Activities →": "আজিৰ কামবোৰলৈ যাওক →",
+    "Today’s Activities": "আজিৰ কামবোৰ",
+    "Today’s activities": "আজিৰ কামবোৰ",
+    "All done for today! ⭐": "আজিৰ বাবে সকলো সম্পূৰ্ণ! ⭐",
+    "Caregiver portal": "যত্নদাতাৰ প'ৰ্টেল",
+    "Summary": "সাৰাংশ",
+    "Trends": "ধাৰা",
+    "Activity Log": "কাৰ্যকলাপৰ লগ",
+    "Doctor’s Report": "চিকিৎসকৰ প্ৰতিবেদন",
+    "A short preview of recorded activity for sharing with a doctor.": "চিকিৎসকৰ সৈতে ভাগ-বতৰা কৰিবলৈ লিপিবদ্ধ কামৰ চমু পূৰ্বদৰ্শন।",
+    "Print / Save as PDF": "প্ৰিণ্ট কৰক / PDF হিচাপে সংৰক্ষণ কৰক",
+    "Offline. Your saved activities are available on this device.": "অফলাইন। আপোনাৰ সাঁচি থোৱা কামবোৰ এই ডিভাইচত উপলব্ধ।",
+    "Storage is unavailable. Please ask your caregiver for help.": "ডিভাইচৰ সংৰক্ষণ ব্যৱহাৰ কৰিব পৰা নাই। সহায়ৰ বাবে আপোনাৰ যত্ন লওঁতাক কওক।",
+    "Saved on this device. It will sync when connected.": "এই ডিভাইচত সাঁচি থোৱা হৈছে। সংযোগ পালে ছিংক হ’ব।",
+    "Changes are saved on this device, but could not sync. Check your connection or sign in again.": "সলনিবোৰ এই ডিভাইচত সাঁচি থোৱা হৈছে, কিন্তু ছিংক নহ’ল। সংযোগ পৰীক্ষা কৰক বা আকৌ ছাইন ইন কৰক।",
+    "Accounts created. Sign in with either account.": "একাউণ্ট দুটা সৃষ্টি হ’ল। যিকোনো এটাৰে ছাইন ইন কৰক।",
+    "Caregiver: set up two accounts": "যত্ন লওঁতা: দুটা একাউণ্ট সাজু কৰক",
+    "These accounts protect this support space. A caregiver can help you sign in.": "এই একাউণ্টবোৰে এই সহায়ৰ ঠাইখিনি সুৰক্ষিত কৰে। ছাইন ইন কৰিবলৈ যত্ন লওঁতাই সহায় কৰিব পাৰে।",
+    "Caregiver username": "যত্ন লওঁতাৰ ব্যৱহাৰকাৰীৰ নাম",
+    "Username": "ব্যৱহাৰকাৰীৰ নাম",
+    "Password": "পাছৱৰ্ড",
+    "Patient username": "ৰোগীৰ ব্যৱহাৰকাৰীৰ নাম",
+    "Patient password": "ৰোগীৰ পাছৱৰ্ড",
+    "Use separate passwords, each at least 12 characters.": "দুয়োটা পাছৱৰ্ড বেলেগ ৰাখক। প্ৰতিটো পাছৱৰ্ড কমেও ১২টা আখৰৰ হ’ব লাগে।",
+    "Create accounts": "একাউণ্ট সৃষ্টি কৰক",
+    "Back to sign in": "ছাইন ইনলৈ উভতি যাওক",
+    "Set up with a caregiver": "যত্ন লওঁতাৰ সৈতে একাউণ্ট সাজু কৰক",
+    "1 change waiting to sync": "ছিংক হ’বলৈ ১টা সলনি বাকী আছে",
+    "{count} changes waiting to sync": "ছিংক হ’বলৈ {count}টা সলনি বাকী আছে",
+    "All changes synced": "সকলো সলনি ছিংক হ’ল",
+    "Sync complete": "ছিংক সম্পূৰ্ণ হ’ল",
+    "Sync now": "এতিয়াই ছিংক কৰক",
+    "Location is optional. It only runs after your caregiver turns it on and you allow it. It works while this screen is open. It stays on this device unless sharing is enabled. Pause it at any time.": "স্থানৰ তথ্য লোৱা বৈকল্পিক। আপোনাৰ যত্ন লওঁতাই অন কৰাৰ আৰু আপুনি অনুমতি দিয়াৰ পাছতহে ই আৰম্ভ হয়। এই পৰ্দাখন খোলা থকালৈকে ই চলে। ভাগ-বতৰা কৰিবলৈ অনুমতি নিদিলে তথ্য এই ডিভাইচতে থাকে। আপুনি যিকোনো সময়তে ইয়াক ৰখাব পাৰে।",
+    "Save consent": "সন্মতি সাঁচক",
+    "Location is unavailable on this device.": "এই ডিভাইচত স্থানৰ সুবিধা উপলব্ধ নহয়।",
+    "Location saved on this device only.": "স্থানৰ তথ্য কেৱল এই ডিভাইচত সাঁচি থোৱা হৈছে।",
+    "Location permission was denied. Location is paused. You can keep using the app.": "স্থানৰ অনুমতি দিয়া নহ’ল। স্থানৰ তথ্য লোৱা ৰখাই থোৱা হৈছে। আপুনি এপটোৰ আন কামবোৰ চলাই যাব পাৰে।",
+    "Location could not be read. You can keep using the app.": "স্থানৰ তথ্য পঢ়িব পৰা নগ’ল। আপুনি এপটোৰ আন কামবোৰ চলাই যাব পাৰে।",
+    "A caregiver must confirm consent before location is used.": "স্থানৰ তথ্য লোৱাৰ আগতে যত্ন লওঁতাই সন্মতি দিব লাগিব।",
+    "Location is active while this screen is open.": "এই পৰ্দাখন খোলা থকালৈকে স্থানৰ তথ্য লোৱা হৈছে।",
+    "Location collection is paused.": "স্থানৰ তথ্য লোৱা ৰখাই থোৱা হৈছে।",
+    "Visited place {number}: {count} recorded visits": "ভ্ৰমণ কৰা ঠাই {number}: {count}বাৰ লিপিবদ্ধ হৈছে",
+    "Favourite place name": "প্ৰিয় ঠাইৰ নাম",
+    "This is home (requires location sharing)": "এইটো ঘৰ (ইয়াৰ বাবে স্থান ভাগ-বতৰা কৰিব লাগিব)",
+    "Save favourite": "প্ৰিয় ঠাই সাঁচক",
+    "The saved puzzle could not be opened. You can make a new one.": "সাঁচি থোৱা সাঁথৰটো খুলিব পৰা নগ’ল। আপুনি নতুন এটা সাজিব পাৰে।",
+    "Your puzzle could not be saved. Keep this screen open.": "আপোনাৰ সাঁথৰটো সাঁচিব পৰা নগ’ল। এই পৰ্দাখন খোলা ৰাখক।",
+    "Let's try again. You can use the letters as a clue.": "আকৌ চেষ্টা কৰক। আখৰবোৰৰ পৰা ইংগিত লওক।",
+    "Words from my life": "মোৰ জীৱনৰ শব্দ",
+    "Add familiar names, places or foods. One word and clue per line.": "চিনাকি মানুহ, ঠাই বা খাদ্যৰ নাম যোগ কৰক। প্ৰতিটো শাৰীত এটা শব্দ আৰু তাৰ ইংগিত লিখক।",
+    "Example: MEERA: Your daughter\nTEA: Your favourite warm drink\nRICE: A food you enjoy": "উদাহৰণ: MEERA: আপোনাৰ জীয়ৰী\nTEA: আপোনাৰ প্ৰিয় গৰম পানীয়\nRICE: আপোনাৰ প্ৰিয় খাদ্য",
+    "Use English letters or Romanized names for this grid.": "এই সাঁথৰত ইংৰাজী আখৰ বা নামৰ ৰোমান আখৰৰ ৰূপ লিখক।",
+    "Make my crossword": "মোৰ শব্দৰ সাঁথৰ সাজক",
+    "A familiar word beginning with {letter}": "{letter}ৰে আৰম্ভ হোৱা চিনাকি শব্দ",
+    "One of your favourite places": "আপোনাৰ প্ৰিয় ঠাইবোৰৰ এখন",
+    "Starts at row {row}, column {column}": "শাৰী {row}, স্তম্ভ {column}ৰ পৰা আৰম্ভ",
+    "Add words with 2–14 English letters. Your current setting may prefer shorter words.": "২ৰ পৰা ১৪টা ইংৰাজী আখৰৰ শব্দ যোগ কৰক। আপোনাৰ বৰ্তমানৰ ছেটিঙত চুটি শব্দ ভাল হ’ব পাৰে।",
+    "{count} letters": "{count}টা আখৰ",
+    "Crossword answer": "শব্দৰ সাঁথৰৰ উত্তৰ",
+    "Across": "পথালি"
+  }
+}
+
+
+==============================================================================
+FILE: frontend/lib/interaction/preferences.ts
+NOTES: KEEP. Add field readAloud: boolean (default false) and speechRate (default 0.85). language stays in backend /settings, not here.
+==============================================================================
+export type InteractionMode = "read" | "voice" | "mixed";
+export type Preferences = { mode: InteractionMode; language: string; textSize: "large" | "larger"; updatedAt: number; override: boolean };
+export type KeyValueStore = Pick<Storage, "getItem" | "setItem">;
+export const defaultPreferences: Preferences = { mode: "read", language: "en", textSize: "large", updatedAt: 0, override: false };
+export const preferenceKey = (patient: string) => `cogni:preferences:${encodeURIComponent(patient)}`;
+
+export function readPreferences(storage: KeyValueStore, patient: string): Preferences {
+  try {
+    const value = JSON.parse(storage.getItem(preferenceKey(patient)) || "null");
+    if (!value || !["read", "voice", "mixed"].includes(value.mode) || !Number.isFinite(value.updatedAt)) return { ...defaultPreferences };
+    return { ...defaultPreferences, ...value };
+  } catch { return { ...defaultPreferences }; }
+}
+
+export function writePreferences(storage: KeyValueStore, patient: string, value: Preferences): void {
+  storage.setItem(preferenceKey(patient), JSON.stringify(value));
+}
+
+/** Caregiver defaults never erase an explicit patient choice, including mid-game. */
+export function mergePreferences(local: Preferences, remote: Preferences): Preferences {
+  if (local.override && !remote.override) return local;
+  return remote.updatedAt > local.updatedAt ? remote : local;
+}
+
+
+==============================================================================
+FILE: frontend/components/interaction/InteractionProvider.tsx
+NOTES: KEEP the context (preferences, locale, ready, voiceFallback, update, fallback) and text-size handling.
+REMOVE: EmergencyButton, OfflineSetup, support-store sync/merge effect, the floating bottom-right panel,
+the language select and theme select (they already exist in SiteLinks).
+Read locale code from our backend /settings language. Move the mode/text-size/read-aloud controls
+into a new <AccessibilityMenu/> in SiteLinks.
+==============================================================================
+"use client";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { Eye, Mic, Volume2 } from "lucide-react";
+import { useTheme } from "next-themes";
+import { translate, type Locale } from "@/lib/interaction/locale";
+import { BrowserSpeechProvider } from "@/lib/interaction/speech";
+import { defaultPreferences, mergePreferences, readPreferences, writePreferences, type Preferences } from "@/lib/interaction/preferences";
+import EmergencyButton from "@/components/support/EmergencyButton";
+import OfflineSetup from "./OfflineSetup";
+import { putSupport, readSupport, syncSupport } from "@/lib/interaction/support-store";
+
+type Interaction = { preferences: Preferences; locale: Locale; ready: boolean; voiceFallback: boolean; fallback: () => void; update: (value: Partial<Preferences>) => void };
+const Context = createContext<Interaction | null>(null);
+export function useInteraction() {
+  const context = useContext(Context);
+  if (!context) throw new Error("InteractionProvider is required");
+  return context;
+}
+
+export function InteractionProvider({ locales, children }: { locales: Locale[]; children: React.ReactNode }) {
+  const [preferences, setPreferences] = useState(defaultPreferences);
+  const [ready, setReady] = useState(false);
+  const [patient, setPatient] = useState("local-patient");
+  const [open, setOpen] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [voiceFallback, setVoiceFallback] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const speaker = useMemo(() => new BrowserSpeechProvider(), []);
+  const locale = locales.find(l => l.code === preferences.language) ?? locales.find(l => l.code === "en")!;
+  useEffect(() => {
+    const load = () => {
+      const id = localStorage.getItem("cogni:patient") || "local-patient";
+      setPatient(id);
+      const value = readPreferences(localStorage, id);
+      setPreferences(value); setOpen(value.updatedAt === 0); setReady(true);
+    };
+    try { load(); } catch { setReady(true); }
+    window.addEventListener("cogni:patient-change", load);
+    window.addEventListener("storage", load);
+    return () => { speaker.cancel(); window.removeEventListener("cogni:patient-change", load); window.removeEventListener("storage", load); };
+  }, [speaker]);
+  useEffect(() => { document.documentElement.style.fontSize = preferences.textSize === "larger" ? "22px" : "18px"; }, [preferences.textSize]);
+  useEffect(() => { document.documentElement.lang = locale.code; }, [locale.code]);
+  useEffect(() => {
+    if (!ready || patient === "local-patient") return;
+    const mergeRemote = () => {
+      try {
+        const rows = readSupport(patient).records;
+        const remote = rows.find(row => row.id === "interaction-preference") ?? rows.find(row => row.id === "interaction-default");
+        if (!remote || !["read", "voice", "mixed"].includes(String(remote.data.mode))) return;
+        const local = readPreferences(localStorage, patient);
+        const next = mergePreferences(local, { ...defaultPreferences, ...remote.data, updatedAt: remote.updatedAt } as Preferences);
+        writePreferences(localStorage, patient, next); setPreferences(next);
+      } catch { setNotice(locale.storageError); }
+    };
+    const sync = () => { void syncSupport(patient).then(mergeRemote).catch(() => {}); };
+    sync(); const timer = setInterval(sync, 20000);
+    window.addEventListener("online", sync); window.addEventListener("cogni:support", mergeRemote);
+    return () => { clearInterval(timer); window.removeEventListener("online", sync); window.removeEventListener("cogni:support", mergeRemote); };
+  }, [patient, ready, locale.storageError]);
+  const update = (value: Partial<Preferences>) => {
+    const next = { ...preferences, ...value, updatedAt: Date.now(), override: true };
+    setPreferences(next);
+    setVoiceFallback(false);
+    try { writePreferences(localStorage, patient, next); if (patient !== "local-patient") putSupport(patient, "preference", next, "interaction-preference"); setNotice(locale.saved); }
+    catch { setNotice(locale.storageError); }
+  };
+  return <Context.Provider value={{ preferences, locale, ready, update, voiceFallback, fallback: () => { setVoiceFallback(true); setNotice(locale.fallback); } }}>
+    {children}
+    <EmergencyButton />
+    <OfflineSetup />
+    <div data-voice-ignore className="fixed bottom-20 right-3 z-50 max-w-[calc(100vw-1.5rem)] print:hidden lg:bottom-4">
+      <button className="min-h-14 rounded-xl border-2 bg-background px-5 text-lg font-bold shadow-lg" onClick={() => setOpen(!open)} aria-expanded={open}><Eye className="mr-2 inline h-7 w-7" />{locale[preferences.mode]}</button>
+      {voiceFallback && <p role="status" className="max-w-sm rounded-xl border-2 bg-background p-3">{locale.fallback}</p>}
+      {open && <section aria-label={locale.choose} className="mt-2 max-h-[65vh] w-96 max-w-full overflow-auto rounded-xl border-2 bg-background p-4 shadow-xl">
+        <h2 className="mb-3 text-xl font-bold">{locale.choose}</h2>
+        <div className="grid gap-3">
+          {(["read", "voice", "mixed"] as const).map((mode, i) => {
+            const Icon = [Eye, Volume2, Mic][i];
+            return <button key={mode} aria-pressed={preferences.mode === mode} className={`min-h-16 rounded-lg border-2 p-3 text-left text-xl ${preferences.mode === mode ? "border-primary bg-primary/10" : "border-border"}`} onClick={() => {
+              update({ mode });
+              void speaker.speak(locale[mode], locale.speechLanguage).catch(() => setNotice(locale.fallback));
+            }}><Icon className="mr-3 inline h-8 w-8" />{locale[mode]}</button>;
+          })}
+          <label>{translate(locale, "Language")}<select className="mt-1 min-h-14 w-full rounded-lg border bg-background p-2" value={locale.code} onChange={e => update({ language: e.target.value })}>{locales.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}</select></label>
+          <label>{translate(locale, "Text size")}<select className="mt-1 min-h-14 w-full rounded-lg border bg-background p-2" value={preferences.textSize} onChange={e => update({ textSize: e.target.value as Preferences["textSize"] })}><option value="large">{translate(locale, "Large")}</option><option value="larger">{translate(locale, "Larger")}</option></select></label>
+          <label>{translate(locale, "Theme")}<select className="mt-1 min-h-14 w-full rounded-lg border bg-background p-2" value={theme ?? "system"} onChange={e => setTheme(e.target.value)}><option value="light">{translate(locale, "Light")}</option><option value="dark">{translate(locale, "Dark")}</option><option value="system">{translate(locale, "System")}</option></select></label>
+          <p role="status">{notice}</p>
+          <button className="min-h-14 rounded-lg bg-primary px-4 text-primary-foreground" onClick={() => { if (!preferences.updatedAt) update({ mode: "read" }); setOpen(false); }}>{locale.yes}</button>
+        </div>
+      </section>}
+    </div>
+  </Context.Provider>;
+}
+
+
+==============================================================================
+FILE: frontend/components/interaction/VoiceQuestion.tsx
+NOTES: KEEP. Remove SOS handling (optionsWithHelp/SOS_OPTION_ID). Use the provider chosen by the app (Whisper when available, else browser). Restyle buttons with our Button component; mic/replay icons only shown when mode is voice or mixed (replay also when readAloud is on).
+==============================================================================
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { Mic, Volume2 } from "lucide-react";
+import { useInteraction } from "./InteractionProvider";
+import { BrowserSpeechProvider, SpeechError } from "@/lib/interaction/speech";
+import { localizeAnswerOptions, matchAnswer, optionsWithHelp, SOS_OPTION_ID, type AnswerOption } from "@/lib/interaction/matching";
+import { translate } from "@/lib/interaction/locale";
+
+export type AnswerInput = { method: "tap" | "typed" | "voice"; responseMs: number | null; recognitionConfirmed?: boolean };
+export default function VoiceQuestion({ prompt, options, onAnswer, disabled = false, auto = true, freeText = false, translatePrompt = true, translateOptions = true }: {
+  prompt: string; options: AnswerOption[]; onAnswer: (id: string, input: AnswerInput) => void; disabled?: boolean; auto?: boolean; freeText?: boolean; translatePrompt?: boolean; translateOptions?: boolean;
+}) {
+  const { preferences, locale, ready, voiceFallback, fallback } = useInteraction();
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [heard, setHeard] = useState("");
+  const [candidate, setCandidate] = useState<{ option: AnswerOption; responseMs: number | null } | null>(null);
+  const visiblePrompt = translatePrompt ? translate(locale, prompt) : prompt;
+  const visibleOptions = translateOptions
+    ? localizeAnswerOptions(options, label => translate(locale, label), locale.synonyms)
+    : options.map(option => ({ ...option, synonyms: option.synonyms ? [...option.synonyms] : undefined }));
+  const controller = useRef<AbortController | null>(null);
+  const provider = useRef(new BrowserSpeechProvider());
+  const current = useRef({ options: visibleOptions, onAnswer, disabled });
+  current.current = { options: visibleOptions, onAnswer, disabled };
+  const confirmCandidate = () => {
+    if (!candidate || current.current.disabled) return;
+    controller.current?.abort(); provider.current.cancel(); setBusy(false); setStatus("");
+    if (candidate.option.id === SOS_OPTION_ID) window.dispatchEvent(new Event("cogni:sos"));
+    else current.current.onAnswer(candidate.option.id, { method: "voice", responseMs: candidate.responseMs, recognitionConfirmed: true });
+    setCandidate(null);
+  };
+  const confirmByVoice = async () => {
+    if (!candidate) return;
+    controller.current?.abort();
+    const control = new AbortController(); controller.current = control; setBusy(true);
+    try {
+      setStatus(locale.speaking);
+      await provider.current.speak(`${locale.confirm} ${candidate.option.label}? ${locale.yes}, ${locale.no}`, locale.speechLanguage, control.signal);
+      setStatus(locale.listening);
+      const result = await provider.current.listen(locale.speechLanguage, control.signal);
+      const match = matchAnswer(result.text, [{ id: "yes", label: locale.yes }, { id: "no", label: locale.no }], result.confidence);
+      if (!control.signal.aborted && match.kind === "accept") {
+        if (match.option.id === "yes") confirmCandidate();
+        else { setCandidate(null); setStatus(locale.retry); }
+      } else setStatus(locale.retry);
+    } catch { if (!control.signal.aborted) setStatus(locale.retry); }
+    finally { if (!control.signal.aborted) setBusy(false); }
+  };
+  const speak = async (listen: boolean) => {
+    controller.current?.abort();
+    const control = new AbortController(); controller.current = control;
+    setCandidate(null); setHeard(""); setBusy(true);
+    try {
+      for (let attempt = 0; attempt < (listen ? 2 : 1); attempt++) {
+        setStatus(locale.speaking);
+        const endedAt = await provider.current.speak(attempt ? `${locale.retry} ${visiblePrompt}` : visiblePrompt, locale.speechLanguage, control.signal);
+        if (!listen) { setStatus(""); break; }
+        setStatus(locale.listening);
+        try {
+          const result = await provider.current.listen(locale.speechLanguage, control.signal);
+          if (control.signal.aborted || current.current.disabled) return;
+          setHeard(result.text);
+          const choices = optionsWithHelp(current.current.options, locale.help);
+          const match = matchAnswer(result.text, choices, result.confidence);
+          const responseMs = result.speechStartedAt === null ? null : Math.max(0, result.speechStartedAt - endedAt);
+          if (match.kind === "accept") { if (match.option.id === SOS_OPTION_ID) window.dispatchEvent(new Event("cogni:sos")); else current.current.onAnswer(match.option.id, { method: "voice", responseMs }); setStatus(""); break; }
+          if (match.kind === "confirm") { setCandidate({ option: match.option, responseMs }); setStatus(""); break; }
+          if (freeText && result.text.trim()) { setCandidate({ option: { id: result.text, label: result.text }, responseMs }); setStatus(""); break; }
+          if (attempt === 1) setStatus(locale.retry);
+        } catch (error) {
+          if (!(error instanceof SpeechError) || error.reason !== "silence") throw error;
+          if (attempt === 1) setStatus(locale.retry);
+        }
+      }
+    } catch (error) {
+      if (!control.signal.aborted) { setStatus(error instanceof SpeechError && error.reason === "cancelled" ? "" : locale.fallback); if (!(error instanceof SpeechError) || error.reason !== "cancelled") fallback(); }
+    } finally { if (!control.signal.aborted) setBusy(false); }
+  };
+  useEffect(() => {
+    const speechProvider = provider.current;
+    setCandidate(null); setHeard(""); setStatus(""); setBusy(false);
+    // Read mode never starts recognition. Auto-listening only follows the explicit voice preference.
+    if (ready && auto && preferences.mode === "voice" && !voiceFallback && !disabled) void speak(true);
+    return () => { controller.current?.abort(); speechProvider.cancel(); };
+    // Callbacks/options may change without changing the question. current keeps those fresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visiblePrompt, preferences.mode, locale.code, ready, disabled, auto, freeText, voiceFallback]);
+  return <div data-voice-ignore className="my-4 space-y-3">
+    <div className="flex flex-wrap gap-3">
+      <button type="button" disabled={disabled || busy} onClick={() => void speak(true)} className="min-h-14 rounded-xl border-2 border-primary bg-primary/10 px-4 text-lg font-semibold"><Mic className="mr-2 inline h-7 w-7" />{locale.mic}</button>
+      <button type="button" disabled={disabled || busy} onClick={() => void speak(false)} className="min-h-14 rounded-xl border-2 px-4 text-lg"><Volume2 className="mr-2 inline h-7 w-7" />{locale.replay}</button>
+      {busy && <button type="button" className="min-h-14 rounded-xl border-2 px-4" onClick={() => { controller.current?.abort(); provider.current.cancel(); setBusy(false); setStatus(""); }}>{translate(locale, "Stop")}</button>}
+    </div>
+    <p role="status" className="text-lg">{status}</p>
+    {heard && <p className="text-lg">{locale.heard}: “{heard}”</p>}
+    {candidate && <div className="rounded-xl border-2 p-4 text-xl">
+      <p>{locale.confirm} “{candidate.option.label}”?</p>
+      <div className="mt-3 flex gap-3">
+        <button type="button" className="min-h-14 rounded-lg bg-primary px-6 text-primary-foreground" onClick={confirmCandidate}>{locale.yes}</button>
+        <button type="button" className="min-h-14 rounded-lg border-2 px-6" onClick={() => void speak(true)}>{locale.no}</button>
+      </div>
+      <button type="button" disabled={busy} className="mt-3 min-h-14 rounded-lg border-2 px-4" onClick={() => void confirmByVoice()}><Mic className="mr-2 inline h-7 w-7" />{locale.mic}: {locale.yes} / {locale.no}</button>
+    </div>}
+  </div>;
+}
+
+
+==============================================================================
+FILE: frontend/components/interaction/useAnswerLog.ts
+NOTES: KEEP.
+==============================================================================
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { recordAnswer } from "@/lib/interaction/events";
+import type { AnswerInput } from "./VoiceQuestion";
+export function useAnswerLog(game: string, domain: string, promptKey: string, difficulty: number) {
+  const [session] = useState(() => `${game}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const shownAt = useRef<number | null>(null);
+  useEffect(() => { shownAt.current = performance.now(); }, [promptKey]);
+  return (correct: boolean, input: AnswerInput = { method: "tap", responseMs: null }) => recordAnswer({
+    session, game, domain, difficulty, correct, errorType: correct ? "none" : "answer", method: input.method,
+    responseMs: input.method === "voice" ? input.responseMs : shownAt.current === null ? null : performance.now() - shownAt.current,
+  });
+}
+
+
+==============================================================================
+FILE: frontend/lib/interaction/adaptive.ts
+NOTES: KEEP (Elo rating + 5-answer accuracy window + per-method response baselines; slower answers never lower difficulty).
+==============================================================================
+export type InputMethod = "tap" | "typed" | "voice";
+export type SessionEvent = {
+  id: string; patient: string; session: string; game: string; domain: string;
+  timestamp: number; day: string; method: InputMethod; correct: boolean | null;
+  responseMs: number | null; hesitationMs?: number | null; touchMs?: number | null;
+  errorType: "none" | "answer" | "recognition" | "silence"; difficulty: number;
+};
+export type SkillState = { rating: number; knob: number; recent: number[]; baselines: Record<InputMethod, number[]>; decision: "stay" | "up" | "down"; reason: string };
+export const initialSkill = (): SkillState => ({ rating: 1000, knob: 2, recent: [], baselines: { tap: [], typed: [], voice: [] }, decision: "stay", reason: "Getting to know your pace" });
+export function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b), mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+export function adapt(previous: SkillState, event: SessionEvent): SkillState {
+  if (event.correct === null || event.errorType === "recognition" || event.errorType === "silence") return previous;
+  const state: SkillState = { ...previous, recent: [...previous.recent, Number(event.correct)].slice(-5), baselines: { ...previous.baselines }, decision: "stay", reason: "Keep practising at this setting" };
+  const baseline = median(state.baselines[event.method]);
+  const expected = 1 / (1 + 10 ** (((800 + 100 * event.difficulty) - state.rating) / 400));
+  state.rating = Math.max(400, Math.min(1800, state.rating + 24 * (Number(event.correct) - expected)));
+  // A slower response alone can never lower difficulty. Ignore invalid/missing speech-start times.
+  const reliableTime = event.responseMs !== null && Number.isFinite(event.responseMs) && event.responseMs >= 0;
+  if (reliableTime && event.correct) state.baselines[event.method] = [...state.baselines[event.method], event.responseMs!].slice(-21);
+  if (state.recent.length === 5) {
+    const accuracy = state.recent.reduce((a, b) => a + b, 0) / 5;
+    if (accuracy <= 0.4 && state.knob > 1) {
+      state.knob--; state.decision = "down"; state.reason = "More support after several difficult answers"; state.recent = [];
+    } else if (accuracy >= 0.8 && state.knob < 4 && (baseline === null || !reliableTime || event.responseMs! <= baseline * 1.5)) {
+      state.knob++; state.decision = "up"; state.reason = "Several successful answers at your own pace"; state.recent = [];
+    }
+  }
+  return state;
+}
+export function slope(values: number[]): number {
+  if (values.length < 2) return 0;
+  const center = (values.length - 1) / 2, mean = values.reduce((a, b) => a + b, 0) / values.length;
+  return values.reduce((sum, value, i) => sum + (i - center) * (value - mean), 0) / values.reduce((sum, _, i) => sum + (i - center) ** 2, 0);
+}
+/** Require both halves to decline: a single unusually bad final session is insufficient. */
+export function declineAlert(scores: number[]): boolean {
+  const recent = scores.filter(Number.isFinite).slice(-8);
+  if (recent.length < 8) return false;
+  return slope(recent) < -2 && slope(recent.slice(0, 4)) < -1 && slope(recent.slice(4)) < -1;
+}
+
+
+==============================================================================
+FILE: frontend/lib/interaction/events.ts
+NOTES: KEEP but REMOVE putSupport and the cogni:role check; store events/skills in localStorage only for now (patient id 'local-patient').
+==============================================================================
+import { adapt, initialSkill, type SessionEvent, type SkillState } from "./adaptive";
+import { dayKey } from "../progress";
+import { putSupport } from "./support-store";
+import { isCaregiverUnlocked } from "../mode";
+export function recordAnswer(event: Omit<SessionEvent, "id" | "timestamp" | "day" | "patient">): SkillState | null {
+  try {
+    if (isCaregiverUnlocked() || localStorage.getItem("cogni:role") === "caregiver") return readSkill(event.domain);
+    const patient = localStorage.getItem("cogni:patient") || "local-patient";
+    const entry: SessionEvent = { ...event, id: crypto.randomUUID(), patient, timestamp: Date.now(), day: dayKey(new Date()) };
+    const key = `cogni:events:${patient}`;
+    const events: SessionEvent[] = JSON.parse(localStorage.getItem(key) || "[]");
+    const skillKey = `cogni:skill:${patient}:${event.domain}`;
+    const previous: SkillState = JSON.parse(localStorage.getItem(skillKey) || "null") || initialSkill();
+    const state = adapt(previous, entry);
+    localStorage.setItem(key, JSON.stringify([...events, entry]));
+    localStorage.setItem(skillKey, JSON.stringify(state));
+    if (patient !== "local-patient") putSupport(patient, "event", entry, entry.id);
+    window.dispatchEvent(new Event("cogni:events"));
+    return state;
+  } catch { return null; }
+}
+export function readSkill(domain: string): SkillState {
+  try {
+    const patient = localStorage.getItem("cogni:patient") || "local-patient";
+    return JSON.parse(localStorage.getItem(`cogni:skill:${patient}:${domain}`) || "null") || initialSkill();
+  } catch { return initialSkill(); }
+}
+
+
+==============================================================================
+FILE: docs/ADAPTIVE_ENGINE.md
+NOTES: KEEP as documentation.
+==============================================================================
+# Personal-baseline adaptation
+
+Implementation: `frontend/lib/interaction/adaptive.ts`. It is a pure module so
+the same decisions are available offline and directly testable with Node 24.
+State is partitioned by patient and domain by `events.ts`. Raw answer events
+contain a session ID, game, domain, local day, timestamp, input method,
+correctness, response time, error type and the current difficulty knob.
+
+The skill estimate starts at 1000. Expected success is
+`1 / (1 + 10 ** ((800 + 100 * difficulty - rating) / 400))`.
+Each scored answer updates rating by `24 * (actual - expected)`, clamped to
+400–1800. This is an engagement heuristic, not a clinically calibrated model.
+
+A five-answer window controls the knob. Accuracy at or below 40% lowers the
+knob once; at or above 80% raises it once if the latest valid response is no
+more than 1.5 times that person's baseline. A change clears the window. Knobs
+stay between 1 and 4. A slower response alone can never lower difficulty.
+The Elo estimate is recorded, while the transparent window policy makes the
+actual knob decision; they must not be described as interchangeable.
+
+Baselines are rolling medians of up to 21 correctly answered trials, stored
+separately for tap, typed and voice. The comparison uses the prior baseline.
+No population speed cutoff is used. Voice time runs from TTS completion to the
+browser's `speechstart` event, not transcript delivery. When speech-start timing
+is unavailable it remains null. Recognition failures and silence have no
+correctness and cannot update skill or baselines. Fuzzy / low-confidence
+matches require explicit confirmation before invoking the game's normal
+answer handler. Missing timing does not penalize the patient.
+
+Odd One Out and Object Naming apply their knobs to choice count at the next
+question. Matching Pictures chooses pair count at session start; Sound Tap
+adjusts beat range, and Pattern Completion switches between two- and three-item
+patterns. Yesterday Quiz adds up to three older journal memories as distractors,
+excluding every target-day memory and normalized summaries repeated on that day.
+When there is insufficient safe history it uses fewer choices rather than inventing
+memories. Its answer positions still rotate. Crossword uses word length and given
+letters at puzzle creation. Catalog levels remain unchanged. Other instrumented
+legacy games log events but retain their existing mechanics.
+The event schema reserves hesitation and
+touch duration, but those signals are not yet measured or used. Do not claim
+that this version detects pauses, tremor or cognitive decline from speech.
+
+`declineAlert` fits an ordinary least-squares slope over the last eight session
+scores. It requires slope < -2 points/session and slopes < -1 in each four-session
+half. This excludes a lone final bad session. The caller must aggregate answers
+to session scores first. It is an explainable monitoring flag, not a diagnosis.
+
+Run `node lib/interaction/adaptive.check.mjs` from frontend. Tests cover separate
+baselines, recognition exclusion, robust medians, one-knob changes, cooldown and
+sustained decline versus a single poor result.
+
+
+==============================================================================
+FILE: frontend/components/games/_shared/ChoiceSession.tsx
+NOTES: KEEP (shared engine for choice games with voice + adaptive knob).
+==============================================================================
+"use client";
+import { useState } from "react";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
+import { readSkill } from "@/lib/interaction/events";
+import { BigTile } from "./BigTile";
+import { useInteraction } from "@/components/interaction/InteractionProvider";
+import { translate } from "@/lib/interaction/locale";
+export type ChoiceRound = { prompt: string; image?: string; options: { id: string; label: string; emoji?: string; synonyms?: string[] }[]; answer: string };
+export default function ChoiceSession({ game, domain, makeRound, finish, count = 6 }: {
+  game: string; domain: string; makeRound: (index: number, knob: number) => ChoiceRound; finish: (score: number) => void; count?: number;
+}) {
+  const [index, setIndex] = useState(0), [correct, setCorrect] = useState(0), [picked, setPicked] = useState<string | null>(null);
+  const { locale } = useInteraction();
+  const tr = (phrase: string, values?: Record<string, string | number>) => translate(locale, phrase, values);
+  const [knob, setKnob] = useState(() => readSkill(domain).knob);
+  const round = makeRound(index, knob);
+  const log = useAnswerLog(game, domain, String(index), knob);
+  const choose = (id: string, input?: AnswerInput) => { if (picked !== null) return; const ok = id === round.answer; setPicked(id); setCorrect(value => value + Number(ok)); log(ok, input); };
+  return <section className="space-y-5"><h2 className="text-3xl font-bold">{tr(round.prompt)}</h2>{round.image && <div role="img" aria-label={tr("Picture to name")} className="text-center text-8xl">{round.image}</div>}
+    <VoiceQuestion key={index} prompt={tr(round.prompt)} options={round.options.map(option => ({ ...option, label: tr(option.label) }))} onAnswer={choose} disabled={picked !== null} />
+    <div className="grid grid-cols-2 gap-4">{round.options.map(option => <BigTile key={option.id} label={tr(option.label)} emoji={option.emoji} state={option.id === picked ? "selected" : "default"} disabled={picked !== null} onClick={() => choose(option.id)} className="[&>span:last-child]:text-xl" />)}</div>
+    {picked !== null && <><p className="text-xl">{picked === round.answer ? tr("Well done!") : tr("The answer is {answer}. Let's keep going.", { answer: tr(round.options.find(option => option.id === round.answer)?.label ?? "") })}</p><button className="min-h-14 rounded-xl border-2 px-6 text-xl" onClick={() => { if (index + 1 === count) finish(Math.round(correct / count * 100)); else { setIndex(i => i + 1); setPicked(null); setKnob(readSkill(domain).knob); } }}>{index + 1 === count ? tr("Finish") : tr("Next")}</button></>}
+  </section>;
+}
+
+
+==============================================================================
+FILE: frontend/components/games/memory-cards/index.tsx
+NOTES: KEEP. Area Memory. MOVE to level 2 (Medium) — the adaptive knob makes it scale.
+==============================================================================
+"use client";
+import { useState } from "react";
+import GameShell from "../_shared/GameShell";
+import type { GameProps } from "../_shared/types";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
+import { readSkill } from "@/lib/interaction/events";
+import motifs from "./motifs.json";
+function Cards({ finish }: { finish: (score: number) => void }) {
+  const [knob] = useState(() => readSkill("Memory").knob);
+  const [cards] = useState(() => [...motifs.items.slice(0, knob + 1), ...motifs.items.slice(0, knob + 1)].map((item, i) => ({ ...item, slot: i, random: Math.random() })).sort((a, b) => a.random - b.random));
+  const [open, setOpen] = useState<number[]>([]), [matched, setMatched] = useState<number[]>([]), [attempts, setAttempts] = useState(0);
+  const log = useAnswerLog("memory-cards", "Memory", `${attempts}:${open.length}`, knob);
+  const choose = (id: string, input?: AnswerInput) => {
+    const index = Number(id); if (open.length === 2 || open.includes(index) || matched.includes(index)) return;
+    const next = [...open, index]; setOpen(next);
+    if (next.length === 2) { const ok = cards[next[0]].id === cards[next[1]].id; log(ok, input); setAttempts(n => n + 1); if (ok) setMatched(value => [...value, ...next]); }
+  };
+  const complete = matched.length === cards.length;
+  return <section className="space-y-5"><h2 className="text-3xl font-bold">Find the matching pictures</h2>
+    <VoiceQuestion key={`${attempts}:${open.length}`} prompt="Choose a card number" disabled={open.length === 2 || complete} options={cards.map((_, index) => ({ id: String(index), label: String(index + 1), synonyms: [`card ${index + 1}`] })).filter((_, index) => !open.includes(index) && !matched.includes(index))} onAnswer={choose} />
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">{cards.map((card, index) => <button key={card.slot} aria-label={`Card ${index + 1}${open.includes(index) || matched.includes(index) ? `: ${card.label}` : ""}`} className="min-h-32 rounded-xl border-2 p-4 text-3xl" disabled={open.length === 2 || matched.includes(index)} onClick={() => choose(String(index))}>{open.includes(index) || matched.includes(index) ? <><span className="block text-5xl">{card.emoji}</span><span className="text-xl">{card.label}</span></> : index + 1}</button>)}</div>
+    {open.length === 2 && <button className="min-h-14 rounded-xl border-2 px-6 text-xl" onClick={() => { if (complete) finish(Math.round((cards.length / 2) / attempts * 100)); else setOpen([]); }}>{complete ? "Finish" : "Next pair"}</button>}
+  </section>;
+}
+export default function MemoryCards({ date, onFinish }: GameProps) { return <GameShell gameId="memory-cards" title="Matching pictures" instructions="Turn over two cards and find pairs. Take your time." level={1} skill="working memory" date={date} onFinish={onFinish}>{finish => <Cards finish={finish} />}</GameShell>; }
+
+
+==============================================================================
+FILE: frontend/components/games/memory-cards/motifs.json
+NOTES: KEEP; add 3+ more familiar items (only 5 now).
+==============================================================================
+{"items":[{"id":"tea","label":"Assam tea","emoji":"🍵"},{"id":"rice","label":"Rice","emoji":"🍚"},{"id":"drum","label":"Festival drum","emoji":"🥁"},{"id":"basket","label":"Woven basket","emoji":"🧺"},{"id":"flower","label":"Flower","emoji":"🌼"}]}
+
+
+==============================================================================
+FILE: frontend/components/games/sound-tap/index.tsx
+NOTES: KEEP. Area Attention, level 1.
+==============================================================================
+"use client";
+import { useRef, useState, useEffect } from "react";
+import GameShell from "../_shared/GameShell";
+import type { GameProps } from "../_shared/types";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
+import { readSkill } from "@/lib/interaction/events";
+function Sounds({ finish }: { finish: (score: number) => void }) {
+  const [round, setRound] = useState(0), [correct, setCorrect] = useState(0), [picked, setPicked] = useState(false), [ready, setReady] = useState(false), [visual, setVisual] = useState(false), [notice, setNotice] = useState("");
+  const [knob, setKnob] = useState(() => readSkill("Attention").knob);
+  const audio = useRef<AudioContext | null>(null), active = useRef(true);
+  const beats = 1 + round % Math.min(4, knob + 1);
+  const log = useAnswerLog("sound-tap", "Attention", `${round}:${ready}`, knob);
+  useEffect(() => { active.current = true; return () => { active.current = false; void audio.current?.close(); }; }, []);
+  const play = async () => {
+    try {
+      setReady(false); audio.current ??= new AudioContext(); await audio.current.resume();
+      if (audio.current.state !== "running") throw new Error("Audio did not start");
+      const ctx = audio.current;
+      for (let i = 0; i < beats; i++) { const oscillator = ctx.createOscillator(), gain = ctx.createGain(); oscillator.connect(gain); gain.connect(ctx.destination); gain.gain.value = .08; oscillator.frequency.value = 440; oscillator.start(ctx.currentTime + i * .6); oscillator.stop(ctx.currentTime + i * .6 + .2); if (i === beats - 1) oscillator.onended = () => { if (active.current) { setReady(true); setNotice("Choose how many beats you heard. If you could not hear them, use Show the beats."); } }; }
+    } catch { setNotice("Sound could not play. Choose Show the beats for a visual version."); }
+  };
+  const choose = (id: string, input?: AnswerInput) => { if (!ready || picked) return; const ok = Number(id) === beats; log(ok, input); setPicked(true); setCorrect(n => n + Number(ok)); setNotice(ok ? "Well done!" : `There were ${beats} beats.`); };
+  return <section className="space-y-5"><h2 className="text-3xl font-bold">How many beats?</h2><div className="flex flex-wrap gap-3"><button className="min-h-14 rounded-xl border-2 px-6" disabled={picked} onClick={() => void play()}>Play the sound</button><button className="min-h-14 rounded-xl border-2 px-6" disabled={picked} onClick={() => { setVisual(true); setReady(true); }}>Show the beats</button></div>{visual && <p className="text-5xl">{Array(beats).fill("●").join(" ")}</p>}<VoiceQuestion auto={false} prompt="How many beats?" disabled={!ready || picked} options={[1, 2, 3, 4].map(n => ({ id: String(n), label: String(n), synonyms: [`${n} beats`] }))} onAnswer={choose} /><div className="flex flex-wrap gap-4">{[1, 2, 3, 4].map(n => <button key={n} className="min-h-16 min-w-16 rounded-xl border-2 text-3xl" disabled={!ready || picked} onClick={() => choose(String(n))}>{n}</button>)}</div><p role="status">{notice}</p>{picked && <button className="min-h-14 rounded-xl border-2 px-6" onClick={() => { if (round === 5) finish(Math.round(correct / 6 * 100)); else { setRound(n => n + 1); setPicked(false); setReady(false); setVisual(false); setKnob(readSkill("Attention").knob); } }}>{round === 5 ? "Finish" : "Next"}</button>}</section>;
+}
+export default function SoundTap({ date, onFinish }: GameProps) { return <GameShell gameId="sound-tap" title="Listen to the beats" instructions="Listen to a short sound, or look at the dots. Choose how many." level={1} skill="attention" date={date} onFinish={onFinish}>{finish => <Sounds finish={finish} />}</GameShell>; }
+
+
+==============================================================================
+FILE: frontend/components/games/pattern-completion/index.tsx
+NOTES: KEEP but CHANGE area to Executive Function (reasoning), level 2. Current rounds are always ABAB with the same 4 items — add AAB/ABC patterns and vary the answer.
+==============================================================================
+"use client";
+import GameShell from "../_shared/GameShell";
+import ChoiceSession from "../_shared/ChoiceSession";
+import type { GameProps } from "../_shared/types";
+import patterns from "./patterns.json";
+export default function PatternCompletion({ date, onFinish }: GameProps) {
+  return <GameShell gameId="pattern-completion" title="Finish the pattern" instructions="Look at the pictures. Choose what comes next." level={1} skill="spatial" date={date} onFinish={onFinish}>{finish => <ChoiceSession game="pattern-completion" domain="Recognition & Orientation" finish={finish} makeRound={(index, knob) => {
+    const options = patterns.items.slice(index % 2, index % 2 + 3);
+    const length = knob >= 3 ? 3 : 2, pattern = options.slice(0, length);
+    return { prompt: `${patterns.prompt} ${[...pattern, ...pattern].map(item => item.emoji).join(" ")} ?`, options, answer: pattern[0].id };
+  }} />}</GameShell>;
+}
+
+
+==============================================================================
+FILE: frontend/components/games/pattern-completion/patterns.json
+NOTES: KEEP; expand to 8+ items.
+==============================================================================
+{"prompt":"What comes next?","items":[{"id":"tea","label":"Tea","emoji":"🍵","synonyms":["chai","चाय","চাহ"]},{"id":"rice","label":"Rice","emoji":"🍚","synonyms":["bhaat","भात"]},{"id":"flower","label":"Flower","emoji":"🌼","synonyms":["phool","फूल","ফুল"]},{"id":"banana","label":"Banana","emoji":"🍌","synonyms":["kela","केला","কল"]}]}
+
+
+==============================================================================
+FILE: frontend/components/games/object-naming/index.tsx
+NOTES: KEEP. Area Recognition & Orientation, level 1.
+==============================================================================
+"use client";
+import GameShell from "../_shared/GameShell";
+import ChoiceSession from "../_shared/ChoiceSession";
+import type { GameProps } from "../_shared/types";
+import content from "./objects.json";
+export default function ObjectNaming({ date, onFinish }: GameProps) {
+  return <GameShell gameId="object-naming" title="Name the picture" instructions="Say the name, or choose a word." level={1} skill="spatial" date={date} onFinish={onFinish}>{finish => <ChoiceSession game="object-naming" domain="Recognition & Orientation" finish={finish} makeRound={(index, knob) => {
+    const target = content.items[index % content.items.length];
+    const options = [target, ...content.items.filter(item => item.id !== target.id).slice(0, knob + 1)];
+    const rotate = index % options.length;
+    return { prompt: content.prompt, image: target.emoji, options: [...options.slice(rotate), ...options.slice(0, rotate)].map(item => ({ ...item, emoji: undefined })), answer: target.id };
+  }} />}</GameShell>;
+}
+
+
+==============================================================================
+FILE: frontend/components/games/object-naming/objects.json
+NOTES: KEEP; expand to 12+ everyday Indian objects.
+==============================================================================
+{"prompt":"What is this?","items":[{"id":"tea","label":"Tea","emoji":"🍵","synonyms":["chai","चाय","চাহ"]},{"id":"rice","label":"Rice","emoji":"🍚","synonyms":["chawal","ভাত"]},{"id":"umbrella","label":"Umbrella","emoji":"☂️","synonyms":["छाता","ছাতি"]},{"id":"drum","label":"Drum","emoji":"🥁","synonyms":["dhol","ढोल","ঢোল"]},{"id":"basket","label":"Basket","emoji":"🧺","synonyms":["टोकरी"]},{"id":"flower","label":"Flower","emoji":"🌼","synonyms":["phool","फूल","ফুল"]}]}
+
+
+==============================================================================
+FILE: frontend/components/games/yesterday-quiz/index.tsx
+NOTES: KEEP the UI, but CHANGE its data source: the journal lives in support-store (not ported). Use our backend instead: journal notes from GET /journals and video summaries/transcripts for yesterday's date. Area Memory, level 1. If nothing from yesterday: friendly skip, no score.
+==============================================================================
+"use client";
+import { useState } from "react";
+import GameShell from "../_shared/GameShell";
+import ChoiceSession from "../_shared/ChoiceSession";
+import type { GameProps } from "../_shared/types";
+import { readSupport } from "@/lib/interaction/support-store";
+import { dayKey } from "@/lib/progress";
+import { buildYesterdayChoices, validMemoryDay, type YesterdayMemory } from "@/lib/interaction/yesterday-quiz";
+function Yesterday({ finish }: { finish: (score: number) => void }) {
+  const [snapshot] = useState(() => {
+    const date = new Date(); date.setDate(date.getDate() - 1);
+    const patient = localStorage.getItem("cogni:patient") || "local-patient";
+    const rows = readSupport(patient).records;
+    const memories: YesterdayMemory[] = rows
+      .filter(row => row.kind === "journal" && validMemoryDay(row.data.day) && typeof row.data.summary === "string" && row.data.summary.trim())
+      .map(row => ({ id: row.id, label: String(row.data.summary), day: String(row.data.day) }));
+    return { memories, targets: memories.filter(memory => memory.day === dayKey(date)).slice(-5) };
+  });
+  const { memories, targets } = snapshot;
+  if (!targets.length) return <p className="text-2xl">There are no saved memories from yesterday yet. Try another activity today.</p>;
+  return <ChoiceSession
+    game="yesterday-quiz"
+    domain="Memory"
+    count={targets.length}
+    finish={finish}
+    makeRound={(index, knob) => ({
+      prompt: "Which memory did you save yesterday?",
+      answer: targets[index].id,
+      options: buildYesterdayChoices(memories, targets[index].id, knob, index),
+    })}
+  />;
+}
+export default function YesterdayQuiz({ date, onFinish }: GameProps) { return <GameShell gameId="yesterday-quiz" title="Remember yesterday" instructions="Think about a memory you saved. It is okay if you do not remember." level={1} skill="personal memory" date={date} onFinish={onFinish}>{finish => <Yesterday finish={finish} />}</GameShell>; }
+
+
+==============================================================================
+FILE: frontend/lib/interaction/yesterday-quiz.ts
+NOTES: KEEP (fair distractor builder + 'I don't remember' option).
+==============================================================================
+import { normalizeAnswer } from "./matching.ts";
+export type YesterdayMemory = { id: string; label: string; day: string };
+
+export function validMemoryDay(day: unknown): day is string {
+  if (typeof day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const [year, month, date] = day.split("-").map(Number);
+  const local = new Date(year, month - 1, date, 12);
+  return local.getFullYear() === year && local.getMonth() === month - 1 && local.getDate() === date;
+}
+
+const noRecallOption = {
+  id: "dont-remember",
+  label: "I don't remember",
+  synonyms: ["not sure", "I cannot remember"],
+};
+
+export function buildYesterdayChoices(
+  memories: YesterdayMemory[],
+  answerId: string,
+  knob: number,
+  roundIndex: number,
+) {
+  const answer = memories.find(memory => memory.id === answerId);
+  if (!answer || answerId === noRecallOption.id || !validMemoryDay(answer.day) || !normalizeAnswer(answer.label)) {
+    throw new Error("Yesterday Quiz answer must match a saved memory");
+  }
+
+  const level = Math.max(1, Math.min(4, Math.trunc(Number.isFinite(knob) ? knob : 1)));
+  const seen = new Set([answerId, noRecallOption.id]);
+  // Every memory from the target day answers the question truthfully. Also
+  // exclude earlier copies of those summaries, so repeated routines are fair.
+  const seenLabels = new Set(memories.filter(memory => memory.day === answer.day).map(memory => normalizeAnswer(memory.label)));
+  const distractors: YesterdayMemory[] = [];
+  for (const memory of memories) {
+    if (distractors.length >= level - 1) break;
+    const label = normalizeAnswer(memory.label);
+    if (seen.has(memory.id) || !label || seenLabels.has(label) || !validMemoryDay(memory.day) || memory.day >= answer.day) continue;
+    seen.add(memory.id);
+    seenLabels.add(label);
+    distractors.push(memory);
+  }
+
+  const choices = [answer, ...distractors, noRecallOption];
+  const offset = ((roundIndex + 1) % choices.length + choices.length) % choices.length;
+  return [...choices.slice(offset), ...choices.slice(0, offset)];
+}
+
+
+==============================================================================
+FILE: frontend/components/games/odd-one-out/index.tsx
+NOTES: KEEP (makes Odd One Out playable). Expand questions.json to 8+ distinct rounds (only 3 now, so 8 rounds repeat).
+==============================================================================
+"use client";
+
+import React, { useState } from "react";
+import GameShell from "../_shared/GameShell";
+import { GameProps } from "../_shared/types";
+import { BigTile } from "../_shared/BigTile";
+import { Button } from "@/components/ui/button";
+import { localDateKey } from "../_shared/date";
+import VoiceQuestion, { type AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { useAnswerLog } from "@/components/interaction/useAnswerLog";
+import { readSkill } from "@/lib/interaction/events";
+import questions from "./questions.json";
+
+function Session({ finish }: { finish: (score: number) => void }) {
+  const [round, setRound] = useState(0);
+  const [correct, setCorrect] = useState(0);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [knob, setKnob] = useState(() => readSkill("Attention").knob);
+  const [notice, setNotice] = useState("");
+  const [seed] = useState(() => Math.floor(Math.random() * 100));
+  const question = questions.rounds[round % questions.rounds.length];
+  const choices = [...question.similar.slice(0, knob + 1), question.odd];
+  const offset = (seed + round) % choices.length;
+  const options = [...choices.slice(offset), ...choices.slice(0, offset)];
+  const logAnswer = useAnswerLog("odd-one-out", "Attention", String(round), knob);
+  const choose = (id: string, input?: AnswerInput) => {
+    if (picked !== null) return;
+    const ok = id === question.odd.label;
+    setPicked(id); if (ok) setCorrect(value => value + 1);
+    if (!logAnswer(ok, input)) setNotice("Your answer could not be saved on this device.");
+  };
+  return <section className="space-y-5">
+    <h2 className="text-3xl font-bold">{questions.prompt}</h2>
+    <VoiceQuestion key={round} prompt={questions.prompt} options={options.map(o => ({ id: o.label, label: o.label, synonyms: o.synonyms }))} onAnswer={choose} disabled={picked !== null} />
+    <div className="grid grid-cols-2 gap-4">{options.map(option => <BigTile key={option.label} emoji={option.emoji} label={option.label} disabled={picked !== null} state={picked === option.label ? "selected" : "default"} onClick={() => choose(option.label)} className="min-h-32 [&>span:last-child]:text-2xl" />)}</div>
+    {picked !== null && <div><p className="text-xl">{picked === question.odd.label ? "Well done!" : `The different one is ${question.odd.label}. Let's try another.`}</p><Button className="mt-4 min-h-14 px-8 text-xl" onClick={() => { if (round === 7) finish(Math.round(correct / 8 * 100)); else { setRound(r => r + 1); setPicked(null); setKnob(readSkill("Attention").knob); } }}>{round === 7 ? "Finish" : "Next"}</Button></div>}
+    <p role="status">{notice}</p>
+  </section>;
+}
+
+export default function OddOneOut({
+  level = 1,
+  date = localDateKey(),
+  onFinish,
+}: GameProps) {
+  return (
+    <GameShell
+      gameId="odd-one-out"
+      title="Odd One Out"
+      instructions="Identify the item that does not belong with the rest."
+      level={level}
+      skill="attention"
+      date={date}
+      onFinish={onFinish}
+    >
+      {(handleFinish) => <Session finish={handleFinish} />}
+    </GameShell>
+  );
+}
+
+
+==============================================================================
+FILE: frontend/components/games/odd-one-out/questions.json
+NOTES: KEEP; expand content (specific items only, exactly one odd item).
+==============================================================================
+{
+  "prompt": "Which picture does not belong with the others?",
+  "rounds": [
+    { "similar": [{"label":"Apple","emoji":"🍎","synonyms":["सेब"]},{"label":"Banana","emoji":"🍌","synonyms":["केला"]},{"label":"Orange","emoji":"🍊","synonyms":["संतरा"]},{"label":"Mango","emoji":"🥭","synonyms":["आम"]},{"label":"Grapes","emoji":"🍇","synonyms":["अंगूर"]}], "odd":{"label":"Bus","emoji":"🚌","synonyms":["बस"]} },
+    { "similar": [{"label":"Dog","emoji":"🐕","synonyms":["कुत्ता"]},{"label":"Cat","emoji":"🐈","synonyms":["बिल्ली"]},{"label":"Elephant","emoji":"🐘","synonyms":["हाथी"]},{"label":"Cow","emoji":"🐄","synonyms":["गाय"]},{"label":"Goat","emoji":"🐐","synonyms":["बकरी"]}], "odd":{"label":"Tea","emoji":"🍵","synonyms":["chai","चाय","চাহ"]} },
+    { "similar": [{"label":"Shirt","emoji":"👕","synonyms":[]},{"label":"Shoe","emoji":"👞","synonyms":["जूता"]},{"label":"Hat","emoji":"👒","synonyms":["टोपी"]},{"label":"Scarf","emoji":"🧣","synonyms":["muffler"]},{"label":"Socks","emoji":"🧦","synonyms":[]}], "odd":{"label":"Rice","emoji":"🍚","synonyms":["भात","চাউল","chawal"]} }
+  ]
+}
+
+
+==============================================================================
+FILE: frontend/lib/interaction/interaction.check.mjs
+NOTES: KEEP (unit checks). Remove any checks for SOS/support-store/sync.
+==============================================================================
+import assert from 'node:assert/strict';
+import { localizeAnswerOptions, matchAnswer, normalizeAnswer, optionsWithHelp, SOS_OPTION_ID } from './matching.ts';
+import { readPreferences, writePreferences, mergePreferences, defaultPreferences } from './preferences.ts';
+import { recognitionFailure, BrowserSpeechProvider } from './speech.ts';
+
+const options = [{ id: 'tea', label: 'Tea', synonyms: ['chai', 'चाय', 'চাহ'] }, { id: 'rice', label: 'Rice' }];
+assert.equal(matchAnswer(' TEA! ', options, .95).kind, 'accept');
+assert.equal(matchAnswer('chai', options, .95).option.id, 'tea');
+assert.equal(matchAnswer('चाय', options, .95).option.id, 'tea');
+assert.equal(normalizeAnswer('চাহ'), 'চাহ');
+assert.equal(matchAnswer('rice', options, .95).option.id, 'rice'); // wrong choices still map to themselves
+assert.equal(matchAnswer('rce', options, .95).kind, 'confirm');
+assert.equal(matchAnswer('tea', options, .2).kind, 'confirm');
+assert.equal(matchAnswer('', options, 1).kind, 'retry');
+assert.equal(matchAnswer('something unrelated', options, 1).kind, 'retry');
+assert.equal(matchAnswer('Ann', [{ id: '1', label: 'Ann' }, { id: '2', label: 'Ann' }], 1).kind, 'confirm');
+const originalChoices = [{ id: 'tea', label: 'Tea' }];
+const firstChoices = optionsWithHelp(originalChoices, ['help', 'help']);
+const secondChoices = optionsWithHelp(originalChoices, ['help']);
+assert.equal(originalChoices.length, 1, 'adding Help never mutates the caller options');
+assert.equal(firstChoices.filter(option => option.id === SOS_OPTION_ID).length, 1, 'each attempt has exactly one Help choice');
+assert.equal(firstChoices[1].synonyms?.length, 1, 'Help synonyms are deduplicated');
+assert.equal(secondChoices.filter(option => option.id === SOS_OPTION_ID).length, 1, 'retries do not accumulate Help choices');
+assert.equal(matchAnswer('help', firstChoices, .95).option.id, SOS_OPTION_ID);
+const typedReservedId = [{ id: '__sos', label: '__sos' }];
+assert.notEqual(matchAnswer('__sos', optionsWithHelp(typedReservedId, ['help']), .95).option.id, SOS_OPTION_ID, 'free text resembling an old sentinel cannot trigger SOS');
+const sourceAnswers = [{ id: 'fixed-id', label: 'Tea', synonyms: ['chai'] }];
+const localizedAnswers = localizeAnswerOptions(sourceAnswers, label => label === 'Tea' ? 'चाय' : label, { Tea: ['chai', 'tea'], 'चाय': ['चाय'] });
+assert.equal(localizedAnswers[0].id, 'fixed-id', 'localization preserves machine-readable answer IDs');
+assert.equal(localizedAnswers[0].label, 'चाय', 'answer labels are localized');
+assert.deepEqual(localizedAnswers[0].synonyms, ['chai', 'tea', 'चाय'], 'original and locale synonyms are preserved without duplicates');
+assert.equal(sourceAnswers[0].label, 'Tea', 'localizing choices does not mutate the source options');
+assert.equal(matchAnswer('चाय', localizedAnswers, .95).option.id, 'fixed-id', 'speech can match the translated answer');
+const values = new Map();
+const storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+assert.equal(readPreferences(storage, 'a').mode, 'read');
+const patient = { ...defaultPreferences, mode: 'mixed', updatedAt: 10, override: true };
+writePreferences(storage, 'a', patient);
+assert.deepEqual(readPreferences(storage, 'a'), patient);
+assert.equal(readPreferences(storage, 'b').mode, 'read');
+assert.deepEqual(mergePreferences(patient, { ...defaultPreferences, mode: 'voice', updatedAt: 20 }), patient);
+assert.equal(mergePreferences(defaultPreferences, { ...patient, override: false }).mode, 'mixed');
+assert.equal(readPreferences({ getItem() { throw Error('denied'); } }, 'a').mode, 'read');
+for (const [code, expected] of [['not-allowed', 'permission'], ['audio-capture', 'microphone'], ['network', 'offline'], ['no-speech', 'silence'], ['language-not-supported', 'language']]) assert.equal(recognitionFailure(code), expected);
+Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+await assert.rejects(new BrowserSpeechProvider().listen('en'), { reason: 'offline' });
+Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
+globalThis.window = {};
+await assert.rejects(new BrowserSpeechProvider().listen('en'), { reason: 'unsupported' });
+await assert.rejects(new BrowserSpeechProvider().speak('Hello', 'en'), { reason: 'unsupported' });
+console.log('interaction checks passed: matching, patient isolation, persistence, override and speech fallbacks');
+
+
+==============================================================================
+FILE: frontend/lib/interaction/speech.check.mjs
+NOTES: KEEP (unit checks). Remove any checks for SOS/support-store/sync.
+==============================================================================
+import assert from 'node:assert/strict';
+import { BrowserSpeechProvider } from './speech.ts';
+
+let utterance, recognition, cancellations = 0;
+const voices = [{ lang: 'en-IN' }];
+const listeners = new Set();
+globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
+globalThis.window = {
+  speechSynthesis: {
+    getVoices: () => voices,
+    speak: value => { utterance = value; },
+    cancel: () => { cancellations++; }, // Deliberately emits no browser callback.
+    addEventListener: (_, fn) => listeners.add(fn),
+    removeEventListener: (_, fn) => listeners.delete(fn),
+  },
+  SpeechRecognition: class {
+    constructor() { recognition = this; }
+    start() {}
+    abort() {} // Cancellation must settle even when the engine stays silent.
+  },
+};
+const first = new BrowserSpeechProvider(), second = new BrowserSpeechProvider();
+let speaking = first.speak('Question one', 'en-IN');
+const cancelledSpeech = assert.rejects(speaking, { reason: 'cancelled' });
+first.cancel();
+await cancelledSpeech;
+assert.equal(cancellations, 1);
+assert.equal(utterance.onend, null);
+
+speaking = first.speak('Question two', 'en-IN');
+second.cancel();
+assert.equal(cancellations, 1, 'Unrelated cleanup must not stop the active question');
+utterance.onend();
+assert.ok(Number.isFinite(await speaking));
+
+speaking = first.speak('Replaced question', 'en-IN');
+const replaced = assert.rejects(speaking, { reason: 'cancelled' });
+const replacement = second.speak('Current question', 'en-IN');
+await replaced;
+utterance.onend();
+await replacement;
+
+let listening = first.listen('en-IN');
+const cancelledRecognition = assert.rejects(listening, { reason: 'cancelled' });
+first.cancel();
+await cancelledRecognition;
+assert.equal(recognition.onresult, null, 'Late recognition results must be disconnected');
+
+const control = new AbortController();
+listening = first.listen('en-IN', control.signal);
+const aborted = assert.rejects(listening, { reason: 'cancelled' });
+control.abort();
+await aborted;
+
+listening = first.listen('en-IN');
+recognition.onspeechstart();
+recognition.onresult({ results: [[{ transcript: 'Tea', confidence: .95 }]] });
+const result = await listening;
+assert.equal(result.text, 'Tea');
+assert.ok(Number.isFinite(result.speechStartedAt));
+
+voices.length = 0;
+speaking = first.speak('Not ready yet', 'en-IN');
+const discoveryCancelled = assert.rejects(speaking, { reason: 'cancelled' });
+first.cancel();
+await discoveryCancelled;
+assert.equal(listeners.size, 0);
+voices.push({ lang: 'en-IN' });
+await assert.rejects(first.speak('Unsupported language', 'as-IN'), { reason: 'language' });
+const setTimer = globalThis.setTimeout;
+try {
+  // Accelerate only the TTS watchdog; the fake synthesizer never emits onend.
+  globalThis.setTimeout = (fn, delay, ...args) => setTimer(fn, delay >= 30000 ? 0 : delay, ...args);
+  await assert.rejects(first.speak('Silent engine', 'en-IN'), { reason: 'unsupported' });
+} finally { globalThis.setTimeout = setTimer; }
+console.log('speech checks passed: ownership, cancellation, stale callbacks, voice discovery and timing');
+
+
+==============================================================================
+FILE: frontend/lib/interaction/adaptive.check.mjs
+NOTES: KEEP (unit checks). Remove any checks for SOS/support-store/sync.
+==============================================================================
+import assert from 'node:assert/strict';
+import { adapt, initialSkill, median, slope, declineAlert } from './adaptive.ts';
+const event = { correct: true, errorType: 'none', method: 'tap', responseMs: 1000, difficulty: 2 };
+assert.equal(median([3, 1, 2]), 2);
+assert.equal(median([100, 2, 1, 3]), 2.5);
+assert.equal(median([]), null);
+let state = initialSkill();
+for (let i = 0; i < 5; i++) state = adapt(state, { ...event, correct: false });
+assert.equal(state.knob, 1);
+assert.equal(state.decision, 'down');
+assert.equal(state.recent.length, 0);
+for (let i = 0; i < 5; i++) state = adapt(state, event);
+assert.equal(state.knob, 2);
+assert.equal(state.baselines.tap.length, 5);
+const before = state;
+assert.equal(adapt(state, { ...event, errorType: 'recognition', correct: null }), before);
+state = adapt(state, { ...event, method: 'voice', responseMs: 9000 });
+assert.deepEqual(state.baselines.voice, [9000]);
+assert.deepEqual(state.baselines.tap, [1000, 1000, 1000, 1000, 1000]);
+for (let i = 0; i < 20; i++) state = adapt(state, { ...event, responseMs: 20000 });
+assert.ok(state.knob >= 2); // slowness alone never reduces difficulty
+assert.ok(state.baselines.tap.length <= 21);
+assert.equal(slope([1, 2, 3]), 1);
+assert.equal(declineAlert([90, 85, 80, 75, 70, 65, 60, 55]), true);
+assert.equal(declineAlert([90, 90, 90, 90, 90, 90, 90, 0]), false);
+assert.equal(declineAlert([90, 80, 70]), false);
+assert.equal(declineAlert([70, 75, 80, 85, 80, 85, 90, 95]), false);
+console.log('adaptive checks passed: separate baselines, recognition exclusion, one-knob changes and sustained slopes');
+
+
+==============================================================================
+FILE: frontend/lib/interaction/yesterday-quiz.check.mjs
+NOTES: KEEP (unit checks). Remove any checks for SOS/support-store/sync.
+==============================================================================
+import assert from "node:assert/strict";
+import { buildYesterdayChoices, validMemoryDay } from "./yesterday-quiz.ts";
+
+const memories = [
+  { id: "memory-a", label: "We had tea together" },
+  { id: "memory-b", label: "I visited the garden" },
+  { id: "memory-c", label: "My family called" },
+  { id: "memory-d", label: "We listened to music" },
+  { id: "memory-e", label: "I watered the plants" },
+].map((memory, index) => ({ ...memory, day: index === 0 ? '2026-10-13' : '2026-10-12' }));
+
+const easy = buildYesterdayChoices(memories, "memory-a", 1, 0);
+assert.equal(easy.length, 2);
+assert.deepEqual(new Set(easy.map(option => option.id)), new Set(["memory-a", "dont-remember"]));
+
+const harder = buildYesterdayChoices(memories, "memory-a", 4, 0);
+assert.equal(harder.length, 5);
+assert.ok(harder.some(option => option.id === "memory-a"));
+assert.ok(harder.some(option => option.id === "dont-remember"));
+assert.equal(new Set(harder.map(option => option.id)).size, harder.length);
+assert.notEqual(
+  harder.findIndex(option => option.id === "memory-a"),
+  buildYesterdayChoices(memories, "memory-a", 4, 1).findIndex(option => option.id === "memory-a"),
+);
+
+const limitedMemories = buildYesterdayChoices(memories.slice(0, 1), "memory-a", 4, 0);
+assert.equal(limitedMemories.length, 2);
+assert.throws(() => buildYesterdayChoices(memories, "missing", 2, 0), /saved memory/);
+
+
+const datedMemories = [
+  { id: 'yesterday-tea', label: 'Tea with my family', day: '2026-10-13' },
+  { id: 'yesterday-garden', label: 'Visited the garden', day: '2026-10-13' },
+  { id: 'older-tea', label: 'TEA with my family!', day: '2026-10-12' },
+  { id: 'older-garden', label: 'Visited the garden', day: '2026-10-12' },
+  { id: 'older-music', label: 'Listened to music', day: '2026-10-12' },
+];
+const safeChoices = buildYesterdayChoices(datedMemories, 'yesterday-tea', 4, 0);
+assert.deepEqual(new Set(safeChoices.map(choice => choice.id)), new Set(['yesterday-tea', 'older-music', 'dont-remember']),
+  'Other yesterday entries and repeated summaries must never be scored as distractors');
+for (const day of [undefined, '', '2026-02-30', '2026-13-01', 'not a date']) assert.equal(validMemoryDay(day), false);
+assert.equal(validMemoryDay('2024-02-29'), true);
+const uncertainDates = [...datedMemories, { id: 'missing-date', label: 'Went shopping' }, { id: 'future', label: 'Visited a friend', day: '2026-10-14' }];
+assert.deepEqual(buildYesterdayChoices(uncertainDates, 'yesterday-tea', 4, 0), safeChoices);
+assert.throws(() => buildYesterdayChoices(uncertainDates, 'missing-date', 2, 0), /saved memory/);
+console.log("Yesterday Quiz checks passed: adaptive choices, date safety, repeated summaries and varied positions");
+
+
+==============================================================================
+FILE: frontend/lib/interaction/locales.check.mjs
+NOTES: KEEP (unit checks). Remove any checks for SOS/support-store/sync.
+==============================================================================
+﻿import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { translate } from './locale.ts';
+const en = JSON.parse(await readFile(new URL('./locales/en.json', import.meta.url), 'utf8'));
+const hi = JSON.parse(await readFile(new URL('./locales/hi.json', import.meta.url), 'utf8'));
+const as = JSON.parse(await readFile(new URL('./locales/as.json', import.meta.url), 'utf8'));
+const required = [
+  'Language','Text size','Theme','Large','Larger','Light','Dark','System','Stop','Start Game',
+  'Ready to begin?','Click Start to launch {title}.','No timers apply in Easy mode.','Preview date',
+  'Would you like to play again?','Play Again','Well done!','You scored {score} / 100',
+  'Caregiver mode: this score was not saved.','Preview: this score was not saved.',
+  "The answer is {answer}. Let's keep going.",'Finish','Next','Picture to name',
+  'What would you like to play?','Choose a game','Choose another game','Matching pictures',
+  'Find matching familiar pictures.','Listen to the beats','Count beats or use the visual alternative.',
+  'Finish the pattern','Choose the next picture.','Name the picture','Name a familiar everyday object.',
+  'Remember yesterday','Recall a real saved journal memory.','Story Builder',
+  'Read a short everyday story, then recall missing details.','Relive Memories',
+  'Recall details of the day’s videos in your own words.','Plan the Day',
+  'Organize daily tasks in correct logical order.','Odd One Out',
+  "Find the item that doesn't belong in the group.",'Mole Path',
+  'Watch the circles fill, then tap the path in the same order.','Sorting Station',
+  'Adapt to changing rules to sort items correctly.','Whack-a-Mole',
+  'Tap target moles while suppressing impulses for distractors.','Attention Hunt',
+  'Find every copy of the target while ignoring distractors.','Map Navigator',
+  'Navigate routes and spatial directions accurately.','Face Recognition',
+  'Recognise familiar people from the day’s video.','Name Recall',
+  'Match a familiar face to the right name.','Easy','Medium','Hard','Where would you like to go?',
+  'Home','Support','Videos','Progress & Reports','Support Accounts','Add Videos','Settings',
+  'Back to Today','Search through your memories...','Search','No matching memories found',
+  'Showing memories for: {query}','About this memory:','Getting your day ready…','Back','My Day',
+  'Daily Recall','Part 2 of 2','Part 3','Loading questions...','No videos recorded on this date',
+  'Question {number}','Question {number}.','Answer the question here.','Submit',
+  'Accuracy of your response:','Watch Memory','Next Question','Pick a date','Select','Yesterday',
+  'Back to my day','Part {part} of 2 · {activity}','Face Recognition',
+  'Could not save this part. Please try again.','Part 1 of 2','Part 1',
+  'On this day, who did you talk to? (Select all that apply)','Loading faces...',
+  'No recognized people in videos from this date','Finish Game','Continue to Part 2',
+  'Who did you talk to? Say a name to select or remove it, then say Check.','Check',
+  'Check My Response','See Correct Answer',
+  'Correct! You remembered everyone you talked to on this day.',
+  'Your selection was incorrect. Try again, or choose to see the correct answer.',
+  'Refresh','Select a day:','Choose an Activity:','Facial Recognition','Start',
+  'Recording is unavailable. You can type your memory instead.',
+  'Microphone permission was denied. You can type your memory instead.',
+  'Recording saved on this device. Review the transcript before saving your entry.',
+  'Recording could not be saved. Device storage may be full.',
+  'Live transcription is unavailable or stopped. You can type or edit the transcript; the recording continues.',
+  'Microphone permission was denied. You can leave a written message instead.',
+  'Which picture does not belong with the others?','What is this?','What comes next?',
+  'How many beats?','Play the sound','Show the beats','Choose a card number',
+  'Repeat the path. Say the row and column.',
+  'Remember the places. Say ready when you want to begin.',
+  'Go to {place}. Choose a direction.','Find {target}. Say a row and column.',
+  'Row {row} column {column}','Sort by {rule}. {item}','Choose the missing word.',
+  'Say ready when you want to remember.','Ready for the next activity?','Picture {number}',
+  'Ready','Up','Down','Left','Right','Go','Remove {item}',
+  'Good morning!','Good afternoon!','Good evening!','{done} of {total} done today',
+  'Sorry, we could not load your day.','Try again','My Progress','A look at your activities this week',
+  'Loading your progress…','You played {count} {days} this week!','day','days','Played','Not played',
+  'Mon','Tue','Wed','Thu','Fri','Sat','Sun','Stars Earned This Week','star','stars',
+  'Earned from your completed daily activities.','Your Best This Week','Play an activity today to see your best!',
+  'Your top performance across this week’s games.','My People','People','No people added yet.','No relation set','No phone',
+  'Name *','Relation','Phone','Photo *','Photo (leave empty to keep the current one)','Call','Edit','Delete',
+  'Use a clear photo of the face. It is also used to recognise this person in videos.',
+  'Add a person','Add person','Save changes','Remove {name}? Their photo will be deleted too.','Edit {name}',
+  'Could not remove this person. Please try again.','Could not reach the server. Please try again.',
+  'Could not save. Please try again.','Choose…','Saving…','Cancel','Daily Routine','Add a step','Save routine',
+  'Saved. Plan the Day will use these steps.','Could not load the routine. Is the backend running?',
+  'Could not save: {error}','Step {number}','Move step {number} up','Move step {number} down','Remove step {number}',
+  'Write 3 to 5 steps of the patient’s own day, in order (for example ‘Wake up’, ‘Have tea’, ‘Take tablets’). Plan the Day mixes them up and asks the patient to put them back in order. Each step can be up to 40 letters.',
+  'Patient settings','Patient name','Default language','Save settings','Could not load settings.','Settings saved.',
+  'Change caregiver PIN','Enter the current PIN and choose a new four-digit PIN. PINs are never displayed.',
+  'Current PIN','New PIN','Change PIN','PIN changed.','Could not change PIN.','Could not save settings.',
+  'Loading…','Your top performance across this week\'s games.','Go to Today’s Activities →',
+  'Welcome! A fun week of brain games and memory activities is waiting for you.',
+  'Well done! Every activity you do makes a wonderful difference.',
+  'Great effort! Practicing through the week keeps your memory sharp and energized.',
+  'Incredible dedication! You are keeping your mind active, bright, and strong.',
+  'Sorry, we could not load the people right now.','Welcome to CogniConnect','Today’s Activities',
+  'Look back at your days','Played {count} {days} this week','Your family and friends',
+  'Today’s activities','All done for today! ⭐','Warm up','Keep going','Challenge','START','Treasure chest',
+  'Caregiver portal','Progress & Reports','Summary','Trends','Activity Log','Doctor’s Report',
+  'A short preview of recorded activity for sharing with a doctor.','Print / Save as PDF',
+  'Offline. Your saved activities are available on this device.',
+  'Storage is unavailable. Please ask your caregiver for help.',
+  'Could not save. Device storage may be full. Please keep this screen open and ask for help.',
+  'Saved on this device. It will sync when connected.',
+  'Changes are saved on this device, but could not sync. Check your connection or sign in again.',
+  'Accounts created. Sign in with either account.','Caregiver: set up two accounts',
+  'These accounts protect this support space. A caregiver can help you sign in.',
+  'Caregiver username','Username','Password','Patient username','Patient password',
+  'Use separate passwords, each at least 12 characters.','Create accounts','Back to sign in',
+  'Set up with a caregiver','1 change waiting to sync','{count} changes waiting to sync',
+  'All changes synced','Sync complete','Sync now','Sign out',
+  'Your caregiver can add reminders here.',
+  'Location is optional. It only runs after your caregiver turns it on and you allow it. It works while this screen is open. It stays on this device unless sharing is enabled. Pause it at any time.',
+  'Location permission was denied. Location is paused. You can keep using the app.',
+  'Location could not be read. You can keep using the app.',
+  'Location is unavailable on this device.','Location saved on this device only.',
+  'Location is active while this screen is open.',
+  'A caregiver must confirm consent before location is used.','Location collection is paused.',
+  'Visited place {number}: {count} recorded visits','Favourite place name',
+  'This is home (requires location sharing)','Save favourite',
+  'Words from my life','Add familiar names, places or foods. One word and clue per line.',
+  'Example: MEERA: Your daughter\nTEA: Your favourite warm drink\nRICE: A food you enjoy',
+  'Use English letters or Romanized names for this grid.','Make my crossword',
+  'The saved puzzle could not be opened. You can make a new one.',
+  'Your puzzle could not be saved. Keep this screen open.',
+  "Let's try again. You can use the letters as a clue.",
+  'A familiar word beginning with {letter}','One of your favourite places','Starts at row {row}, column {column}',
+  'Add words with 2–14 English letters. Your current setting may prefer shorter words.',
+  '{count} letters','Crossword answer','Across','Down'
+];
+for (const phrase of required) {
+  assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing UI phrase: ${phrase}`);
+  assert.equal(typeof as.ui[phrase], 'string', `Assamese missing UI phrase: ${phrase}`);
+}
+assert.equal(translate(en, 'Not translated yet'), 'Not translated yet', 'English fallback');
+assert.equal(translate(hi, 'Start Game'), hi.ui['Start Game'], 'Hindi locale selection');
+assert.equal(translate(as, 'Start Game'), as.ui['Start Game'], 'Assamese locale selection');
+assert.equal(translate(hi, 'Showing memories for: Start Game'), `${hi.ui['Showing memories for: {query}'].replace('{query}', 'Start Game')}`, 'captured user text is not translated as a dictionary key');
+assert.equal(translate(hi, 'Edit Start Game'), hi.ui['Edit {name}'].replace('{name}', 'Start Game'), 'captured names are preserved');
+assert.equal(translate(hi, 'Edit Captured', { name: 'Chosen {value}.*' }), hi.ui['Edit {name}'].replace('{name}', 'Chosen {value}.*'), 'explicit values win and braces or regex characters are literal');
+assert.equal(translate(hi, '{done} of {total} done today', { done: 'A.$&', total: '{done}?' }), 'आज {done}? में से A.$& पूरे हुए', 'multiple placeholders and special values are interpolated literally');
+assert.equal(translate(hi, 'Showing memories for: {query}', { query: '' }), hi.ui['Showing memories for: {query}'].replace('{query}', ''), 'an explicit empty value remains empty');
+assert.equal(translate(hi, 'You scored {score} / 100'), hi.ui['You scored {score} / 100'], 'missing interpolation values remain visible');
+assert.equal(translate(hi, 'Visited place {number}: {count} recorded visits', { number: 2, count: 3 }).includes('2'), true, 'location visit placeholders are interpolated');
+assert.equal(translate(as, 'Starts at row {row}, column {column}', { row: 4, column: 7 }).includes('7'), true, 'crossword coordinates are interpolated');
+const ambiguous = { ...hi, ui: { 'Status {value}': 'general {value}', 'Status {value} is ready': 'specific {value}' } };
+assert.equal(translate(ambiguous, 'Status item is ready'), 'specific item', 'the most specific matching template wins');
+assert.match(translate(hi, 'Find Bus. Say a row and column.'), /Bus/);
+assert.equal(translate(hi, 'Row 2 column 3'), 'पंक्ति 2, स्तंभ 3');
+assert.equal(translate(as, 'Row 2 column 3'), 'শাৰী 2, স্তম্ভ 3');
+for (const locale of [hi, as]) {
+  assert.equal(translate(locale, 'You scored {score} / 100', { score: 72 }).includes('72'), true);
+  assert.equal(translate(locale, 'Click Start to launch {title}.', { title: 'खेल' }).includes('{title}'), false);
+  for (const [source, output] of Object.entries(locale.ui)) {
+    const tokens = value => [...value.matchAll(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g)].map(match => match[1]).sort();
+    assert.deepEqual(tokens(output), tokens(source), `${locale.code} placeholder mismatch for ${source}`);
+  }
+}
+assert.equal(Object.hasOwn(en, 'ui'), false, 'English uses source phrase fallback by design');
+console.log(`locale coverage checks passed: ${required.length} required phrases in Hindi and Assamese, English fallback, locale selection and interpolation`);
+
+
+==============================================================================
+FILE: frontend/lib/interaction/locales.check.py
+NOTES: KEEP (unit checks). Remove any checks for SOS/support-store/sync.
+==============================================================================
+﻿import json
+from pathlib import Path
+class DuplicateKeyError(ValueError): pass
+def unique(pairs):
+    result={}
+    for key,value in pairs:
+        if key in result: raise DuplicateKeyError(f'duplicate JSON key: {key}')
+        result[key]=value
+    return result
+root=Path('lib/interaction/locales')
+required = [
+    'Good morning!', 'Good afternoon!', 'Good evening!', '{done} of {total} done today',
+    'My Progress', 'A look at your activities this week', 'You played {count} {days} this week!',
+    'Stars Earned This Week', 'Your Best This Week', 'My People', 'No people added yet.',
+    'Daily Routine', 'Save routine', 'Step {number}', 'Move step {number} up',
+    'Move step {number} down', 'Remove step {number}', 'Patient settings', 'Default language',
+    'Change caregiver PIN', 'Enter the current PIN and choose a new four-digit PIN. PINs are never displayed.',
+    'Today’s Activities', 'Your family and friends', 'Today’s activities', 'Treasure chest',
+    'Caregiver portal', 'Progress & Reports', 'Summary', 'Trends', 'Activity Log',
+    'Doctor’s Report', 'A short preview of recorded activity for sharing with a doctor.', 'Print / Save as PDF',
+    'Write 3 to 5 steps of the patient’s own day, in order (for example ‘Wake up’, ‘Have tea’, ‘Take tablets’). Plan the Day mixes them up and asks the patient to put them back in order. Each step can be up to 40 letters.',
+    'Offline. Your saved activities are available on this device.',
+    'Storage is unavailable. Please ask your caregiver for help.',
+    'Could not save. Device storage may be full. Please keep this screen open and ask for help.',
+    'Saved on this device. It will sync when connected.',
+    'Changes are saved on this device, but could not sync. Check your connection or sign in again.',
+    'Accounts created. Sign in with either account.', 'Caregiver: set up two accounts',
+    'These accounts protect this support space. A caregiver can help you sign in.',
+    'Caregiver username', 'Username', 'Password', 'Patient username', 'Patient password',
+    'Use separate passwords, each at least 12 characters.', 'Create accounts', 'Back to sign in',
+    'Set up with a caregiver', '1 change waiting to sync', '{count} changes waiting to sync',
+    'All changes synced', 'Sync complete', 'Sync now', 'Sign out',
+    'Your caregiver can add reminders here.',
+    'Location is optional. It only runs after your caregiver turns it on and you allow it. It works while this screen is open. It stays on this device unless sharing is enabled. Pause it at any time.',
+    'Location permission was denied. Location is paused. You can keep using the app.',
+    'Location could not be read. You can keep using the app.',
+    'Location is unavailable on this device.', 'Location saved on this device only.',
+    'Location is active while this screen is open.',
+    'A caregiver must confirm consent before location is used.', 'Location collection is paused.',
+    'Visited place {number}: {count} recorded visits', 'Favourite place name',
+    'This is home (requires location sharing)', 'Save favourite',
+    'Words from my life', 'Add familiar names, places or foods. One word and clue per line.',
+    'Example: MEERA: Your daughter\nTEA: Your favourite warm drink\nRICE: A food you enjoy',
+    'Use English letters or Romanized names for this grid.', 'Make my crossword',
+    'The saved puzzle could not be opened. You can make a new one.',
+    'Your puzzle could not be saved. Keep this screen open.',
+    "Let's try again. You can use the letters as a clue.",
+    'A familiar word beginning with {letter}', 'One of your favourite places', 'Starts at row {row}, column {column}',
+    'Add words with 2–14 English letters. Your current setting may prefer shorter words.',
+    '{count} letters', 'Crossword answer', 'Across', 'Down',
+]
+for code,speech in [('en','en-IN'),('hi','hi-IN'),('as','as-IN')]:
+    path=root/f'{code}.json'
+    with path.open(encoding='utf-8') as f: data=json.load(f, object_pairs_hook=unique)
+    assert data['code']==code, f'{path}: locale code mismatch'
+    assert data['speechLanguage']==speech, f'{path}: speech language mismatch'
+    assert isinstance(data.get('ui', {}),dict)
+    assert all(isinstance(k,str) and isinstance(v,str) and v for k,v in data.get('ui',{}).items())
+    if code in ('hi','as'):
+        for phrase in required:
+            assert phrase in data['ui'], f'{code}: required phrase missing: {phrase}'
+        for phrase, value in data['ui'].items():
+            tokens = lambda text: sorted(__import__('re').findall(r'\{([a-zA-Z][a-zA-Z0-9_]*)\}', text))
+            assert tokens(phrase) == tokens(value), f'{code}: placeholder mismatch: {phrase}'
+print(f'locale JSON checks passed: UTF-8, syntax, unique keys, locale codes, {len(required)} required phrases and placeholder parity')
+
+
+==============================================================================
+FILE: frontend/lib/interaction/package.json
+NOTES: KEEP (unit checks). Remove any checks for SOS/support-store/sync.
+==============================================================================
+{"type":"module"}
+
+
+==============================================================================
+FILE: backend/app.py (accuracy route + gpt_accuracy)
+NOTES: KEEP: never fabricate a score; 400 when answers missing; 503 when evaluator unavailable or score invalid.
+==============================================================================
+@api.route('/accuracy')
+def accuracy():
+    given = request.args.get('given')
+    real = request.args.get('real')
+    if not given or not real:
+        return jsonify(error="Both answers are required"), 400
+    video_path = request.args.get('video')  # Get video path to find journal
+    journal = None
+    
+    # Try to get journal entry for additional context
+    if video_path:
+        try:
+            # Extract video name from path
+            video_name = video_path.split('/')[-2].replace('_chunks', '')
+            journal_file = 'video_journals.json'
+            if os.path.exists(journal_file):
+                with open(journal_file, 'r') as f:
+                    journals = json.load(f)
+                    # Try to find matching journal
+                    for vid_name, journal_data in journals.items():
+                        if video_name in vid_name or vid_name in video_name:
+                            journal = journal_data.get('entry')
+                            break
+        except:
+            pass  # If journal retrieval fails, continue without it
+    
+    score = gpt_accuracy(given, real, journal)
+    # Ensure score is an integer
+    try:
+        score_int = int(score)
+        if not 0 <= score_int <= 10:
+            raise ValueError("Score out of range")
+    except (ValueError, TypeError):
+        return jsonify(error="Answer evaluation is unavailable. Your answer has not been scored."), 503
+    
+    return jsonify(score_int)
+
+
+def gpt_accuracy(answer1, answer2, journal_context=None):
+    # An unavailable evaluator must never fabricate cognitive performance.
+    if not client.api_key or client.api_key == 'not_configured':
+        return None
+    try:
+        # Build the prompt with journal context if available
+        prompt = (
+            f"Determine the accuracy of the given answer compared to the real answer. "
+            "Accuracy should be on a scale of 1 to 10 with 10 being almost the same. "
+            "Allow for slight variation and different phrasing. "
+            "Award more points for capturing the correct main idea and key details. "
+        )
+        
+        if journal_context:
+            prompt += f"\n\nAdditional context from journal entry: {journal_context}\n"
+        
+        prompt += f"\nGiven answer: {answer1}\nTrue answer: {answer2}\n\nOnly return the number (1-10)."
+        
+        response = client.chat.completions.create(
+            model='gpt-4o-mini',
+            messages=[
+                {"role": "system", "content": "You are an accuracy evaluator for memory quiz answers. Consider the semantic meaning and key details rather than exact wording."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error with OpenAI API: {e}"
+
+
+==============================================================================
+FILE: backend/app.py (__main__)
+NOTES: KEEP: loopback by default, debug only when FLASK_DEBUG=1.
+==============================================================================
+if __name__ == '__main__':
+    api.run(host=os.getenv('COGNI_HOST', '127.0.0.1'), port=5000, debug=os.getenv('FLASK_DEBUG') == '1')
+
+
+==============================================================================
+FILE: backend/tests/test_accuracy_availability.py
+NOTES: KEEP.
+==============================================================================
+import unittest
+from unittest.mock import patch
+import app
+
+
+class AccuracyAvailabilityTests(unittest.TestCase):
+    def test_missing_key_never_fabricates_a_score(self):
+        with patch.object(app.client, 'api_key', 'not_configured'):
+            result = app.api.test_client().get('/accuracy?given=tea&real=tea')
+        self.assertEqual(result.status_code, 503)
+        self.assertIn('not been scored', result.get_json()['error'])
+
+    def test_evaluator_error_and_invalid_score_are_not_cognitive_errors(self):
+        for value in ('Error: offline', '100', None):
+            with patch.object(app, 'gpt_accuracy', return_value=value):
+                self.assertEqual(app.api.test_client().get('/accuracy?given=tea&real=tea').status_code, 503)
+
+    def test_valid_evaluator_score_is_preserved(self):
+        with patch.object(app, 'gpt_accuracy', return_value='8'):
+            result = app.api.test_client().get('/accuracy?given=tea&real=tea')
+        self.assertEqual(result.get_json(), 8)
+        self.assertEqual(app.api.test_client().get('/accuracy').status_code, 400)
+
+
+==============================================================================
+FILE: frontend/app/api/accuracy/route.tsx
+NOTES: KEEP (passes 503/400 through instead of crashing).
+==============================================================================
+import { API_URL } from "@/lib/api";
+export async function POST(request: Request) {
+  try {
+    const req = await request.json();
+
+    const value = req.given;
+    const answer = req.real;
+    const video = req.video || '';
+
+    const params = new URLSearchParams({
+      given: value,
+      real: answer + '.',
+      ...(video && { video })
+    });
+
+    const res = await fetch(
+      `${API_URL}/accuracy?${params.toString()}`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      },
+    );
+    const data = await res.json();
+    if (!res.ok) return Response.json({ error: data.error || "Evaluation unavailable" }, { status: res.status });
+
+    return Response.json({ data });
+  } catch (err) {
+    console.log(err);
+    return Response.json({ error: "Failed to check accuracy" }, { status: 500 });
+  }
+}
+
+
+==============================================================================
+FILE: frontend/components/quiz/contextQuestions.tsx (onSubmit)
+NOTES: KEEP this error handling: on 503 keep the typed answer, show the message, do not score. Apply the same to the context-recall game.
+==============================================================================
+  const onSubmit = async () => {
+    try {
+    const res = await fetch("/api/accuracy", {
+      method: "POST",
+      body: JSON.stringify({
+        given: value,
+        real: data.answer,
+        video: data.video,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+
+    const jsonData = await res.json();
+    if (!res.ok || !Number.isFinite(Number(jsonData.data))) throw new Error("Answer evaluation is unavailable. Your answer is kept and has not been scored. Please try again when connected with an evaluator configured.");
+
+    const newFeedback = [...feedback];
+    newFeedback[parseInt(n) - 1].submitted = true;
+    // Parse the response to ensure it's a number
+    const scoreValue = typeof jsonData.data === 'string' 
+      ? parseInt(jsonData.data) 
+      : jsonData.data;
+    newFeedback[parseInt(n) - 1].feedback = scoreValue;
+
+    setFeedback(newFeedback);
+    log(scoreValue >= 6, input);
+    setError("");
+    } catch (failure) { setError((failure as Error).message); }
+  };

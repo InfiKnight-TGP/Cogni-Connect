@@ -297,32 +297,37 @@ function Question({
   setTab: React.Dispatch<React.SetStateAction<string>>;
 }) {
   const [value, setValue] = useState("");
+  const [error, setError] = useState("");
 
   const onSubmit = async () => {
-    const res = await fetch("/api/accuracy", {
-      method: "POST",
-      body: JSON.stringify({
-        given: value,
-        real: data.answer,
-        video: data.video,
-      }),
-      headers: {
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-    });
+    try {
+      const res = await fetch("/api/accuracy", {
+        method: "POST",
+        body: JSON.stringify({
+          given: value,
+          real: data.answer,
+          video: data.video,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      });
 
-    const jsonData = await res.json();
+      const jsonData = await res.json();
+      const scoreValue = Number(jsonData.data);
+      if (!res.ok || !Number.isInteger(scoreValue) || scoreValue < 0 || scoreValue > 10) {
+        throw new Error("Answer evaluation is unavailable. Your answer is kept and has not been scored. Please try again when an evaluator is configured.");
+      }
 
-    const newFeedback = [...feedback];
-    newFeedback[parseInt(n) - 1].submitted = true;
-    // Parse the response to ensure it's a number
-    const scoreValue = typeof jsonData.data === 'string' 
-      ? parseInt(jsonData.data) 
-      : jsonData.data;
-    newFeedback[parseInt(n) - 1].feedback = isNaN(scoreValue) ? 0 : scoreValue;
-
-    setFeedback(newFeedback);
+      const newFeedback = [...feedback];
+      newFeedback[parseInt(n) - 1].submitted = true;
+      newFeedback[parseInt(n) - 1].feedback = scoreValue;
+      setFeedback(newFeedback);
+      setError("");
+    } catch (failure) {
+      setError((failure as Error).message);
+    }
   };
 
   const goToNextQuestion = () => {
@@ -353,6 +358,7 @@ function Question({
       >
         Submit <ArrowRight className="ml-3 h-4 w-4" />
       </Button>
+      {error && <p role="alert" className="mt-4 text-sm text-destructive">{error}</p>}
 
       {feedback[parseInt(n) - 1].submitted ? (
         <Card className="mt-6 w-full p-6">
