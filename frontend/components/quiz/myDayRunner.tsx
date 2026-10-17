@@ -37,9 +37,9 @@ export default function MyDayRunner() {
         const videosResponse = await fetch(`${API_URL}/videos`, { cache: "no-store" });
         if (videosResponse.ok) {
           const videos: { date?: string }[] = await videosResponse.json();
-          const availableDates = [...new Set(videos
+          const availableDates = Array.from(new Set(videos
             .map(video => video.date?.match(/^\d{4}-\d{2}-\d{2}/)?.[0])
-            .filter((value): value is string => Boolean(value) && value! <= date))]
+            .filter((value): value is string => Boolean(value) && value! <= date)))
             .sort((left, right) => right.localeCompare(left));
 
           // Prefer the newest day with recognized people so Face Recognition

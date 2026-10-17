@@ -33,3 +33,4 @@ backend/video_journals.json
 backend/daily_plans.json
 backend/routines.json
 backend/settings.json
+backend/platform-data/
