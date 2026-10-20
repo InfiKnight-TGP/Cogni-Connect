@@ -242,6 +242,11 @@ def bootstrap_patient(user_id):
     """Claim the existing installation once, after successful email verification."""
     if db().execute("SELECT 1 FROM patients p JOIN users u ON p.created_by=u.id WHERE u.email!='demo@cogniconnect.invalid' LIMIT 1").fetchone():
         return
+    unclaimed = db().execute('SELECT * FROM patients WHERE created_by IS NULL ORDER BY created_at LIMIT 1').fetchone()
+    if unclaimed:
+        db().execute('UPDATE patients SET created_by=? WHERE id=?', (user_id, unclaimed['id']))
+        db().execute('INSERT INTO patient_members VALUES (?,?,?)', (unclaimed['id'], user_id, 'owner'))
+        return
     settings = current_app.config['AUTH_LEGACY_SETTINGS']()
     patient_id = uuid.uuid4().hex
     db().execute('INSERT INTO patients VALUES (?,?,?,?,?)',
@@ -626,6 +631,8 @@ def init_auth(app, legacy_settings):
 
     @app.before_request
     def authenticate():
+        from patient_storage import migrate_legacy
+        migrate_legacy()
         if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
             origin = request.headers.get('Origin')
             if origin and origin not in app.config['AUTH_ORIGINS']:

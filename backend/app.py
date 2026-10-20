@@ -9,7 +9,7 @@ import re
 import shutil
 import cv2
 from werkzeug.utils import secure_filename
-from werkzeug.security import generate_password_hash
+from patient_storage import scoped, patient_path, configure, initialize_patient
 import threading
 import sys
 import uuid
@@ -24,8 +24,8 @@ load_dotenv()
 api = Flask(__name__)
 
 # Configuration for file uploads
-UPLOAD_FOLDER = 'content'
-KNOWN_FACES_FOLDER = 'known_faces'
+UPLOAD_FOLDER = scoped('content')
+KNOWN_FACES_FOLDER = scoped('known_faces')
 ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'webm'}
 ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png'}
 api.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -41,7 +41,7 @@ client = OpenAI(
 
 MAX_TRANSCRIPTION_BYTES = 25 * 1024 * 1024
 
-QAS_PATH = "qas.json"  
+QAS_PATH = scoped('qas.json')  
 
 # Runtime data is not in git; start each file empty if it's missing (examples in sample_data/).
 # people.json is created by _load_people(), which imports known_faces/ on first run.
@@ -59,11 +59,11 @@ def ensure_runtime_data():
                 json.dump(default, stream, indent=2)
 
 
-VIDEO_CHUNKS_ROOT = "video_chunks"  
-SUMMARY_ROOT = "summary"
-FRAMES_ROOT = "frames"  # process_video writes frames/<video>_chunks/chunk_SSSS_EEEE/<n>.jpg
-JOURNALS_PATH = "video_journals.json"
-CROSSWORDS_PATH = "crosswords.json"
+VIDEO_CHUNKS_ROOT = scoped('video_chunks')  
+SUMMARY_ROOT = scoped('summary')
+FRAMES_ROOT = scoped('frames')  # process_video writes frames/<video>_chunks/chunk_SSSS_EEEE/<n>.jpg
+JOURNALS_PATH = scoped('video_journals.json')
+CROSSWORDS_PATH = scoped('crosswords.json')
 
 
 def allowed_file(filename):
@@ -105,7 +105,7 @@ def analyze_video_with_vision(video_paths, query):
         frames_data = []
         for video_path in video_paths[:3]:  # Limit to 3 videos to save API costs
             full_path = os.path.join(os.path.abspath(VIDEO_CHUNKS_ROOT), 
-                                    video_path.replace(f"/{VIDEO_CHUNKS_ROOT}/", "").replace("/", os.sep))
+                                    video_path.replace(f"/video_chunks/", "").replace("/", os.sep))
             if os.path.exists(full_path):
                 frame_base64 = extract_frame_from_video(full_path)
                 if frame_base64:
@@ -146,7 +146,7 @@ def analyze_video_with_vision(video_paths, query):
 @api.route('/questions')
 def questions():
     try:
-        with open(QAS_PATH, "r") as file:
+        with open(QAS_PATH, "r", encoding='utf-8') as file:
             questions_data = json.load(file)
             # Return in the format the frontend expects
             return jsonify({"questions": questions_data})
@@ -286,7 +286,7 @@ def search():
                     
                 # Map each chunk to its transcript
                 for chunk_name, transcript_text in transcripts.items():
-                    video_path = f"/{VIDEO_CHUNKS_ROOT}/{folder_name}/{chunk_name}.mp4"
+                    video_path = f"/video_chunks/{folder_name}/{chunk_name}.mp4"
                     ref[video_path] = transcript_text
             
             # Look for face recognition data
@@ -297,7 +297,7 @@ def search():
                         face_info = json.load(f)
                         # Map to video path
                         chunk_name = file.replace('_faces.json', '')
-                        video_path = f"/{VIDEO_CHUNKS_ROOT}/{folder_name}/{chunk_name}.mp4"
+                        video_path = f"/video_chunks/{folder_name}/{chunk_name}.mp4"
                         # Extract names from face data (handle different JSON structures)
                         for path, names in face_info.items():
                             if names and isinstance(names, list):
@@ -312,7 +312,7 @@ def search():
                 if os.path.isdir(folder_path):
                     for file in os.listdir(folder_path):
                         if file.endswith('.mp4'):
-                            all_videos.append(f"/{VIDEO_CHUNKS_ROOT}/{folder_name}/{file}")
+                            all_videos.append(f"/video_chunks/{folder_name}/{file}")
             return jsonify(all_videos)
         
         # Try using GPT for semantic search if API key is configured
@@ -432,6 +432,7 @@ def search():
 def upload_video():
     """Handle video file uploads and trigger processing."""
     try:
+        base_dir = patient_path("")
         # Check if file is in request
         if 'video' not in request.files:
             return jsonify({"error": "No video file provided"}), 400
@@ -484,7 +485,8 @@ def upload_video():
             invalidate_crossword_cache(video_date)
         
         # Initialize processing status
-        processing_status[filename] = {
+        status_key = (base_dir, filename)
+        processing_status[status_key] = {
             "status": "processing",
             "message": "Video processing started",
             "progress": 0
@@ -494,24 +496,24 @@ def upload_video():
         def process_video_background():
             try:
                 from process_video import process_uploaded_video
-                processing_status[filename]["message"] = "Processing video..."
-                processing_status[filename]["progress"] = 25
+                processing_status[status_key]["message"] = "Processing video..."
+                processing_status[status_key]["progress"] = 25
                 
-                result = process_uploaded_video(filepath)
+                result = process_uploaded_video(filepath, base_dir)
                 
                 if result["success"]:
-                    invalidate_crossword_cache(video_date)
-                    processing_status[filename]["status"] = "completed"
-                    processing_status[filename]["message"] = "Video processed successfully"
-                    processing_status[filename]["progress"] = 100
+                    invalidate_crossword_cache(video_date, os.path.join(base_dir, "crosswords.json"))
+                    processing_status[status_key]["status"] = "completed"
+                    processing_status[status_key]["message"] = "Video processed successfully"
+                    processing_status[status_key]["progress"] = 100
                 else:
-                    processing_status[filename]["status"] = "failed"
-                    processing_status[filename]["message"] = f"Processing failed: {result.get('error', 'Unknown error')}"
-                    processing_status[filename]["progress"] = 0
+                    processing_status[status_key]["status"] = "failed"
+                    processing_status[status_key]["message"] = f"Processing failed: {result.get('error', 'Unknown error')}"
+                    processing_status[status_key]["progress"] = 0
             except Exception as e:
-                processing_status[filename]["status"] = "failed"
-                processing_status[filename]["message"] = f"Processing error: {str(e)}"
-                processing_status[filename]["progress"] = 0
+                processing_status[status_key]["status"] = "failed"
+                processing_status[status_key]["message"] = f"Processing error: {str(e)}"
+                processing_status[status_key]["progress"] = 0
         
         # Start processing in background
         thread = threading.Thread(target=process_video_background)
@@ -535,8 +537,9 @@ def upload_video():
 @api.route('/processing-status/<filename>', methods=['GET'])
 def get_processing_status(filename):
     """Get the processing status of an uploaded video."""
-    if filename in processing_status:
-        return jsonify(processing_status[filename]), 200
+    status_key = (patient_path(""), filename)
+    if status_key in processing_status:
+        return jsonify(processing_status[status_key]), 200
     else:
         return jsonify({"status": "unknown", "message": "No processing information found"}), 404
 
@@ -551,7 +554,7 @@ def list_videos():
         
         # Load journal entries
         if os.path.exists(journal_file):
-            with open(journal_file, 'r') as f:
+            with open(journal_file, 'r', encoding='utf-8') as f:
                 journals = json.load(f)
         
         if os.path.exists(UPLOAD_FOLDER):
@@ -586,7 +589,7 @@ def get_journals():
     try:
         journal_file = 'video_journals.json'
         if os.path.exists(journal_file):
-            with open(journal_file, 'r') as f:
+            with open(journal_file, 'r', encoding='utf-8') as f:
                 journals = json.load(f)
             return jsonify(journals), 200
         else:
@@ -596,7 +599,7 @@ def get_journals():
         return jsonify({"error": str(e)}), 500
 
 
-PEOPLE_FILE = 'people.json'
+PEOPLE_FILE = scoped('people.json')
 
 
 def _load_people():
@@ -948,7 +951,8 @@ def _crossword_layout(candidates):
     return {'rows': rows, 'cols': cols, 'grid': grid, 'entries': entries}
 
 
-def invalidate_crossword_cache(date_value):
+def invalidate_crossword_cache(date_value, cache_path=None):
+    cache_path = CROSSWORDS_PATH if cache_path is None else cache_path
     """Forget puzzles for the changed memory day and the following day."""
     from datetime import date, timedelta
     date_str = _local_date(date_value) if date_value else None
@@ -957,9 +961,9 @@ def invalidate_crossword_cache(date_value):
     try:
         base = date.fromisoformat(date_str)
         affected = {base.isoformat(), (base + timedelta(days=1)).isoformat()}
-        if not os.path.exists(CROSSWORDS_PATH):
+        if not os.path.exists(cache_path):
             return
-        with open(CROSSWORDS_PATH, 'r', encoding='utf-8') as f:
+        with open(cache_path, 'r', encoding='utf-8') as f:
             cache = json.load(f)
         if not isinstance(cache, dict):
             return
@@ -967,7 +971,7 @@ def invalidate_crossword_cache(date_value):
         for key in affected:
             changed = cache.pop(key, None) is not None or changed
         if changed:
-            with open(CROSSWORDS_PATH, 'w', encoding='utf-8') as f:
+            with open(cache_path, 'w', encoding='utf-8') as f:
                 json.dump(cache, f, indent=2, ensure_ascii=False)
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return
@@ -1136,10 +1140,10 @@ def serve_frame(filepath):
     return send_from_directory(os.path.abspath(FRAMES_ROOT), filepath)
 
 
-SETTINGS_PATH = 'settings.json'
-PERFORMANCE_PATH = 'performance_data.json'
-DAILY_PLANS_PATH = 'daily_plans.json'
-GAMES_PATH = 'games.json'
+SETTINGS_PATH = scoped('settings.json')
+PERFORMANCE_PATH = scoped('performance_data.json')
+DAILY_PLANS_PATH = scoped('daily_plans.json')
+GAMES_PATH = os.path.join(os.path.dirname(__file__), 'games.json')
 
 
 def _migrate_performance_record_ids():
@@ -1181,18 +1185,16 @@ SUPPORTED_LANGUAGES = {
 
 def _load_settings():
     if not os.path.exists(SETTINGS_PATH):
+        from flask import g
+        name = (g.get('active_patient') or {}).get('name', '')
         with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
-            json.dump({"pin": "1234", "patient_name": "", "language": "en", "pins": []}, f)
+            json.dump({'patient_name': name, 'language': 'en', 'pins': []}, f)
     with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
-        settings = {"pin": "1234", "patient_name": "", "language": "en", "pins": [], **json.load(f)}
-    pin = str(settings.get('pin', '1234'))
-    if not pin.startswith(('scrypt:', 'pbkdf2:')):
-        settings['pin'] = generate_password_hash(pin)
-        with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, indent=2, ensure_ascii=False)
+        settings = {'patient_name': '', 'language': 'en', 'pins': [], **json.load(f)}
+    settings.pop('pin', None)
     if not isinstance(settings.get('pins'), list):
         settings['pins'] = []
-    if not isinstance(settings.get('language'), str) or settings['language'] not in SUPPORTED_LANGUAGES:
+    if settings.get('language') not in SUPPORTED_LANGUAGES:
         settings['language'] = 'en'
     return settings
 
@@ -1258,6 +1260,9 @@ def save_settings():
     previous_pins = settings.get('pins', [])
     if 'patient_name' in payload:
         settings['patient_name'] = name.strip()
+        from flask import g
+        from auth import db
+        db().execute('UPDATE patients SET name=? WHERE id=?', (name.strip(), g.active_patient['id']))
     if 'language' in payload:
         settings['language'] = language
     if 'pins' in payload:
@@ -1293,7 +1298,7 @@ def _invalidate_unplayed_plans(start_date):
         print(f"Could not invalidate unplayed plans: {exc}")
 
 
-ROUTINES_PATH = 'routines.json'
+ROUTINES_PATH = scoped('routines.json')
 
 
 @api.route('/routine', methods=['GET'])
@@ -1502,7 +1507,7 @@ def generate_questions():
         journal_file = 'video_journals.json'
         journals = {}
         if os.path.exists(journal_file):
-            with open(journal_file, 'r') as f:
+            with open(journal_file, 'r', encoding='utf-8') as f:
                 journals = json.load(f)
         
         # Collect data from video chunks
@@ -1548,7 +1553,7 @@ def generate_questions():
             
             # Combine data for each chunk
             for chunk_name, transcript in transcripts.items():
-                video_path = f"/{VIDEO_CHUNKS_ROOT}/{folder_name}/{chunk_name}.mp4"
+                video_path = f"/video_chunks/{folder_name}/{chunk_name}.mp4"
                 
                 # Get faces for this chunk
                 faces = []
@@ -1639,7 +1644,7 @@ def generate_questions():
                 questions_data = json.loads(result)
                 
                 # Save to qas.json
-                with open(QAS_PATH, 'w') as f:
+                with open(QAS_PATH, 'w', encoding='utf-8') as f:
                     json.dump(questions_data, f, indent=2)
                 
                 return jsonify({"questions": questions_data, "generated": True}), 200
@@ -1657,6 +1662,7 @@ def generate_questions():
 
 from auth import init_auth
 
+configure(api)
 init_auth(api, lambda: _load_settings())
 CORS(api, origins=api.config['AUTH_ORIGINS'], supports_credentials=True)
 
@@ -1666,6 +1672,9 @@ def migrate_authenticated_data():
     # Authentication runs first. Never mutate data on an anonymous request.
     from flask import g
     if g.get('auth_session') and request.blueprint != 'auth':
+        from flask import abort
+        if not g.get('active_patient'):
+            abort(403)
         ensure_runtime_data()
         _migrate_performance_record_ids()
 

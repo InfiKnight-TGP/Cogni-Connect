@@ -61,20 +61,22 @@ def has_face(image_path):
     return bool(faces) and faces[0][14] >= FACE_SCORE
 
 
-def known_photos(known_faces_dir="known_faces"):
+def known_photos(base_dir):
+    known_faces_dir = os.path.join(base_dir, "known_faces")
+    people_file = os.path.join(base_dir, "people.json")
     """(person id, photo path) from people.json. Recognition reports the id; app.display_name shows the name."""
-    if os.path.exists('people.json'):
-        with open('people.json', 'r', encoding='utf-8') as f:
+    if os.path.exists(people_file):
+        with open(people_file, 'r', encoding='utf-8') as f:
             return [(p['id'], os.path.join(known_faces_dir, p['photo'])) for p in json.load(f) if p.get('photo')]
     # Before the app's first run there is no people.json yet; the photo file names are the ids
     return [(os.path.splitext(f)[0], os.path.join(known_faces_dir, f))
             for f in sorted(os.listdir(known_faces_dir)) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
 
 
-def load_known_features(recognizer):
+def load_known_features(recognizer, base_dir):
     """SFace feature of the best face in each person's photo, computed once per run."""
     ids, features = [], []
-    for person_id, path in known_photos():
+    for person_id, path in known_photos(base_dir):
         img = cv2.imread(path)
         faces = detect_faces(img) if img is not None else []
         if not faces:
@@ -158,14 +160,14 @@ def process_single_video(video_path):
     
     # Save transcripts
     json_path = os.path.join(output_dir, 'full_transcript.json')
-    with open(json_path, 'w') as json_file:
+    with open(json_path, 'w', encoding='utf-8') as json_file:
         json.dump(all_transcripts, json_file, indent=4)
     
     print(f"✓ Transcription completed for {video_name}")
     return output_dir
 
 
-def extract_unique_frames(chunks_folder):
+def extract_unique_frames(chunks_folder, base_dir):
     """Extract unique frames from video chunks using ORB keypoint detection."""
     print(f"Extracting unique frames from: {chunks_folder}")
     
@@ -185,7 +187,7 @@ def extract_unique_frames(chunks_folder):
             new_height = 400
             
             # Create output folder
-            output_folder = os.path.join("frames", os.path.basename(chunks_folder), video_name)
+            output_folder = os.path.join(base_dir, "frames", os.path.basename(chunks_folder), video_name)
             os.makedirs(output_folder, exist_ok=True)
             
             while ret:
@@ -241,20 +243,20 @@ def extract_unique_frames(chunks_folder):
     print(f"✓ Frame extraction completed")
 
 
-def perform_face_recognition(chunks_folder):
+def perform_face_recognition(chunks_folder, base_dir):
     """Perform face recognition on video chunks."""
     print(f"Performing face recognition in: {chunks_folder}")
 
     if HAVE_FACE_RECOGNITION:
         known_ids, known_faces_encodings = [], []
-        for person_id, path in known_photos():
+        for person_id, path in known_photos(base_dir):
             encodings = face_recognition.face_encodings(face_recognition.load_image_file(path))
             if encodings:
                 known_ids.append(person_id)
                 known_faces_encodings.append(encodings[0])
     else:
         recognizer = cv2.FaceRecognizerSF.create(_model(SFACE_MODEL), "")
-        known_ids, known_features = load_known_features(recognizer)
+        known_ids, known_features = load_known_features(recognizer, base_dir)
     print(f"  Loaded {len(known_ids)} known faces: {known_ids}")
 
     # Process video chunks
@@ -307,7 +309,7 @@ def perform_face_recognition(chunks_folder):
 
             # Save JSON
             json_path = os.path.join(chunks_folder, f'{video_name}_faces.json')
-            with open(json_path, 'w') as json_file:
+            with open(json_path, 'w', encoding='utf-8') as json_file:
                 json.dump(video_appearance_summary, json_file, indent=4)
 
             print(f"  ✓ Found faces: {names if names else 'No known faces detected'}")
@@ -315,13 +317,13 @@ def perform_face_recognition(chunks_folder):
     print(f"✓ Face recognition completed")
 
 
-def copy_chunks_to_video_chunks(chunks_folder):
+def copy_chunks_to_video_chunks(chunks_folder, base_dir):
     """Copy processed chunks to video_chunks directory for frontend access."""
     import shutil
     chunks_name = os.path.basename(chunks_folder)
     
     # 1. Copy to backend/video_chunks
-    video_chunks_dir = "video_chunks"
+    video_chunks_dir = os.path.join(base_dir, "video_chunks")
     os.makedirs(video_chunks_dir, exist_ok=True)
     dest_folder = os.path.join(video_chunks_dir, chunks_name)
     if os.path.exists(dest_folder):
@@ -329,18 +331,9 @@ def copy_chunks_to_video_chunks(chunks_folder):
     shutil.copytree(chunks_folder, dest_folder)
     print(f"✓ Copied chunks to {dest_folder}")
 
-    # 2. Copy to frontend/public/video_chunks if present
-    frontend_public_chunks = os.path.abspath(os.path.join("..", "frontend", "public", "video_chunks"))
-    if os.path.exists(os.path.dirname(frontend_public_chunks)):
-        os.makedirs(frontend_public_chunks, exist_ok=True)
-        frontend_dest = os.path.join(frontend_public_chunks, chunks_name)
-        if os.path.exists(frontend_dest):
-            shutil.rmtree(frontend_dest)
-        shutil.copytree(chunks_folder, frontend_dest)
-        print(f"✓ Copied chunks to frontend public dir {frontend_dest}")
 
 
-def process_uploaded_video(video_path):
+def process_uploaded_video(video_path, base_dir):
     """
     Main function to process an uploaded video.
     Returns status and any errors.
@@ -356,15 +349,15 @@ def process_uploaded_video(video_path):
         
         # Step 2: Extract unique frames
         print("\nStep 2/4: Extracting unique frames...")
-        extract_unique_frames(chunks_folder)
+        extract_unique_frames(chunks_folder, base_dir)
         
         # Step 3: Perform face recognition
         print("\nStep 3/4: Performing face recognition...")
-        perform_face_recognition(chunks_folder)
+        perform_face_recognition(chunks_folder, base_dir)
         
         # Step 4: Copy to video_chunks for frontend
         print("\nStep 4/4: Copying to video_chunks directory...")
-        copy_chunks_to_video_chunks(chunks_folder)
+        copy_chunks_to_video_chunks(chunks_folder, base_dir)
         
         print(f"\n{'='*60}")
         print(f"✓ Video processing completed successfully!")
@@ -380,13 +373,13 @@ def process_uploaded_video(video_path):
 
 
 if __name__ == "__main__":
-    # Test with a video file
-    import sys
-    if len(sys.argv) > 1:
-        video_path = sys.argv[1]
-        if os.path.exists(video_path):
-            process_uploaded_video(video_path)
-        else:
-            print(f"Error: Video file not found: {video_path}")
-    else:
-        print("Usage: python process_video.py <video_path>")
+    import argparse
+    from patient_storage import cli_data_dir
+    parser = argparse.ArgumentParser()
+    parser.add_argument('video_path')
+    base_dir, args = cli_data_dir(parser)
+    from pathlib import Path
+    video_path = Path(args.video_path).resolve()
+    if not video_path.is_relative_to(base_dir / 'content'):
+        parser.error('Video must be inside this patient content directory')
+    process_uploaded_video(str(video_path), str(base_dir))

@@ -100,7 +100,7 @@ def evaluate_face_recognition():
         ground_truth = json.load(f)
 
     recognizer = cv2.FaceRecognizerSF.create(pv._model(pv.SFACE_MODEL), "")
-    known_ids, known_features = pv.load_known_features(recognizer)
+    known_ids, known_features = pv.load_known_features(recognizer, DATA_DIR)
 
     chunk_metrics = []
     all_true_scores = []
@@ -114,9 +114,9 @@ def evaluate_face_recognition():
     for chunk_rel_path, gt_names in ground_truth.items():
         # Locate chunk video file
         possible_paths = [
-            os.path.join(BACKEND_DIR, "video_chunks", chunk_rel_path),
-            os.path.join(BACKEND_DIR, "video_chunks", os.path.basename(os.path.dirname(chunk_rel_path)), os.path.basename(chunk_rel_path)),
-            os.path.join(BACKEND_DIR, chunk_rel_path),
+            os.path.join(DATA_DIR, "video_chunks", chunk_rel_path),
+            os.path.join(DATA_DIR, "video_chunks", os.path.basename(os.path.dirname(chunk_rel_path)), os.path.basename(chunk_rel_path)),
+            os.path.join(DATA_DIR, chunk_rel_path),
         ]
         chunk_full_path = None
         for p in possible_paths:
@@ -237,9 +237,9 @@ def evaluate_transcription():
     Also measures the existing Google speech result from full_transcript.json.
     """
     print("\n--- Running 2. Transcription Benchmark ---")
-    zoo_video = os.path.join(BACKEND_DIR, "content", "Me_at_the_zoo.mp4")
+    zoo_video = os.path.join(DATA_DIR, "content", "Me_at_the_zoo.mp4")
     google_transcript_path = os.path.join(
-        BACKEND_DIR, "video_chunks",
+        DATA_DIR, "video_chunks",
         "YTDown.com_YouTube_Me-at-the-zoo_Media_jNQXAC9IVRw_001_240p_chunks",
         "full_transcript.json"
     )
@@ -317,7 +317,7 @@ def evaluate_latency():
     """
     print("\n--- Running 3. Latency Benchmark (5 runs each) ---")
     runs = 5
-    client = app.api.test_client()
+    client = EVAL_CLIENT
     latencies = {}
 
     def stats(times_list):
@@ -333,7 +333,7 @@ def evaluate_latency():
     # Helper: isolate any temp file changes during latency measurements
     with tempfile.TemporaryDirectory() as sandbox:
         # A. Video processing latency per minute of video
-        zoo_video = os.path.join(BACKEND_DIR, "content", "Me_at_the_zoo.mp4")
+        zoo_video = os.path.join(DATA_DIR, "content", "Me_at_the_zoo.mp4")
         if os.path.exists(zoo_video):
             import moviepy.video.io.VideoFileClip as vfc
             clip = vfc.VideoFileClip(zoo_video)
@@ -350,8 +350,8 @@ def evaluate_latency():
 
                 t0 = time.perf_counter()
                 chunks_folder = pv.process_single_video(target_video)
-                pv.extract_unique_frames(chunks_folder)
-                pv.perform_face_recognition(chunks_folder)
+                pv.extract_unique_frames(chunks_folder, run_dir)
+                pv.perform_face_recognition(chunks_folder, DATA_DIR)
                 elapsed = time.perf_counter() - t0
 
                 # Normalize per minute of video
@@ -485,7 +485,7 @@ def evaluate_answer_grading():
     Checks that /accuracy ranks them sensibly and computes ranking agreement.
     """
     print("\n--- Running 4. Answer Grading Benchmark ---")
-    client = app.api.test_client()
+    client = EVAL_CLIENT
 
     # 10 carefully designed pairs
     pairs = [
@@ -1016,6 +1016,28 @@ def generate_markdown_report(metrics):
 # Main Runner
 # ==============================================================================
 def main():
+    global DATA_DIR, EVAL_CLIENT
+    from patient_storage import cli_data_dir, FILES, FOLDERS
+    from tests.auth_support import setup_auth
+    import unittest
+    DATA_DIR, _ = cli_data_dir()
+    fixture = unittest.TestCase()
+    setup_auth(fixture)
+    import atexit
+    atexit.register(fixture.doCleanups)
+    EVAL_CLIENT = fixture.auth_client
+    mapping = {'people.json': 'PEOPLE_FILE', 'performance_data.json': 'PERFORMANCE_PATH',
+               'video_journals.json': 'JOURNALS_PATH', 'qas.json': 'QAS_PATH',
+               'daily_plans.json': 'DAILY_PLANS_PATH', 'routines.json': 'ROUTINES_PATH',
+               'settings.json': 'SETTINGS_PATH', 'crosswords.json': 'CROSSWORDS_PATH',
+               'content': 'UPLOAD_FOLDER', 'video_chunks': 'VIDEO_CHUNKS_ROOT',
+               'frames': 'FRAMES_ROOT', 'known_faces': 'KNOWN_FACES_FOLDER'}
+    for name, attr in mapping.items():
+        source = DATA_DIR / name
+        if source.is_dir():
+            shutil.copytree(source, getattr(app, attr), dirs_exist_ok=True)
+        elif source.is_file():
+            shutil.copy2(source, getattr(app, attr))
     print("=" * 70)
     print("CogniConnect Performance Evaluation Suite")
     print("=" * 70)

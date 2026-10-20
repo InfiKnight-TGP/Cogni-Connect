@@ -19,7 +19,7 @@ class SettingsTests(unittest.TestCase):
         self.plans_path = root / "daily_plans.json"
         self.perf_path = root / "performance_data.json"
         self.games_path = root / "games.json"
-        self.settings_path.write_text(json.dumps({"pin": "1234", "patient_name": "Lakshmi"}), encoding="utf-8")
+        self.settings_path.write_text(json.dumps({"patient_name": "Lakshmi"}), encoding="utf-8")
         self.plans_path.write_text("{}", encoding="utf-8")
         self.perf_path.write_text(json.dumps({"scores": [], "game_scores": []}), encoding="utf-8")
         self.games_path.write_text(json.dumps({"games": [
@@ -48,17 +48,14 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"patient_name": "Lakshmi", "language": "en", "pins": []})
         self.assertNotIn("pin", response.get_json())
-        stored = json.loads(self.settings_path.read_text(encoding="utf-8"))["pin"]
-        self.assertNotEqual(stored, "1234")
-        self.assertTrue(check_password_hash(stored, "1234"))
+        self.assertNotIn("pin", json.loads(self.settings_path.read_text(encoding="utf-8")))
 
     def test_valid_language_is_saved_and_patient_name_handling_remains(self):
         response = self.client.post("/settings", json={"language": "hi", "patient_name": " Meera "})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"patient_name": "Meera", "language": "hi", "pins": []})
         self.assertEqual(self.client.get("/settings").get_json()["language"], "hi")
-        stored = json.loads(self.settings_path.read_text(encoding="utf-8"))["pin"]
-        self.assertTrue(check_password_hash(stored, "1234"))
+        self.assertNotIn("pin", json.loads(self.settings_path.read_text(encoding="utf-8")))
 
     def test_invalid_language_is_rejected_without_saving(self):
         before = self.settings_path.read_text(encoding="utf-8")

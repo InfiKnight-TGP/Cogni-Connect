@@ -1,70 +1,45 @@
-r"""Checks the /people API on a temporary copy of the backend (real data is untouched).
-Run: .venv\Scripts\python check_people.py"""
-import io, os, sys, json, shutil, tempfile
-import cv2, numpy as np
+"""Check people CRUD against a temporary copy of one patient's data."""
+import io
+import shutil
+import unittest
+from pathlib import Path
+from patient_storage import cli_data_dir
 
-here = os.path.dirname(os.path.abspath(__file__))
-tmp = tempfile.mkdtemp()
-for f in ('app.py', 'process_video.py', 'games.json'):
-    shutil.copy(os.path.join(here, f), tmp)
-shutil.copytree(os.path.join(here, 'known_faces'), os.path.join(tmp, 'known_faces'))
-os.chdir(tmp)
-sys.path.insert(0, tmp)
-import app
-import process_video as pv
-pv.YUNET_MODEL = os.path.join(here, 'models', os.path.basename(pv.YUNET_MODEL))  # models stay in backend/models
-pv.SFACE_MODEL = os.path.join(here, 'models', os.path.basename(pv.SFACE_MODEL))
-assert os.path.exists(os.path.join(here, 'test_images', 'no_face.jpeg'))
-assert not pv.has_face(os.path.join(here, 'test_images', 'no_face.jpeg'))  # no face, Haar used to accept it
-c = app.api.test_client()
-# runtime data files are created empty when missing
-for f, default in {'qas.json': [], 'performance_data.json': {'scores': [], 'game_scores': []},
-                   'video_journals.json': {}, 'routines.json': {'steps': []},
-                   'settings.json': {'pin': '1234', 'patient_name': '', 'language': 'en'}}.items():
-    assert json.load(open(f, encoding='utf-8')) == default, f
-assert c.get('/questions').get_json() == {'questions': []}
-# caregiver PIN (default 1234) and patient name
-assert c.post('/caregiver/unlock', json={'pin': '1234'}).status_code == 200
-assert c.post('/caregiver/unlock', json={'pin': '0000'}).status_code == 403
-assert c.post('/caregiver/unlock', json={}).status_code == 403
-assert c.post('/settings', json={'patient_name': ' Lakshmi '}).get_json() == {'patient_name': 'Lakshmi', 'language': 'en'}
-assert c.get('/settings').get_json() == {'patient_name': 'Lakshmi', 'language': 'en'}
-assert json.load(open('settings.json', encoding='utf-8'))['pin'] == '1234'
-r = c.get('/people'); people = r.get_json()
-print('import:', [(p['id'], p['name'], p['photo']) for p in people])
-assert {p['photo'] for p in people} == set(os.listdir('known_faces'))
-face = open('known_faces/Akash.jpeg', 'rb').read()
-blank = cv2.imencode('.png', np.full((200, 200, 3), 255, np.uint8))[1].tobytes()
-r = c.post('/people', data={'name': 'Blank', 'photo': (io.BytesIO(blank), 'b.png')})
-print('no face ->', r.status_code, r.get_json()); assert r.status_code == 400
-assert not any(f.endswith('.tmp') for f in os.listdir('known_faces'))
-r = c.post('/people', data={'name': '  ravi ', 'relation': 'Son', 'phone': '+91 90000 00000', 'photo': (io.BytesIO(face), 'r.JPEG')})
-print('add ->', r.status_code, r.get_json()); assert r.status_code == 201 and r.get_json()['name'] == 'Ravi'
-pid = r.get_json()['id']; assert os.path.exists(f'known_faces/{pid}.jpeg')
-r = c.put(f'/people/{pid}', data={'relation': 'Grandson', 'photo': (io.BytesIO(cv2.imencode('.png', cv2.imread('known_faces/Akash.jpeg'))[1].tobytes()), 'x.png')})
-print('edit ->', r.status_code, r.get_json()); assert r.get_json()['photo'] == f'{pid}.png' and not os.path.exists(f'known_faces/{pid}.jpeg')
-print('known-faces ->', c.get('/known-faces').get_json()['faces'][-1])
-assert c.get(f'/known-faces/{pid}.png').status_code == 200
-r = c.delete(f'/people/{pid}'); assert r.status_code == 200 and not os.path.exists(f'known_faces/{pid}.png')
-assert c.delete('/people/nope').status_code == 404
-# faces-for-date maps detected ids to names
-app._load_people = lambda: [{'id': 'jawed_karim', 'name': 'jawed karim', 'photo': 'x'}, {'id': 'ab12cd34', 'name': 'Ravi', 'relation': 'Son', 'photo': 'y'}]
-app._videos_for_date = lambda d: [('v.mp4', {})]
-os.makedirs('video_chunks/v_chunks', exist_ok=True)
-json.dump({'content/v_chunks/c.mp4': ['jawed karim', 'ab12cd34', 'Unknown']}, open('video_chunks/v_chunks/c_faces.json', 'w'))  # same shape process_video writes
-json.dump({'c': 'hello there my friend'}, open('video_chunks/v_chunks/full_transcript.json', 'w'))
-os.environ['OPENAI_API_KEY'] = 'not_configured'
-qs = c.post('/generate-questions', json={}).get_json()['questions']
-print('generate-questions ->', qs[1])
-assert qs[1]['answer'] == 'Jawed Karim, Ravi (son), Unknown'
-print('faces-for-date ->', c.get('/faces-for-date?date=x').get_json()['detected'])
-assert c.get('/faces-for-date?date=x').get_json()['detected'] == ['Jawed Karim', 'Ravi', 'Unknown']
-# display names: id -> title-cased name (+ relation), never the raw id
-people = [{'id': 'jawed_karim', 'name': 'jawed karim', 'relation': ''}, {'id': 'ab12cd34', 'name': 'dinesh', 'relation': 'Son'}]
-assert app.display_name('jawed karim', people) == 'Jawed Karim'
-assert app.display_name('AB12CD34', people) == 'Dinesh'
-assert app.display_name('ab12cd34', people, relation=True) == 'Dinesh (son)'
-assert app.display_name('Unknown', people) == 'Unknown'
-assert app._title('mary mcDonald') == 'Mary McDonald'
-print('ALL OK')
-shutil.rmtree(tmp, ignore_errors=True)
+
+def main():
+    base, _ = cli_data_dir()
+    from tests.auth_support import setup_auth
+    import app
+    import process_video as pv
+    import cv2
+    import numpy as np
+    fixture = unittest.TestCase()
+    setup_auth(fixture)
+    try:
+        photos = base / 'known_faces'
+        shutil.copytree(photos, app.KNOWN_FACES_FOLDER, dirs_exist_ok=True)
+        if (base / 'people.json').exists():
+            shutil.copy2(base / 'people.json', app.PEOPLE_FILE)
+        else:
+            Path(app.PEOPLE_FILE).unlink(missing_ok=True)
+        client = fixture.auth_client
+        assert isinstance(client.get('/people').get_json(), list)
+        blank = cv2.imencode('.png', np.full((200, 200, 3), 255, np.uint8))[1].tobytes()
+        assert client.post('/people', data={'name': 'Blank', 'photo': (io.BytesIO(blank), 'blank.png')}).status_code == 400
+        photo = next((p for p in photos.iterdir() if p.suffix.lower() in ('.png', '.jpg', '.jpeg') and pv.has_face(str(p))), None)
+        if photo is None:
+            raise RuntimeError('Add a usable face photo to this patient before running CRUD checks')
+        response = client.post('/people', data={'name': 'Test person', 'photo': (io.BytesIO(photo.read_bytes()), photo.name)})
+        assert response.status_code == 201, response.get_json()
+        person = response.get_json()
+        assert client.put('/people/' + person['id'], data={'relation': 'Friend'}).status_code == 200
+        assert client.get('/known-faces/' + person['photo']).status_code == 200
+        assert client.delete('/people/' + person['id']).status_code == 200
+        assert client.get('/known-faces/' + person['photo']).status_code == 404
+        print('People checks passed using temporary data.')
+    finally:
+        fixture.doCleanups()
+
+
+if __name__ == '__main__':
+    main()

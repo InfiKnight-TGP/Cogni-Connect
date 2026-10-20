@@ -16,8 +16,10 @@ def setup_auth(case, kind='caregiver'):
     case.auth_root = root
     config = patch.dict(app.api.config, {
         'TESTING': True, 'AUTH_DATABASE': str(root / 'auth.db'),
+        'STORAGE_MIGRATION': False, 'PATIENT_DATA_ROOT': str(root / 'data'),
         'AUTH_DEMO': False, 'AUTH_COOKIE_SECURE': False,
         'AUTH_ORIGINS': ['http://localhost:3000'],
+        'AUTH_LEGACY_SETTINGS': lambda: json.loads(Path(app.SETTINGS_PATH).read_text(encoding='utf-8')),
     })
     config.start()
     case.addCleanup(config.stop)

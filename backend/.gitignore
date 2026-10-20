@@ -35,3 +35,6 @@ video_chunks/
 crosswords.json
 auth.db*
 content/*_chunks/
+
+data/
+pre-migration-backup/

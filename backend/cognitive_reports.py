@@ -210,14 +210,18 @@ def get_active_days(performance_file: str | Path) -> list[str]:
 
 def build_daily_plan(
     date_str: str,
-    games_file: str | Path = "games.json",
-    plans_file: str | Path = "daily_plans.json",
-    settings_file: str | Path = "settings.json",
-    performance_file: str | Path = "performance_data.json",
+    games_file: str | Path = Path(__file__).with_name("games.json"),
+    plans_file: str | Path | None = None,
+    settings_file: str | Path | None = None,
+    performance_file: str | Path | None = None,
     today_str: str | None = None,
 ) -> dict[str, list[str]]:
     """Compute a stable plan. Only today and past plans are persisted."""
     from datetime import date
+    from patient_storage import patient_path
+    plans_file = plans_file if plans_file is not None else patient_path('daily_plans.json')
+    settings_file = settings_file if settings_file is not None else patient_path('settings.json')
+    performance_file = performance_file if performance_file is not None else patient_path('performance_data.json')
 
     today_str = today_str or date.today().isoformat()
     plans_path = Path(plans_file)
@@ -343,10 +347,10 @@ def _extract_breakdown_value(breakdown: dict[str, Any] | None, *keys: str) -> fl
 def build_day_report(
     performance_data: dict[str, Any],
     date_str: str,
-    games_file: str | Path = "games.json",
-    plans_file: str | Path = "daily_plans.json",
-    settings_file: str | Path = "settings.json",
-    performance_file: str | Path = "performance_data.json",
+    games_file: str | Path = Path(__file__).with_name("games.json"),
+    plans_file: str | Path | None = None,
+    settings_file: str | Path | None = None,
+    performance_file: str | Path | None = None,
 ) -> dict[str, Any]:
     """Build a daily cognitive report for date_str from performance store data."""
     all_scores: list[dict[str, Any]] = performance_data.get("scores", [])
