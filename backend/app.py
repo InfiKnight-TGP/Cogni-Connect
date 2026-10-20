@@ -9,7 +9,7 @@ import re
 import shutil
 import cv2
 from werkzeug.utils import secure_filename
-from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.security import generate_password_hash
 import threading
 import sys
 import uuid
@@ -22,7 +22,6 @@ sys.stdout.reconfigure(encoding="utf-8")
 load_dotenv()
 
 api = Flask(__name__)
-CORS(api)
 
 # Configuration for file uploads
 UPLOAD_FOLDER = 'content'
@@ -32,10 +31,6 @@ ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png'}
 api.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 api.config['KNOWN_FACES_FOLDER'] = KNOWN_FACES_FOLDER
 api.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
-
-# Ensure upload directories exist
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(KNOWN_FACES_FOLDER, exist_ok=True)
 
 # Track processing status
 processing_status = {}  
@@ -50,16 +45,18 @@ QAS_PATH = "qas.json"
 
 # Runtime data is not in git; start each file empty if it's missing (examples in sample_data/).
 # people.json is created by _load_people(), which imports known_faces/ on first run.
-for _path, _default in {
-    QAS_PATH: [],
-    'performance_data.json': {"scores": [], "game_scores": []},
-    'video_journals.json': {},
-    'routines.json': {"steps": []},
-    'settings.json': {"pin": "1234", "patient_name": "", "language": "en"},
-}.items():
-    if not os.path.exists(_path):
-        with open(_path, 'w', encoding='utf-8') as _f:
-            json.dump(_default, _f, indent=2)
+def ensure_runtime_data():
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    os.makedirs(KNOWN_FACES_FOLDER, exist_ok=True)
+    for path, default in {
+        QAS_PATH: [],
+        PERFORMANCE_PATH: {"scores": [], "game_scores": []},
+        JOURNALS_PATH: {},
+        ROUTINES_PATH: {"steps": []},
+    }.items():
+        if not os.path.exists(path):
+            with open(path, 'w', encoding='utf-8') as stream:
+                json.dump(default, stream, indent=2)
 
 
 VIDEO_CHUNKS_ROOT = "video_chunks"  
@@ -1177,14 +1174,15 @@ def _migrate_performance_record_ids():
     return True
 
 
-_migrate_performance_record_ids()
-
 SUPPORTED_LANGUAGES = {
     'en', 'hi', 'bn', 'mr', 'te', 'ta', 'gu', 'ur', 'kn', 'or', 'ml', 'pa', 'as', 'ne', 'mni-Mtei',
 }
 
 
 def _load_settings():
+    if not os.path.exists(SETTINGS_PATH):
+        with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
+            json.dump({"pin": "1234", "patient_name": "", "language": "en", "pins": []}, f)
     with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
         settings = {"pin": "1234", "patient_name": "", "language": "en", "pins": [], **json.load(f)}
     pin = str(settings.get('pin', '1234'))
@@ -1197,23 +1195,6 @@ def _load_settings():
     if not isinstance(settings.get('language'), str) or settings['language'] not in SUPPORTED_LANGUAGES:
         settings['language'] = 'en'
     return settings
-
-
-@api.before_request
-def migrate_plain_pin_on_startup():
-    # The first request completes startup migration; subsequent requests only
-    # see the already-hashed value. Tests can safely redirect the path to temp.
-    _load_settings()
-
-
-@api.route('/caregiver/unlock', methods=['POST'])
-def caregiver_unlock():
-    """{"pin": "1234"} -> 200 if it matches settings.json, else 403.
-    ponytail: a soft lock that keeps the patient out of caregiver screens; it does not secure the API."""
-    pin = str((request.get_json(silent=True) or {}).get('pin', ''))
-    if check_password_hash(str(_load_settings()['pin']), pin):
-        return jsonify({"ok": True})
-    return jsonify({"ok": False, "error": "Wrong PIN"}), 403
 
 
 @api.route('/settings', methods=['GET'])
@@ -1312,22 +1293,6 @@ def _invalidate_unplayed_plans(start_date):
         print(f"Could not invalidate unplayed plans: {exc}")
 
 
-@api.route('/caregiver/change-pin', methods=['POST'])
-def change_caregiver_pin():
-    payload = request.get_json(silent=True) or {}
-    current_pin = payload.get('current_pin')
-    new_pin = payload.get('new_pin')
-    settings = _load_settings()
-    if not isinstance(current_pin, str) or not check_password_hash(str(settings['pin']), current_pin):
-        return jsonify({"error": "Current PIN is incorrect"}), 400
-    if not isinstance(new_pin, str) or not re.fullmatch(r'\d{4}', new_pin):
-        return jsonify({"error": "New PIN must contain four digits"}), 400
-    settings['pin'] = generate_password_hash(new_pin)
-    with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
-        json.dump(settings, f, indent=2, ensure_ascii=False)
-    return jsonify({"ok": True})
-
-
 ROUTINES_PATH = 'routines.json'
 
 
@@ -1385,8 +1350,8 @@ def save_performance():
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return jsonify({"error": "A JSON performance record is required"}), 400
-        if data.get('source') == 'caregiver':
-            return jsonify({"error": "Caregiver scores cannot be saved as patient activity"}), 400
+        # The authenticated device determines the source, never a client flag.
+        data['source'] = 'patient'
         score = data.get('score')
         date = data.get('date')
         breakdown = data.get('breakdown', {})
@@ -1688,6 +1653,21 @@ def generate_questions():
     except Exception as e:
         print(f"Generate questions error: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+from auth import init_auth
+
+init_auth(api, lambda: _load_settings())
+CORS(api, origins=api.config['AUTH_ORIGINS'], supports_credentials=True)
+
+
+@api.before_request
+def migrate_authenticated_data():
+    # Authentication runs first. Never mutate data on an anonymous request.
+    from flask import g
+    if g.get('auth_session') and request.blueprint != 'auth':
+        ensure_runtime_data()
+        _migrate_performance_record_ids()
 
 
 if __name__ == '__main__':

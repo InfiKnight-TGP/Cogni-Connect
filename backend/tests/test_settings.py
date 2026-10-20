@@ -1,3 +1,4 @@
+from tests.auth_support import setup_auth, make_client
 import json
 from datetime import date, timedelta
 from pathlib import Path
@@ -11,6 +12,7 @@ import app
 
 class SettingsTests(unittest.TestCase):
     def setUp(self):
+        setup_auth(self, 'caregiver')
         self.temp_dir = tempfile.TemporaryDirectory()
         root = Path(self.temp_dir.name)
         self.settings_path = root / "settings.json"
@@ -34,7 +36,7 @@ class SettingsTests(unittest.TestCase):
         ]
         for item in self.patches:
             item.start()
-        self.client = app.api.test_client()
+        self.client = self.auth_client
 
     def tearDown(self):
         for item in reversed(self.patches):
@@ -59,18 +61,22 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(check_password_hash(stored, "1234"))
 
     def test_invalid_language_is_rejected_without_saving(self):
+        before = self.settings_path.read_text(encoding="utf-8")
         response = self.client.post("/settings", json={"language": "xx"})
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(json.loads(self.settings_path.read_text(encoding="utf-8"))["language"], "en")
+        self.assertEqual(self.settings_path.read_text(encoding="utf-8"), before)
 
     def test_pin_migration_unlock_and_change_require_current_pin(self):
+        self.client = make_client("patient_device")
         self.assertEqual(self.client.post("/caregiver/unlock", json={"pin": "1234"}).status_code, 200)
         self.assertEqual(self.client.post("/caregiver/change-pin", json={"current_pin": "9999", "new_pin": "5678"}).status_code, 400)
         self.assertEqual(self.client.post("/caregiver/change-pin", json={"current_pin": "1234", "new_pin": "56x8"}).status_code, 400)
         self.assertEqual(self.client.post("/caregiver/change-pin", json={"current_pin": "1234", "new_pin": "5678"}).status_code, 200)
         self.assertEqual(self.client.post("/caregiver/unlock", json={"pin": "1234"}).status_code, 403)
         self.assertEqual(self.client.post("/caregiver/unlock", json={"pin": "5678"}).status_code, 200)
-        stored = json.loads(self.settings_path.read_text(encoding="utf-8"))["pin"]
+        import auth
+        with app.api.app_context():
+            stored = auth.db().execute("SELECT pin_hash FROM patients WHERE id='test-patient'").fetchone()[0]
         self.assertTrue(check_password_hash(stored, "5678"))
 
     def test_pins_validate_and_invalidate_unplayed_plans(self):

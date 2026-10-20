@@ -1,3 +1,4 @@
+from tests.auth_support import setup_auth, make_client
 import json
 import os
 from pathlib import Path
@@ -20,6 +21,7 @@ from cognitive_reports import (
 
 class CognitiveReportTests(unittest.TestCase):
     def setUp(self):
+        setup_auth(self, 'caregiver')
         self.temp_dir = tempfile.TemporaryDirectory()
         self.perf_path = Path(self.temp_dir.name) / "performance_data.json"
         self.games_path = Path(self.temp_dir.name) / "games.json"
@@ -273,7 +275,7 @@ class CognitiveReportTests(unittest.TestCase):
     def test_daily_plan_and_report_agree_on_planned_games(self):
         from app import api
         api.config["TESTING"] = True
-        client = api.test_client()
+        client = self.auth_client
 
         date_str = "2026-10-15"
         with patch.object(__import__("app"), "PERFORMANCE_PATH", str(self.perf_path)), \
@@ -379,7 +381,7 @@ class CognitiveReportTests(unittest.TestCase):
     def test_flask_endpoints(self):
         from app import api
         api.config["TESTING"] = True
-        client = api.test_client()
+        client = self.auth_client
 
         with patch.object(__import__("app"), "PERFORMANCE_PATH", str(self.perf_path)), \
              patch.object(__import__("app"), "SETTINGS_PATH", str(self.settings_path)), \

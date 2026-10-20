@@ -1,3 +1,4 @@
+from tests.auth_support import setup_auth, make_client
 import json
 import tempfile
 import unittest
@@ -9,6 +10,7 @@ import app
 
 class CrosswordTests(unittest.TestCase):
     def setUp(self):
+        setup_auth(self, 'caregiver')
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.people_path = self.root / "people.json"
@@ -33,7 +35,7 @@ class CrosswordTests(unittest.TestCase):
         ]
         for item in self.patches:
             item.start()
-        self.client = app.api.test_client()
+        self.client = self.auth_client
 
     def tearDown(self):
         for item in reversed(self.patches):
