@@ -8,7 +8,7 @@ import Nav from "@/components/nav";
 import { CaregiverOnly } from "@/components/caregiver";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { API_URL } from "@/lib/api";
+import { mediaUrl, apiFetch, API_URL } from "@/lib/api";
 import { COGNITIVE_AREAS } from "@/lib/areas";
 import { GAME_REGISTRY } from "@/components/games/registry";
 import { dayKey, toEntries, LEVEL_NAMES, type Entry } from "@/lib/progress";
@@ -71,8 +71,8 @@ function Overview() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${API_URL}/performance`), fetch(`${API_URL}/settings`), fetch(`${API_URL}/people`),
-      fetch(`${API_URL}/daily-plan?date=${today}`),
+      apiFetch(`${API_URL}/performance`), apiFetch(`${API_URL}/settings`), apiFetch(`${API_URL}/people`),
+      apiFetch(`${API_URL}/daily-plan?date=${today}`),
     ]).then(async ([performanceResponse, settingsResponse, peopleResponse, planResponse]) => {
       if (!performanceResponse.ok || !settingsResponse.ok || !peopleResponse.ok || !planResponse.ok) throw new Error("Could not load overview");
       const [performanceData, settingsData, peopleData, planData] = await Promise.all([performanceResponse.json(), settingsResponse.json(), peopleResponse.json(), planResponse.json()]);
@@ -81,7 +81,7 @@ function Overview() {
   }, [today]);
 
   const saveSettings = async (next: Partial<Settings>) => {
-    const response = await fetch(`${API_URL}/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) });
+    const response = await apiFetch(`${API_URL}/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) });
     if (!response.ok) throw new Error((await response.json()).error ?? "Could not save settings");
     setSettings(await response.json());
   };
@@ -107,7 +107,7 @@ function Overview() {
     {failed ? <p role="alert" className={cardClass}>Could not load the caregiver overview. Check that the backend is available.</p> : !performance ? <p className="py-10 text-center text-muted-foreground">Loading caregiver information…</p> : <div className="space-y-5">
       <Card className={cardClass}>
         <div className="flex items-center gap-4">
-          {self?.photo ? <img src={`${API_URL}/known-faces/${encodeURIComponent(self.photo)}`} alt="" className="h-16 w-16 rounded-full object-cover" /> : <div aria-hidden className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-2xl font-bold text-muted-foreground">{(settings.patient_name || "P").trim().slice(0, 1).toUpperCase()}</div>}
+          {self?.photo ? <img src={mediaUrl(`/known-faces/${encodeURIComponent(self.photo)}`)} alt="" className="h-16 w-16 rounded-full object-cover" /> : <div aria-hidden className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-2xl font-bold text-muted-foreground">{(settings.patient_name || "P").trim().slice(0, 1).toUpperCase()}</div>}
           <div className="min-w-0 flex-1"><h2 className="text-xl font-semibold">{settings.patient_name || "Patient"}</h2><p className="mt-1 text-sm text-muted-foreground">Last active: {latest ? formatDistanceToNow(new Date(`${latest}T12:00:00`), { addSuffix: true }) : "No activity yet"}</p></div>
         </div>
       </Card>

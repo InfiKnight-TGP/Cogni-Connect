@@ -6,7 +6,7 @@ import ActivityLog from "@/components/caregiver/activityLog";
 import ProgressContent from "@/components/caregiver/progressContent";
 import ProgressSummary from "@/components/caregiver/progressSummary";
 import { Button } from "@/components/ui/button";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { AREAS, lastFourWeeks, shortDate, toEntries, type Area, type Entry } from "@/lib/progress";
 import { Printer } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -51,7 +51,7 @@ function DoctorReportPreview() {
   const today = new Date();
   const weeks = lastFourWeeks(today);
   useEffect(() => {
-    Promise.all([fetch(`${API_URL}/settings`), fetch(`${API_URL}/performance`)])
+    Promise.all([apiFetch(`${API_URL}/settings`), apiFetch(`${API_URL}/performance`)])
       .then(async ([settings, performance]) => {
         const settingsData = settings.ok ? await settings.json() : {};
         const perfData = performance.ok ? await performance.json() : {};

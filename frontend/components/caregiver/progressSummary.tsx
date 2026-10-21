@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { toEntries, type Entry } from "@/lib/progress";
 import WeeklySummary from "./weeklySummary";
 import DaySnapshot from "./daySnapshot";
@@ -9,7 +9,7 @@ import DaySnapshot from "./daySnapshot";
 export default function ProgressSummary() {
   const [entries, setEntries] = useState<Entry[] | null>(null);
   useEffect(() => {
-    fetch(`${API_URL}/performance`).then((response) => response.ok ? response.json() : Promise.reject())
+    apiFetch(`${API_URL}/performance`).then((response) => response.ok ? response.json() : Promise.reject())
       .then((data) => setEntries(toEntries(data))).catch(() => setEntries([]));
   }, []);
   return <div className="space-y-5">

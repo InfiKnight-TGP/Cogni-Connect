@@ -2,7 +2,7 @@
 
 import Nav from "@/components/nav";
 import { getGameById } from "@/components/games/registry";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { addDays, format, startOfWeek } from "date-fns";
 import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
@@ -42,7 +42,7 @@ export default function MyProgressPage() {
 
   const loadProgress = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/performance`);
+      const res = await apiFetch(`${API_URL}/performance`);
       if (!res.ok) throw new Error();
       const perf = await res.json();
 

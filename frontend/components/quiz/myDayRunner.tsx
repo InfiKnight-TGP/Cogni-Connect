@@ -9,7 +9,7 @@ import PersonSelect from "./personSelect";
 import ContextQuestions from "./contextQuestions";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 import ReadAloud from "@/components/interaction/ReadAloud";
 
@@ -34,7 +34,7 @@ export default function MyDayRunner() {
     const prepareDay = async () => {
       let sourceDate = date;
       try {
-        const videosResponse = await fetch(`${API_URL}/videos`, { cache: "no-store" });
+        const videosResponse = await apiFetch(`${API_URL}/videos`, { cache: "no-store" });
         if (videosResponse.ok) {
           const videos: { date?: string }[] = await videosResponse.json();
           const availableDates = Array.from(new Set(videos
@@ -46,7 +46,7 @@ export default function MyDayRunner() {
           // has real answers. If none has faces, use the newest video day for
           // the journal and transcript recall activity.
           for (const availableDate of availableDates) {
-            const facesResponse = await fetch(`${API_URL}/faces-for-date?date=${availableDate}`, { cache: "no-store" });
+            const facesResponse = await apiFetch(`${API_URL}/faces-for-date?date=${availableDate}`, { cache: "no-store" });
             if (!facesResponse.ok) continue;
             const faces: { detected?: string[] } = await facesResponse.json();
             if (faces.detected?.length) {
@@ -63,7 +63,7 @@ export default function MyDayRunner() {
       if (!active) return;
       setMemoryDate(sourceDate);
       try {
-        await fetch(`${API_URL}/generate-questions`, {
+        await apiFetch(`${API_URL}/generate-questions`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ date: sourceDate }),

@@ -10,7 +10,7 @@ import StepRound, { StepCard } from "./StepRound";
 import ErrandRound from "./ErrandRound";
 import { shuffle } from "./useSlots";
 
-import { API_URL as API } from "@/lib/api";
+import { mediaUrl, apiFetch, API_URL as API } from "@/lib/api";
 
 type Round =
   | { kind: "steps"; title: string; prompt: string; cards: StepCard[] }
@@ -18,7 +18,7 @@ type Round =
 
 async function fetchJson<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(API + path);
+    const res = await apiFetch(API + path);
     return res.ok ? await res.json() : null;
   } catch {
     return null; // backend down: fall back to built-in content
@@ -44,7 +44,7 @@ async function personalRound(date: string, spareErrands: ErrandSet): Promise<Rou
       kind: "steps",
       title: "Put your day back in order",
       prompt: "Tap the photos in the order they happened.",
-      cards: frames.map((f) => ({ kind: "photo", url: API + encodeURI(f.url), timestamp: f.timestamp })),
+      cards: frames.map((f) => ({ kind: "photo", url: mediaUrl(encodeURI(f.url)), timestamp: f.timestamp })),
     };
   }
   const steps = routine?.steps ?? [];

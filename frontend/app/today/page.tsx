@@ -5,7 +5,7 @@ import Nav from "@/components/nav";
 import RightColumn from "@/components/rightColumn";
 import TodayPath from "@/components/todayPath";
 import { Button } from "@/components/ui/button";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import {
   BookOpen,
   Brain,
@@ -77,8 +77,8 @@ export default function TodayPage() {
   const load = useCallback(async (day: string) => {
     try {
       const [planRes, perfRes] = await Promise.all([
-        fetch(`${API_URL}/daily-plan?date=${day}`),
-        fetch(`${API_URL}/performance`),
+        apiFetch(`${API_URL}/daily-plan?date=${day}`),
+        apiFetch(`${API_URL}/performance`),
       ]);
       if (!planRes.ok) throw new Error();
       const p = await planRes.json();

@@ -21,6 +21,8 @@ import React, { useState } from "react";
 import { PinDialog } from "./caregiver";
 import { lockCaregiver, useCaregiver } from "@/lib/mode";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
+import { useAuth } from "@/lib/auth-context";
+import { PUBLIC_ROUTES } from "@/lib/auth-session";
 
 interface NavItem {
   href: string;
@@ -61,21 +63,27 @@ export default function Nav() {
   const [pinOpen, setPinOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+  const { session, selectPatient, logout } = useAuth();
+  const [notice, setNotice] = useState("");
+  const [switching, setSwitching] = useState(false);
   const links = caregiver ? CAREGIVER_LINKS : PATIENT_LINKS;
   const isActive = (href: string) => pathname === href;
 
   const modeButton = caregiver
     ? {
-        label: t("Exit caregiver"),
+        label: t(session?.role === "caregiver" ? "Sign out" : "Exit caregiver"),
         short: t("Exit"),
         icon: LogOut,
         onClick: () => {
-          lockCaregiver();
-          router.push("/");
+          void (session?.role === "caregiver" ? logout() : lockCaregiver()).catch(() => setNotice("Could not sign out. Please try again."));
         },
       }
     : { label: t("Caregiver"), short: t("Caregiver"), icon: Lock, onClick: () => setPinOpen(true) };
   const ModeIcon = modeButton.icon;
+  const switcher = session?.role === "caregiver" && session.patients.length > 1 ? <label className="block text-sm font-semibold">Patient<select aria-label="Active patient" className="mt-1 min-h-12 w-full rounded-xl border bg-background px-2 text-lg" value={session.activePatient?.id ?? ""} disabled={switching} onChange={event => {
+    setSwitching(true); setNotice(""); void selectPatient(event.target.value).catch(error => { setNotice(error.message); setSwitching(false); });
+  }}>{session.patients.map(patient => <option key={patient.id} value={patient.id}>{patient.name}</option>)}</select></label> : null;
+  if (PUBLIC_ROUTES.has(pathname)) return <header className="p-4"><Link className="inline-flex min-h-12 items-center text-xl font-bold text-primary" href={session ? session.role === "caregiver" ? "/caregiver" : "/" : "/welcome"}>CogniConnect</Link></header>;
 
   return (
     <>
@@ -85,6 +93,9 @@ export default function Nav() {
           <BrainCircuit className="me-2 h-7 w-7 text-primary" /> Cogni Connect
         </Link>
       </header>
+      {switcher && <div className="fixed inset-x-0 top-16 z-40 border-b bg-background px-4 pb-2 lg:hidden">{switcher}</div>}
+      {switcher && <div className="h-20 lg:hidden" />}
+      {notice && <p role="alert" className="fixed left-4 top-20 z-50 rounded-xl bg-background p-4 shadow-lg">{notice}</p>}
 
       {/* Desktop: left sidebar */}
       <aside
@@ -97,6 +108,7 @@ export default function Nav() {
         >
           <BrainCircuit className="me-2 h-8 w-8" /> Cogni Connect
         </Link>
+        {switcher && <div className="mb-4">{switcher}</div>}
         <nav className="flex flex-1 flex-col gap-2" aria-label={t("Main")}>
           {links.map((l) => {
             const Icon = l.icon;

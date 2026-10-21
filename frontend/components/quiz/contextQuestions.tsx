@@ -11,7 +11,7 @@ import { Textarea } from "../ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import VideoModal from "../videoModal";
 import { format } from "date-fns";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { isCaregiverUnlocked } from "@/lib/mode";
 import { ReadAloud } from "@/components/interaction/ReadAloud";
 import { DictationButton } from "@/components/interaction/DictationButton";
@@ -56,7 +56,7 @@ export default function ContextQuestions({
   useEffect(() => {
     const fetchQuestions = async () => {
       try {
-        const response = await fetch(`${API_URL}/questions`);
+        const response = await apiFetch(`${API_URL}/questions`);
         if (response.ok) {
           const result = await response.json();
           const questions = result.questions || [];
@@ -120,7 +120,7 @@ export default function ContextQuestions({
         const combinedScore = Math.round(validScores.reduce((sum, score) => sum + score, 0) / validScores.length);
         
         // Save combined performance to backend
-        fetch(`${API_URL}/performance`, {
+        apiFetch(`${API_URL}/performance`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -147,7 +147,7 @@ export default function ContextQuestions({
   /*
   useEffect(() => {
     const getData = async () => {
-      const res = await fetch("/api/questions", {
+      const res = await apiFetch("/api/questions", {
         headers: {
           "Content-Type": "application/json",
         },
@@ -304,7 +304,7 @@ function Question({
 
   const onSubmit = async () => {
     try {
-      const res = await fetch("/api/accuracy", {
+      const res = await apiFetch("/api/accuracy", {
         method: "POST",
         body: JSON.stringify({
           given: value,

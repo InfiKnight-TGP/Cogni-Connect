@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { API_URL } from "@/lib/api";
+import { mediaUrl, apiFetch, API_URL } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
 import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 import ReadAloud from "@/components/interaction/ReadAloud";
@@ -63,7 +63,7 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
 
   useEffect(() => {
     let active = true;
-    fetch(`${API_URL}/people`)
+    apiFetch(`${API_URL}/people`)
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("Could not load people")))
       .then((data: Person[]) => {
         if (!active) return;
@@ -142,13 +142,13 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
     </div>
 
     {reinforcement ? <div className="flex flex-col items-center gap-3" role="status">
-      <img src={`${API_URL}/known-faces/${encodeURIComponent(activeRound.target.photo)}`} alt={activeRound.target.name} className="h-48 w-48 rounded-xl border border-border object-cover shadow-sm" />
+      <img src={mediaUrl(`/known-faces/${encodeURIComponent(activeRound.target.photo)}`)} alt={activeRound.target.name} className="h-48 w-48 rounded-xl border border-border object-cover shadow-sm" />
       <div className="flex items-center gap-3">
         <p className="text-xl font-semibold">{shownName}</p>
       </div>
     </div> : <>
       <VoiceQuestion question={prompt} options={activeRound.options.map(person => ({ id: person.id, label: person.name }))} onMatched={(option, input) => { const selected = activeRound.options.find(person => person.id === option.id); if (selected) choose(selected, input); }} />
-      {activeRound.kind === "name" && <img src={`${API_URL}/known-faces/${encodeURIComponent(activeRound.target.photo)}`} alt="Who is this?" className="mx-auto h-48 w-48 rounded-xl border border-border object-cover shadow-sm" />}
+      {activeRound.kind === "name" && <img src={mediaUrl(`/known-faces/${encodeURIComponent(activeRound.target.photo)}`)} alt="Who is this?" className="mx-auto h-48 w-48 rounded-xl border border-border object-cover shadow-sm" />}
 
       {activeRound.kind === "name" ? <div className="grid gap-3 sm:grid-cols-3">
         {activeRound.options.map((person) => <button key={person.id} type="button" onClick={() => choose(person)} aria-label={person.name}
@@ -158,7 +158,7 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
         {activeRound.options.map((person) => <button key={person.id} type="button" onClick={() => choose(person)} aria-label={person.name}
           className={`rounded-xl border border-border bg-card p-2 text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${revealed && person.id === round.target.id ? "border-green-600 bg-green-600/15" : ""}`}
           style={shakingId === person.id ? { animation: "nameRecallShake 300ms ease-in-out" } : undefined}>
-          <img src={`${API_URL}/known-faces/${encodeURIComponent(person.photo)}`} alt="" className="mx-auto aspect-square w-full min-w-36 max-w-48 rounded-lg object-cover" />
+          <img src={mediaUrl(`/known-faces/${encodeURIComponent(person.photo)}`)} alt="" className="mx-auto aspect-square w-full min-w-36 max-w-48 rounded-lg object-cover" />
         </button>)}
       </div>}
 

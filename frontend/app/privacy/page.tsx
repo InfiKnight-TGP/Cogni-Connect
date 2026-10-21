@@ -19,12 +19,19 @@ export default function PrivacyPage() {
 
         <section className="space-y-4">
           <h2 className="text-2xl font-bold">{t("Information stored on this server")}</h2>
-          <p>{t("Information is kept on this server in backend files. It can include:")}</p>
+          <p>{t("Patient information is kept in separate folders on this server. Caregivers can access only the patients linked to their accounts. It can include:")}</p>
           <ul className="list-disc space-y-2 pl-7">
             <li>{t("Videos, face photos, and transcripts.")}</li>
             <li>{t("Activity scores.")}</li>
             <li>{t("People’s names, their relations to the person using CogniConnect, and phone numbers.")}</li>
           </ul>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-2xl font-bold">{t("Accounts and device access")}</h2>
+          <p>{t("Caregiver accounts store a name, email address, and a securely hashed password. We send short-lived login and password-reset codes by email. The server stores hashes of these codes, pairing codes, and session tokens.")}</p>
+          <p>{t("Patient devices connect using a single-use pairing code without an email or password. Device sessions can last up to 90 days between visits. Caregiver sessions can last up to 30 days between visits. Caregivers can revoke paired devices from Settings.")}</p>
+          <p>{t("A separate PIN for each patient allows temporary caregiver access on their device. Session cookies are used to keep you signed in. Display preferences may be stored in your browser.")}</p>
         </section>
 
         <section className="space-y-4">
@@ -36,7 +43,7 @@ export default function PrivacyPage() {
 
         <section className="space-y-4">
           <h2 className="text-2xl font-bold">{t("Caregiver controls")}</h2>
-          <p>{t("Caregivers can delete people and videos from CogniConnect.")}</p>
+          <p>{t("Caregivers can remove people and activity records using the app. To request deletion of an account or other stored information, contact the person or organisation running your CogniConnect server.")}</p>
           <p>{t("CogniConnect has no ads and does not sell data.")}</p>
         </section>
       </main>

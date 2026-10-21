@@ -15,7 +15,7 @@ import { format } from "date-fns";
 
 import { Separator } from "../ui/separator";
 import { Badge } from "../ui/badge";
-import { API_URL } from "@/lib/api";
+import { mediaUrl, apiFetch, API_URL } from "@/lib/api";
 import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 import ReadAloud from "@/components/interaction/ReadAloud";
 
@@ -63,7 +63,7 @@ export default function PersonSelect({
         const formattedDate = format(date, "yyyy-MM-dd");
 
         // Get known faces
-        const facesResponse = await fetch(`${API_URL}/known-faces`);
+        const facesResponse = await apiFetch(`${API_URL}/known-faces`);
         let kFaces: KnownFace[] = [];
         if (facesResponse.ok) {
           const facesData = await facesResponse.json();
@@ -72,7 +72,7 @@ export default function PersonSelect({
         }
 
         // Get faces detected in videos from the selected date
-        const facesForDateRes = await fetch(
+        const facesForDateRes = await apiFetch(
           `${API_URL}/faces-for-date?date=${formattedDate}`
         );
         let dNames: string[] = [];
@@ -365,7 +365,8 @@ function PersonCard({
     >
       {person.path ? (
         <Image
-          src={`${API_URL}/known-faces/${person.path}`}
+          unoptimized
+          src={mediaUrl(`/known-faces/${person.path}`)}
           alt={person.name}
           className="h-full w-full rounded-md object-cover"
           width={208}

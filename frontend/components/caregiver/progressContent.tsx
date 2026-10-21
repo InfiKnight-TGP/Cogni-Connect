@@ -1,6 +1,6 @@
 "use client";
 
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { COGNITIVE_AREAS } from "@/lib/areas";
 import {
   AREAS, Entry, LEVEL_NAMES, Week, declines, lastFourWeeks, shortDate, toEntries, trend,
@@ -27,7 +27,7 @@ export default function ProgressContent() {
   const today = new Date();
 
   useEffect(() => {
-    fetch(`${API_URL}/performance`)
+    apiFetch(`${API_URL}/performance`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((perf) => setEntries(toEntries(perf)))
       .catch(() => setFailed(true));

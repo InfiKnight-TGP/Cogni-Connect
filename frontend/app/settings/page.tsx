@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useTheme } from "next-themes";
 import { useState } from "react";
 import Nav from "@/components/nav";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { useInteraction, usePreferences, useTranslate, type LanguageCode } from "@/components/interaction/InteractionProvider";
 import { LANGUAGES } from "@/components/siteLinks";
 import type { Preferences } from "@/lib/interaction/preferences";
@@ -38,9 +38,10 @@ export default function PatientSettingsPage() {
   const set = <K extends keyof Preferences>(key: K, value: Preferences[K]) => updatePreferences({ [key]: value } as Pick<Preferences, K>);
 
   async function saveLanguage(code: LanguageCode) {
+    if (!caregiver) { setLanguage(code); return; }
     setSavingLanguage(true); setLanguageError(false);
     try {
-      const response = await fetch(`${API_URL}/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ language: code }) });
+      const response = await apiFetch(`${API_URL}/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ language: code }) });
       if (!response.ok) throw new Error("save failed");
       setLanguage(code);
     } catch { setLanguageError(true); }

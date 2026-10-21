@@ -1,4 +1,5 @@
 "use client";
+import { mediaUrl, apiFetch, API_URL } from "@/lib/api";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +34,7 @@ export default function Page() {
   useEffect(() => {
     const loadVideos = async () => {
       try {
-        const res = await fetch("/api/videos");
+        const res = await apiFetch("/api/videos");
         const data = await res.json();
         if (data.videos && data.videos.length > 0) {
           setResults(data.videos);
@@ -46,7 +47,7 @@ export default function Page() {
   }, []);
 
   const onSearch = async () => {
-    const res = await fetch(`/api/semSearch`, {
+    const res = await apiFetch(`/api/semSearch`, {
       method: "POST",
       body: JSON.stringify({
         query: value,
@@ -111,7 +112,7 @@ export default function Page() {
         controls={true}
         ref={videoRef}
         className="min-w-screen absolute top-0 min-h-screen object-cover"
-        src={results[index % results.length]}
+        src={results.length ? mediaUrl(results[index % results.length]) : undefined}
         // src={"/video_chunks/capitalone_chunks/chunk_0000_0010.mp4"}
       />
       <div className="absolute bottom-8 w-full max-w-screen-sm rounded-xl border border-border bg-background p-4 transition-all">

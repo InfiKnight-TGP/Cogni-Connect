@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Upload, CheckCircle, AlertCircle, Video, Loader2, Calendar } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { DatePickerWithPresets } from "@/components/quiz/datePicker";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { CaregiverOnly } from "@/components/caregiver";
 import CaregiverPageLabel from "@/components/caregiver/pageLabel";
 
@@ -49,7 +49,7 @@ function UploadVideos() {
     if (currentProcessingFile) {
       const interval = setInterval(async () => {
         try {
-          const response = await fetch(`${API_URL}/processing-status/${currentProcessingFile}`);
+          const response = await apiFetch(`${API_URL}/processing-status/${currentProcessingFile}`);
           if (response.ok) {
             const status = await response.json();
             setProcessingStatus(status);
@@ -73,7 +73,7 @@ function UploadVideos() {
 
   const fetchVideos = async () => {
     try {
-      const response = await fetch(`${API_URL}/videos`);
+      const response = await apiFetch(`${API_URL}/videos`);
       if (response.ok) {
         const data = await response.json();
         setVideos(data);
@@ -124,7 +124,7 @@ function UploadVideos() {
     formData.append("date", videoDate.toISOString());
 
     try {
-      const response = await fetch(`${API_URL}/upload`, {
+      const response = await apiFetch(`${API_URL}/upload`, {
         method: "POST",
         body: formData,
       });

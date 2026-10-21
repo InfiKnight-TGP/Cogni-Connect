@@ -1,33 +1,11 @@
-import { API_URL } from "@/lib/api";
+import { backendFetch, backendResponse } from "@/lib/backend-proxy";
 export async function POST(request: Request) {
   try {
-    const req = await request.json();
-
-    const value = req.given;
-    const answer = req.real;
-    const video = req.video || '';
-
-    const params = new URLSearchParams({
-      given: value,
-      real: answer + '.',
-      ...(video && { video })
-    });
-
-    const res = await fetch(
-      `${API_URL}/accuracy?${params.toString()}`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-        },
-        cache: "no-store",
-      },
-    );
-    const data = await res.json();
-    if (!res.ok) return Response.json({ error: data.error || "Evaluation unavailable" }, { status: res.status });
-
-    return Response.json({ data });
-  } catch (err) {
-    console.log(err);
-    return Response.json({ error: "Failed to check accuracy" }, { status: 500 });
-  }
+    const body = await request.json();
+    const params = new URLSearchParams({ given: body.given, real: body.real + ".", ...(body.video && { video: body.video }) });
+    const response = await backendFetch(request, `/accuracy?${params}`);
+    if (!response.ok) return backendResponse(response);
+    const data = await response.json();
+    return backendResponse(new Response(JSON.stringify({ data }), { headers: response.headers }));
+  } catch { return Response.json({ error: "Could not check your answer." }, { status: 502 }); }
 }

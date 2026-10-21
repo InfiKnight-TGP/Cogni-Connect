@@ -7,7 +7,7 @@ import { DictationButton } from "@/components/interaction/DictationButton";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 import { readSkill } from "@/lib/interaction/events";
 import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import type { GameProps } from "../_shared/types";
 
 type CrosswordEntry = { number: number; direction: "across" | "down"; clue: string; word: string; row: number; col: number };
@@ -52,7 +52,7 @@ function Crossword({ date, finish }: { date: string; finish: (score: number) => 
       let puzzleDate = date;
       if (preview) {
         try {
-          const response = await fetch(API_URL + "/journals", { cache: "no-store" });
+          const response = await apiFetch(API_URL + "/journals", { cache: "no-store" });
           if (response.ok) {
             const journals = await response.json() as Record<string, { date?: string }>;
             const savedDays = Object.values(journals).map(journal => journal.date?.slice(0, 10) ?? "").filter(day => /^\d{4}-\d{2}-\d{2}$/.test(day) && day <= date).sort();
@@ -61,7 +61,7 @@ function Crossword({ date, finish }: { date: string; finish: (score: number) => 
         } catch { /* The selected date and sample preview remain available offline. */ }
       }
       try {
-        const response = await fetch(API_URL + "/crossword?date=" + encodeURIComponent(puzzleDate), { cache: "no-store" });
+        const response = await apiFetch(API_URL + "/crossword?date=" + encodeURIComponent(puzzleDate), { cache: "no-store" });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Crossword unavailable");
         if (!cancelled) {

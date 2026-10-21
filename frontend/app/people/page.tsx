@@ -3,7 +3,7 @@
 import Nav from "@/components/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { API_URL } from "@/lib/api";
+import { mediaUrl, apiFetch, API_URL } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
 import CaregiverPageLabel from "@/components/caregiver/pageLabel";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -42,7 +42,7 @@ export default function PeoplePage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/people`);
+      const res = await apiFetch(`${API_URL}/people`);
       if (!res.ok) throw new Error();
       setPeople(await res.json());
       setVersion(Date.now());
@@ -56,7 +56,7 @@ export default function PeoplePage() {
     load();
   }, [load]);
 
-  const photoUrl = (p: Person) => `${API_URL}/known-faces/${p.photo}?v=${version}`;
+  const photoUrl = (p: Person) => mediaUrl(`/known-faces/${p.photo}?v=${version}`);
 
   return (
     <>
@@ -127,7 +127,7 @@ function ManagePeople({
 
   const remove = async (p: Person) => {
     if (!confirm(`Remove ${p.name}? Their photo will be deleted too.`)) return;
-    const res = await fetch(`${API_URL}/people/${p.id}`, { method: "DELETE" });
+    const res = await apiFetch(`${API_URL}/people/${p.id}`, { method: "DELETE" });
     if (!res.ok) alert("Could not remove this person. Please try again.");
     if (editing?.id === p.id) setEditing(null);
     reload();
@@ -200,7 +200,7 @@ function PersonForm({
     form.append("phone", phone.trim());
     if (photo) form.append("photo", photo);
     try {
-      const res = await fetch(`${API_URL}/people${person ? `/${person.id}` : ""}`, {
+      const res = await apiFetch(`${API_URL}/people${person ? `/${person.id}` : ""}`, {
         method: person ? "PUT" : "POST",
         body: form,
       });

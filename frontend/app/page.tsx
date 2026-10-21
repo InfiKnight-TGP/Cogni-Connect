@@ -3,7 +3,7 @@
 import DashboardCard from "@/components/dashboardCard";
 import Nav from "@/components/nav";
 import RightColumn from "@/components/rightColumn";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { format, startOfWeek, addDays } from "date-fns";
 import { ArrowRight, Brain, Image as Images, Star, Users2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -36,8 +36,8 @@ export default function PatientHomePage() {
     const today = format(new Date(), "yyyy-MM-dd");
     try {
       const [planRes, perfRes] = await Promise.all([
-        fetch(`${API_URL}/daily-plan?date=${today}`),
-        fetch(`${API_URL}/performance`),
+        apiFetch(`${API_URL}/daily-plan?date=${today}`),
+        apiFetch(`${API_URL}/performance`),
       ]);
 
       if (planRes.ok) {

@@ -4,7 +4,7 @@ import Nav from "@/components/nav";
 import { CaregiverOnly } from "@/components/caregiver";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import CaregiverPageLabel from "@/components/caregiver/pageLabel";
 import { useEffect, useState } from "react";
 
@@ -28,7 +28,7 @@ function Routine() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_URL}/routine`)
+    apiFetch(`${API_URL}/routine`)
       .then((r) => r.json())
       .then((d) => setSteps(d.steps?.length ? d.steps : ["", "", ""]))
       .catch(() => setStatus({ ok: false, text: "Could not load the routine. Is the backend running?" }));
@@ -41,7 +41,7 @@ function Routine() {
     setSaving(true);
     setStatus(null);
     try {
-      const res = await fetch(`${API_URL}/routine`, {
+      const res = await apiFetch(`${API_URL}/routine`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ steps: filled }),

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { GAME_REGISTRY } from "@/components/games/registry";
 import { COGNITIVE_AREAS } from "@/lib/areas";
 import { dayKey, gameArea, LEVEL_NAMES, type Area } from "@/lib/progress";
@@ -57,7 +57,7 @@ export default function ActivityLog() {
   const [to, setTo] = useState("");
   const [sort, setSort] = useState<{ key: keyof Activity; direction: "asc" | "desc" }>({ key: "date", direction: "desc" });
   const [page, setPage] = useState(0);
-  const refresh = useCallback(() => fetch(`${API_URL}/performance`)
+  const refresh = useCallback(() => apiFetch(`${API_URL}/performance`)
     .then((response) => response.ok ? response.json() : Promise.reject(new Error("Could not load activities")))
     .then((data) => { setPerformance(data); setLoadError(false); })
     .catch(() => setLoadError(true)), []);
@@ -83,7 +83,7 @@ export default function ActivityLog() {
     if (!window.confirm(message)) return;
     setNotice("");
     try {
-      const response = await fetch(`${API_URL}/performance/${encodeURIComponent(row.sourceId)}`, { method: "DELETE" });
+      const response = await apiFetch(`${API_URL}/performance/${encodeURIComponent(row.sourceId)}`, { method: "DELETE" });
       if (!response.ok) throw new Error((await response.json()).error ?? "Could not remove activity.");
       await refresh();
       setPage((current) => Math.min(current, Math.max(0, Math.ceil((filtered.length - 1) / 20) - 1)));

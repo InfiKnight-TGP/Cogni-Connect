@@ -1,4 +1,4 @@
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 
 export type SpeechFailure = "unsupported" | "offline" | "permission" | "microphone" | "language" | "silence" | "cancelled";
 export class SpeechError extends Error {
@@ -97,7 +97,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
     try { return await this.browser.speak(text, language, signal, rate); }
     catch (error) {
       if (!(error instanceof SpeechError) || error.reason !== "language") throw error;
-      const response = await fetch(`${API_URL}/speak`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, language }), signal });
+      const response = await apiFetch(`${API_URL}/speak`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, language }), signal });
       if (!response.ok) throw new SpeechError(response.status === 503 ? "unsupported" : "offline");
       const url = URL.createObjectURL(await response.blob());
       try {
@@ -145,7 +145,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
           const type = recorder.mimeType || "audio/webm";
           const form = new FormData(); form.append("audio", new Blob(chunks, { type }), `answer.${type.includes("mp4") ? "mp4" : "webm"}`); form.append("language", language);
           try {
-            const response = await fetch(`${API_URL}/transcribe`, { method: "POST", body: form, signal });
+            const response = await apiFetch(`${API_URL}/transcribe`, { method: "POST", body: form, signal });
             if (response.status === 503) throw new SpeechError("unsupported");
             if (!response.ok) throw new SpeechError("offline");
             const body = await response.json();

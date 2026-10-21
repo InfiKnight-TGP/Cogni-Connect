@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { COGNITIVE_AREAS } from "@/lib/areas";
 import { AREAS, dayKey, type Area } from "@/lib/progress";
 
@@ -19,12 +19,12 @@ export default function DaySnapshot() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API_URL}/reports/days`).then((response) => response.ok ? response.json() : { days: [] }).then((data) => setDays(Array.isArray(data.days) ? data.days : [])).catch(() => setDays([]));
+    apiFetch(`${API_URL}/reports/days`).then((response) => response.ok ? response.json() : { days: [] }).then((data) => setDays(Array.isArray(data.days) ? data.days : [])).catch(() => setDays([]));
   }, []);
   useEffect(() => {
     let active = true;
     setLoading(true);
-    fetch(`${API_URL}/reports/day?date=${encodeURIComponent(selectedDay)}`)
+    apiFetch(`${API_URL}/reports/day?date=${encodeURIComponent(selectedDay)}`)
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((data) => { if (active) setReport(data); })
       .catch(() => { if (active) setReport(null); })

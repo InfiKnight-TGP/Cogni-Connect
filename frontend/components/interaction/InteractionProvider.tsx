@@ -2,12 +2,14 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { translate, type Locale } from "@/lib/interaction/locale";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
 import { DEFAULT_PREFERENCES, readPreferences, textSizePixels, writePreferences, type Preferences } from "@/lib/interaction/preferences";
 import { WhisperSpeechProvider, type SpeechProvider } from "@/lib/interaction/speech";
 import { usePathname } from "next/navigation";
 import { cancelSpeechSession } from "./speechSession";
+import { useAuth } from "@/lib/auth-context";
+import { PUBLIC_ROUTES } from "@/lib/auth-session";
 
 export type LanguageCode = "en" | "hi" | "as";
 type InteractionContextValue = {
@@ -49,18 +51,28 @@ export function InteractionProvider({
   const [reducedMotion, setReducedMotion] = useState(false);
   const [caregiver, caregiverReady] = useCaregiver();
   const pathname = usePathname();
+  const { session } = useAuth();
+  const languageKey = `cogni-language:${session?.activePatient?.id ?? "public"}`;
   const locale = locales.find((item) => item.code === language) ?? locales.find((item) => item.code === "en")!;
   const englishLocale = locales.find((item) => item.code === "en")!;
-  const englishMode = caregiver || !caregiverReady;
+  const englishMode = (caregiver || !caregiverReady) && !PUBLIC_ROUTES.has(pathname);
   const activeLocale = englishMode ? englishLocale : locale;
   const fontClassName = englishMode ? "" : language === "hi" ? fontClassNames.hi : language === "as" ? fontClassNames.as : "";
 
   useEffect(() => {
     let active = true;
-    fetch(`${API_URL}/settings`, { cache: "no-store" })
+    if (!session?.activePatient || PUBLIC_ROUTES.has(pathname)) {
+      try { setLanguage(normalizeLanguage(localStorage.getItem(languageKey))); } catch { setLanguage("en"); }
+      setReady(true); return;
+    }
+    apiFetch(`${API_URL}/settings`, { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : {}))
       .then((settings: { language?: unknown }) => {
-        if (active) setLanguage(normalizeLanguage(settings.language));
+        if (active) {
+          let language = settings.language;
+          try { language = localStorage.getItem(languageKey) ?? language; } catch { /* Use the patient default. */ }
+          setLanguage(normalizeLanguage(language));
+        }
       })
       .catch(() => {
         if (active) setLanguage("en");
@@ -71,7 +83,7 @@ export function InteractionProvider({
     return () => {
       active = false;
     };
-  }, []);
+  }, [session?.activePatient?.id, pathname, languageKey]);
 
   useEffect(() => {
     cancelSpeechSession();
@@ -104,7 +116,10 @@ export function InteractionProvider({
     document.documentElement.dataset.animations = String(preferences.animations && !reducedMotion);
   }, [preferences.textSize, preferences.animations, reducedMotion]);
 
-  const setSelectedLanguage = useCallback((value: LanguageCode) => setLanguage(normalizeLanguage(value)), []);
+  const setSelectedLanguage = useCallback((value: LanguageCode) => {
+    setLanguage(normalizeLanguage(value));
+    try { localStorage.setItem(languageKey, value); } catch { /* Keep the session preference. */ }
+  }, [languageKey]);
   const context = useMemo(() => ({ language, locale, englishLocale, ready, setLanguage: setSelectedLanguage, preferences, updatePreferences, effectiveAnimations: preferences.animations && !reducedMotion, caregiverReady, reducedMotion, speechProvider: sharedSpeechProvider }), [language, locale, englishLocale, ready, setSelectedLanguage, preferences, updatePreferences, reducedMotion, caregiverReady]);
 
   return (

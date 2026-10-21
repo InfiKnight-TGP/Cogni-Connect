@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { CaregiverOnly } from "@/components/caregiver";
 import { Button } from "@/components/ui/button";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import {
   AREAS, Area, Entry, LEVEL_NAMES, Week, dayKey, declines, lastFourWeeks, shortDate, toEntries, trend,
   weeklyAverages,
@@ -167,9 +167,9 @@ function Report() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${API_URL}/performance`),
-      fetch(`${API_URL}/settings`),
-      fetch(`${API_URL}/reports/days`),
+      apiFetch(`${API_URL}/performance`),
+      apiFetch(`${API_URL}/settings`),
+      apiFetch(`${API_URL}/reports/days`),
     ])
       .then(async ([perf, settings, daysRes]) => {
         if (!perf.ok) throw new Error();
@@ -185,14 +185,14 @@ function Report() {
 
   useEffect(() => {
     if (!selectedDay) return;
-    fetch(`${API_URL}/reports/day?date=${encodeURIComponent(selectedDay)}`)
+    apiFetch(`${API_URL}/reports/day?date=${encodeURIComponent(selectedDay)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => setDayReport(data))
       .catch(() => setDayReport(null));
   }, [selectedDay]);
 
   const saveName = () =>
-    fetch(`${API_URL}/settings`, {
+    apiFetch(`${API_URL}/settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ patient_name: name }),
