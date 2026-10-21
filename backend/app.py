@@ -748,6 +748,18 @@ def serve_face_image(filename):
         return jsonify({"error": str(e)}), 404
 
 
+@api.get('/video_chunks')
+def list_video_chunks():
+    """List the active patient's playable memories, including migrated chunks."""
+    from pathlib import Path
+    from urllib.parse import quote
+    root = Path(VIDEO_CHUNKS_ROOT)
+    videos = [f"/video_chunks/{quote(path.relative_to(root).as_posix())}"
+              for path in sorted(root.rglob('*.mp4'))
+              if path.resolve().is_relative_to(root.resolve())]
+    return jsonify(videos=videos)
+
+
 @api.route('/video_chunks/<path:filepath>', methods=['GET'])
 def serve_video_chunk_file(filepath):
     """Serve video chunk files (videos, audio, JSON)."""

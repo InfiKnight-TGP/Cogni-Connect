@@ -101,7 +101,7 @@ class PatientStorageTests(unittest.TestCase):
         self.assertEqual(self.device.post('/caregiver/unlock', json={'pin': '1234'}).status_code, 200)
 
     def test_patient_a_cannot_select_or_access_b(self):
-        for path in ('/people', '/videos', '/performance', '/journals', '/settings',
+        for path in ('/people', '/videos', '/video_chunks', '/performance', '/journals', '/settings',
                      '/reports/days', '/reports/day?date=2026-01-01',
                      '/daily-plan?date=2026-01-01', '/crossword?date=2026-01-01',
                      '/known-faces/b.jpg', '/video_chunks/b.mp4', '/frames/b.jpg'):
@@ -114,6 +114,7 @@ class PatientStorageTests(unittest.TestCase):
         self.assertEqual([video['filename'] for video in self.client.get('/videos').json], ['legacy.mp4'])
         self.assertEqual(self.client.get('/performance').json['scores'][0]['score'], 70)
         self.assertEqual(self.client.get('/performance').json['game_scores'], [])
+        self.assertNotIn('/video_chunks/b.mp4', self.client.get('/video_chunks').json['videos'])
 
     def test_device_patient_cannot_be_overridden(self):
         response = self.device.get('/people', headers={'cogni_patient': 'patient-b'})
@@ -168,6 +169,7 @@ class PatientStorageTests(unittest.TestCase):
             self.assertEqual(video_names, {'b.mp4'} if patient_id == 'patient-b' else {'legacy.mp4'})
             media_status = self.client.get('/video_chunks/b.mp4', headers=headers).status_code
             self.assertEqual(media_status, 200 if patient_id == 'patient-b' else 404)
+            self.assertEqual('/video_chunks/b.mp4' in self.client.get('/video_chunks', headers=headers).json['videos'], patient_id == 'patient-b')
 
         response = self.client.post(
             '/settings',

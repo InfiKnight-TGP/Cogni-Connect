@@ -654,7 +654,9 @@ def init_auth(app, legacy_settings):
                 g.active_patient = dict(row) if row else None
             else:
                 linked = patients_for(session['user_id'])
-                selected = request.headers.get('cogni_patient') or request.cookies.get('cogni_patient')
+                # WSGI servers can discard headers containing underscores.
+                selected = (request.headers.get('X-Cogni-Patient') or
+                            request.headers.get('cogni_patient') or request.cookies.get('cogni_patient'))
                 g.active_patient = next((p for p in linked if p['id'] == selected), None) if selected else (linked[0] if linked else None)
                 needs_selection = request.blueprint != 'auth' or request.endpoint in ('auth.me', 'auth.legacy_change_pin')
                 if selected and g.active_patient is None and needs_selection:
