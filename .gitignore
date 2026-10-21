@@ -44,3 +44,8 @@ backend/platform-data/
 /video_journals.json
 /_backups/
 /voice-ai-journal-platform*/
+/backend/data/
+/backend/pre-migration-backup/
+/backend/auth.db
+/backend/auth.db-*
+/backend/crosswords.json
