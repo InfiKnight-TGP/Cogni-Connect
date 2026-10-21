@@ -1,8 +1,4 @@
-"""Server-side accounts and patient-device authorization.
-
-Application JSON remains global in this first migration step. Do not deploy as a
-multi-patient service until the per-patient storage migration is complete.
-"""
+"""Server-side accounts, pairing, and authorization for patient-scoped storage."""
 from contextlib import contextmanager
 from functools import wraps
 import hashlib
@@ -249,8 +245,13 @@ def bootstrap_patient(user_id):
         return
     settings = current_app.config['AUTH_LEGACY_SETTINGS']()
     patient_id = uuid.uuid4().hex
+    pin_hash = settings.get('pin')
+    if pin_hash is not None:
+        pin_hash = str(pin_hash)
+        if pin_hash and not pin_hash.startswith(('scrypt:', 'pbkdf2:')):
+            pin_hash = generate_password_hash(pin_hash, method='scrypt')
     db().execute('INSERT INTO patients VALUES (?,?,?,?,?)',
-                 (patient_id, settings.get('patient_name') or 'My patient', settings.get('pin'), user_id, now()))
+                 (patient_id, settings.get('patient_name') or 'My patient', pin_hash, user_id, now()))
     db().execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, user_id, 'owner'))
 
 

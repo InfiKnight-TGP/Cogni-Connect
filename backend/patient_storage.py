@@ -1,6 +1,7 @@
 """Patient paths, restart-safe legacy migration, and explicit CLI data selection."""
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -8,7 +9,6 @@ import threading
 import uuid
 
 from flask import abort, current_app, g
-from werkzeug.local import LocalProxy
 from werkzeug.security import generate_password_hash
 
 ROOT = Path(__file__).resolve().parent
@@ -34,9 +34,20 @@ def patient_path(name):
     return str(path)
 
 
+class ScopedPath(os.PathLike):
+    def __init__(self, name: str):
+        self.name = name
+
+    def __fspath__(self) -> str:
+        return patient_path(self.name)
+
+    def __str__(self) -> str:
+        return self.__fspath__()
+
+
 def scoped(name):
     # Request-local resolution: never change module globals between requests.
-    return LocalProxy(lambda: patient_path(name))
+    return ScopedPath(name)
 
 
 def initialize_patient(base, name):
@@ -51,6 +62,16 @@ def initialize_patient(base, name):
         if not path.exists():
             value = {'patient_name': name, 'language': 'en', 'pins': []} if filename == 'settings.json' else default
             path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def _copy_tree_missing(source, destination):
+    for item in source.rglob('*'):
+        target = destination / item.relative_to(source)
+        if item.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        elif not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
 
 
 def migrate_legacy():
@@ -113,6 +134,7 @@ def migrate_legacy():
                     raise ValueError('Public media points outside the public directory')
                 saved = backup / ('frontend-public-' + name)
                 shutil.copytree(source, saved, dirs_exist_ok=True)
+                _copy_tree_missing(source, base / name)
                 shutil.rmtree(source)
         # All copies are complete before removing the originals. On a retry,
         # a committed manifest prevents migration from touching live patient data.

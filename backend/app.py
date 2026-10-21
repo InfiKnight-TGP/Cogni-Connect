@@ -168,7 +168,7 @@ def accuracy():
         try:
             # Extract video name from path
             video_name = video_path.split('/')[-2].replace('_chunks', '')
-            journal_file = 'video_journals.json'
+            journal_file = JOURNALS_PATH
             if os.path.exists(journal_file):
                 with open(journal_file, 'r', encoding='utf-8') as f:
                     journals = json.load(f)
@@ -493,7 +493,7 @@ def upload_video():
         }
         
         # Start video processing in background thread
-        def process_video_background():
+        def process_video_background(filepath, base_dir, video_date, status_key):
             try:
                 from process_video import process_uploaded_video
                 processing_status[status_key]["message"] = "Processing video..."
@@ -516,7 +516,8 @@ def upload_video():
                 processing_status[status_key]["progress"] = 0
         
         # Start processing in background
-        thread = threading.Thread(target=process_video_background)
+        thread = threading.Thread(target=process_video_background,
+                                  args=(filepath, base_dir, video_date, status_key))
         thread.daemon = True
         thread.start()
         
@@ -549,7 +550,7 @@ def list_videos():
     """List all uploaded videos with their journal entries."""
     try:
         videos = []
-        journal_file = 'video_journals.json'
+        journal_file = JOURNALS_PATH
         journals = {}
         
         # Load journal entries
@@ -587,7 +588,7 @@ def list_videos():
 def get_journals():
     """Get all journal entries."""
     try:
-        journal_file = 'video_journals.json'
+        journal_file = JOURNALS_PATH
         if os.path.exists(journal_file):
             with open(journal_file, 'r', encoding='utf-8') as f:
                 journals = json.load(f)
@@ -1504,7 +1505,7 @@ def generate_questions():
             return jsonify({"error": "No videos processed yet"}), 404
         
         # Load journals to get dates
-        journal_file = 'video_journals.json'
+        journal_file = JOURNALS_PATH
         journals = {}
         if os.path.exists(journal_file):
             with open(journal_file, 'r', encoding='utf-8') as f:
