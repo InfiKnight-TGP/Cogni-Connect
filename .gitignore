@@ -34,3 +34,13 @@ backend/daily_plans.json
 backend/routines.json
 backend/settings.json
 backend/platform-data/
+
+# Local patient data and repository snapshots
+/daily_plans.json
+/performance_data.json
+/qas.json
+/routines.json
+/settings.json
+/video_journals.json
+/_backups/
+/voice-ai-journal-platform*/
