@@ -196,7 +196,7 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
       } else {
         // Session complete
         const avgEff = newEffs.reduce((a, b) => a + b, 0) / newEffs.length;
-        const totalHints = sessionHints + roundHints;
+        const totalHints = sessionHints;
         const finalScore = Math.max(0, Math.min(100, Math.round(avgEff - 10 * totalHints)));
 
         console.log("[map-navigator] session complete", {
