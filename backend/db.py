@@ -82,6 +82,16 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     user_columns = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
     if 'is_demo' not in user_columns:
         conn.execute('ALTER TABLE users ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0')
+    if 'role' not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'caregiver'")
+    if 'patient_id' not in user_columns:
+        conn.execute('ALTER TABLE users ADD COLUMN patient_id TEXT REFERENCES patients(id)')
+    if 'otp_target' not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN otp_target TEXT NOT NULL DEFAULT 'caregiver'")
+    conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_patient_id_unique ON users(patient_id) WHERE patient_id IS NOT NULL')
+    patient_columns = {row[1] for row in conn.execute("PRAGMA table_info(patients)").fetchall()}
+    if 'is_demo' not in patient_columns:
+        conn.execute('ALTER TABLE patients ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0')
 
 
 def connect(database: Optional[Union[str, Path]] = None) -> sqlite3.Connection:

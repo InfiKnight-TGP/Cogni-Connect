@@ -11,7 +11,10 @@ CREATE TABLE IF NOT EXISTS users (
   failed_logins INTEGER NOT NULL DEFAULT 0,
   locked_until INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  is_demo INTEGER NOT NULL DEFAULT 0
+  is_demo INTEGER NOT NULL DEFAULT 0,
+  role TEXT NOT NULL DEFAULT 'caregiver' CHECK(role IN ('caregiver','patient')),
+  patient_id TEXT REFERENCES patients(id),
+  otp_target TEXT NOT NULL DEFAULT 'caregiver' CHECK(otp_target IN ('caregiver','patient'))
 );
 
 CREATE TABLE IF NOT EXISTS patients (
@@ -19,7 +22,8 @@ CREATE TABLE IF NOT EXISTS patients (
   name TEXT NOT NULL,
   pin_hash TEXT,
   created_by TEXT REFERENCES users(id),
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  is_demo INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS patient_members (

@@ -56,7 +56,7 @@ def setup_auth(case, kind='caregiver'):
     with app.api.app_context():
         db.execute('INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES (?,?,?,?,0,0,?,0)',
                    ('test-user', 'caregiver@example.com', 'Caregiver', generate_password_hash('password1', method='scrypt'), auth.now()))
-        db.execute('INSERT INTO patients VALUES (?,?,?,?,?)',
+        db.execute('INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,?,?,?,0)',
                    ('test-patient', 'Patient', generate_password_hash('1234', method='scrypt'), 'test-user', auth.now()))
         db.execute("INSERT INTO patient_members VALUES ('test-patient','test-user','owner')")
     case.auth_client = make_client(kind)

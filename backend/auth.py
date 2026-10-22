@@ -216,6 +216,31 @@ def patients_for(user_id):
         (user_id,))]
 
 
+def session_user():
+    session = g.get('auth_session')
+    return database.fetchone('SELECT * FROM users WHERE id=?', (session['user_id'],)) if session and session.get('user_id') else None
+
+
+def patient_account(user):
+    if not user:
+        return False
+    role = user['role'] if 'role' in user.keys() else 'caregiver'
+    patient_id = user['patient_id'] if 'patient_id' in user.keys() else None
+    return bool(role == 'patient' and patient_id)
+
+
+def otp_recipient(user):
+    if not patient_account(user):
+        return user['email'] if user and user['email'] else None
+    if user['otp_target'] == 'patient' and user['email']:
+        return user['email']
+    owner = database.fetchone(
+        "SELECT u.email FROM users u JOIN patient_members m ON m.user_id=u.id "
+        "WHERE m.patient_id=? AND m.role='owner' AND u.role='caregiver' AND u.email<>'' "
+        "ORDER BY u.created_at LIMIT 1", (user['patient_id'],))
+    return (owner['email'] if owner and owner['email'] else None) or user['email']
+
+
 def bootstrap_patient(user_id):
     """Claim the existing installation once, after successful email verification."""
     if database.fetchone("SELECT 1 FROM patients p JOIN users u ON p.created_by=u.id WHERE u.email!='demo@cogniconnect.invalid' LIMIT 1"):
@@ -232,7 +257,7 @@ def bootstrap_patient(user_id):
         pin_hash = str(pin_hash)
         if pin_hash and not pin_hash.startswith(('scrypt:', 'pbkdf2:')):
             pin_hash = generate_password_hash(pin_hash, method='scrypt')
-    database.execute('INSERT INTO patients VALUES (?,?,?,?,?)',
+    database.execute('INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,?,?,?,0)',
                      (patient_id, settings.get('patient_name') or 'My patient', pin_hash, user_id, now()))
     database.execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, user_id, 'owner'))
 
@@ -242,7 +267,10 @@ def issue_otp(user, purpose):
     database.execute('UPDATE otps SET used=1 WHERE user_id=? AND purpose=?', (user['id'], purpose))
     database.execute('INSERT INTO otps VALUES (?,?,?,?,?,?,0,0)',
                      (uuid.uuid4().hex, user['id'], purpose, digest(code), digest(challenge), now() + 300))
-    mailer.send_code(user['email'], code, purpose)
+    recipient = otp_recipient(user)
+    if not recipient:
+        raise mailer.DeliveryError('Ask your caregiver to help you sign in')
+    mailer.send_code(recipient, code, purpose)
     return challenge
 
 
@@ -258,11 +286,11 @@ def check_otp(data, purpose):
     return row['user_id'] if valid else None
 
 
-def trust_device(response, user_id):
+def trust_device(response, user_id, age=30 * DAY):
     trusted = secrets.token_urlsafe(32)
-    cookie(response, 'cogni_trusted', trusted, 30 * DAY)
+    cookie(response, 'cogni_trusted', trusted, age)
     database.execute('DELETE FROM trusted_devices WHERE expires_at<=?', (now(),))
-    database.execute('INSERT INTO trusted_devices VALUES (?,?,?)', (digest(trusted), user_id, now() + 30 * DAY))
+    database.execute('INSERT INTO trusted_devices VALUES (?,?,?)', (digest(trusted), user_id, now() + age))
 
 
 def revoke_user(user_id):
@@ -278,7 +306,7 @@ def seed_dev_accounts(app):
             row = database.fetchone('SELECT * FROM users WHERE email=?', (email,))
             if not row:
                 user_id = uuid.uuid4().hex
-                database.execute('INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES (?,?,?,?,0,0,?,1)',
+                database.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo,role,otp_target) VALUES (?,?,?,?,0,0,?,1,'caregiver','caregiver')",
                                  (user_id, email, name, generate_password_hash(password, method='scrypt'), now()))
                 row = database.fetchone('SELECT * FROM users WHERE id=?', (user_id,))
             elif not row['is_demo']:
@@ -287,7 +315,7 @@ def seed_dev_accounts(app):
         patient = database.fetchone('SELECT p.* FROM patients p JOIN patient_members m ON m.patient_id=p.id WHERE m.user_id=? AND m.role=? LIMIT 1', (users['caregiver@demo.local'], 'owner'))
         if not patient:
             patient_id = uuid.uuid4().hex
-            database.execute('INSERT INTO patients VALUES (?,?,?,?,?)', (patient_id, 'Demo patient', generate_password_hash('1234', method='scrypt'), users['caregiver@demo.local'], now()))
+            database.execute('INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,?,?,?,1)', (patient_id, 'Demo patient', generate_password_hash('1234', method='scrypt'), users['caregiver@demo.local'], now()))
             database.execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, users['caregiver@demo.local'], 'owner'))
             patient = database.fetchone('SELECT * FROM patients WHERE id=?', (patient_id,))
         database.execute('INSERT INTO patient_members (patient_id,user_id,role) VALUES (?,?,?) ON CONFLICT(patient_id,user_id) DO NOTHING', (patient['id'], users['owner@demo.local'], 'owner'))
@@ -305,7 +333,7 @@ def signup():
     with database.transaction():
         if not database.fetchone('SELECT 1 FROM users WHERE email=?', (email,)):
             user_id = uuid.uuid4().hex
-            database.execute('INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES (?,?,?,?,0,0,?,0)',
+            database.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo,role,otp_target) VALUES (?,?,?,?,0,0,?,0,'caregiver','caregiver')",
                              (user_id, email, name, generate_password_hash(password, method='scrypt'), now()))
             challenge = issue_otp({'id': user_id, 'email': email}, 'login')
     return jsonify(ok=True, challenge=challenge, requiresCode=True), 202
@@ -330,13 +358,17 @@ def login():
                 count = (0 if user['locked_until'] else user['failed_logins']) + 1
                 database.execute('UPDATE users SET failed_logins=?,locked_until=? WHERE id=?',
                                  (count, now() + 900 if count >= 5 else 0, user['id']))
+            if not user:
+                # Keep account enumeration timing and responses uniform.
+                return error(401)
             return error(401)
         database.execute('UPDATE users SET failed_logins=0,locked_until=0 WHERE id=?', (user['id'],))
         trusted = request.cookies.get('cogni_trusted', '')
         trust = database.fetchone('SELECT token_hash FROM trusted_devices WHERE token_hash=? AND user_id=? AND expires_at>?',
                                   (digest(trusted), user['id'], now())) if trusted and len(trusted) <= 256 else None
         if trust and hmac.compare_digest(trust['token_hash'], digest(trusted)):
-            return session_response('caregiver', user_id=user['id'])
+            kind = 'patient_device' if patient_account(user) else 'caregiver'
+            return session_response(kind, user_id=user['id'], patient_id=user['patient_id'] if patient_account(user) else None)
         if user['is_demo'] and dev_login_enabled():
             return session_response('caregiver', user_id=user['id'])
         if limited('code', email):
@@ -352,9 +384,11 @@ def verify():
         user_id = check_otp(payload(), 'login')
         if not user_id:
             return error()
-        bootstrap_patient(user_id)
-        response = session_response('caregiver', user_id=user_id)
-        trust_device(response, user_id)
+        user = database.fetchone('SELECT * FROM users WHERE id=?', (user_id,))
+        bootstrap_patient(user_id) if user and user['role'] == 'caregiver' else None
+        kind = 'patient_device' if patient_account(user) else 'caregiver'
+        response = session_response(kind, user_id=user_id, patient_id=user['patient_id'] if patient_account(user) else None)
+        trust_device(response, user_id, 90 * DAY if patient_account(user) else 30 * DAY)
         return response
 
 
@@ -451,8 +485,10 @@ def logout():
 def me():
     session = g.auth_session
     user, patients = None, []
+    if session.get('user_id'):
+        row = database.fetchone('SELECT id,email,name,role,patient_id,otp_target FROM users WHERE id=?', (session['user_id'],))
+        user = dict(row) if row else None
     if session['kind'] == 'caregiver':
-        user = dict(database.fetchone('SELECT id,email,name FROM users WHERE id=?', (session['user_id'],)))
         patients = patients_for(user['id'])
     elif g.active_patient:
         patients = [g.active_patient]
@@ -470,9 +506,70 @@ def patients():
         return error()
     patient_id = uuid.uuid4().hex
     with database.transaction():
-        database.execute('INSERT INTO patients VALUES (?,?,NULL,?,?)', (patient_id, name, user_id, now()))
+        database.execute('INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,NULL,?, ?,0)', (patient_id, name, user_id, now()))
         database.execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, user_id, 'owner'))
     return jsonify(id=patient_id, name=name), 201
+
+
+@bp.get('/patients/<patient_id>/login')
+@account_required
+def get_patient_login(patient_id):
+    if not authorized_patient(patient_id):
+        return error(403)
+    row = database.fetchone("SELECT email,otp_target FROM users WHERE patient_id=? AND role='patient'", (patient_id,))
+    return jsonify(login=dict(row) if row else None)
+
+
+@bp.post('/patients/<patient_id>/login')
+@account_required
+def create_patient_login(patient_id):
+    data = payload()
+    email = text_field(data, 'email').lower()
+    password = data.get('password')
+    target = text_field(data, 'otp_target') or 'caregiver'
+    if not authorized_patient(patient_id) or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
+        return error(403)
+    if not isinstance(password, str) or not 8 <= len(password) <= 1024 or target not in ('caregiver', 'patient'):
+        return error()
+    with database.transaction():
+        if database.fetchone('SELECT 1 FROM users WHERE email=?', (email,)):
+            return error(409)
+        if database.fetchone('SELECT 1 FROM users WHERE patient_id=?', (patient_id,)):
+            return error(409)
+        patient = database.fetchone('SELECT id,name FROM patients WHERE id=?', (patient_id,))
+        user_id = uuid.uuid4().hex
+        database.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo,role,patient_id,otp_target) VALUES (?,?,?,?,0,0,?,0,'patient',?,?)",
+                         (user_id, email, patient['name'], generate_password_hash(password, method='scrypt'), now(), patient_id, target))
+    return jsonify(ok=True, email=email), 201
+
+
+@bp.delete('/patients/<patient_id>/login')
+@account_required
+def remove_patient_login(patient_id):
+    if not authorized_patient(patient_id):
+        return error(403)
+    user = database.fetchone("SELECT id FROM users WHERE patient_id=? AND role='patient'", (patient_id,))
+    if user:
+        revoke_user(user['id'])
+        database.execute('DELETE FROM otps WHERE user_id=?', (user['id'],))
+        database.execute('DELETE FROM users WHERE id=?', (user['id'],))
+    return jsonify(ok=True)
+
+
+@bp.post('/patients/<patient_id>/login/password')
+@account_required
+def reset_patient_login_password(patient_id):
+    if not authorized_patient(patient_id):
+        return error(403)
+    password = payload().get('password')
+    if not isinstance(password, str) or not 8 <= len(password) <= 1024:
+        return error()
+    user = database.fetchone("SELECT id FROM users WHERE patient_id=? AND role='patient'", (patient_id,))
+    if not user:
+        return error(404)
+    database.execute('UPDATE users SET password_hash=?,failed_logins=0,locked_until=0 WHERE id=?', (generate_password_hash(password, method='scrypt'), user['id']))
+    revoke_user(user['id'])
+    return jsonify(ok=True)
 
 
 def change_pin(patient_id):

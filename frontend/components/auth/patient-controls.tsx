@@ -80,8 +80,11 @@ export function JoinPatient() {
 export function PatientsAndDevices() {
   const { session, selectPatient, refresh } = useAuth();
   const [name, setName] = useState(""); const [current, setCurrent] = useState(""); const [pin, setPin] = useState("");
+  const [loginEmail, setLoginEmail] = useState(""); const [loginPassword, setLoginPassword] = useState(""); const [otpTarget, setOtpTarget] = useState<"caregiver" | "patient">("caregiver");
   const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
   const patient = session?.activePatient;
+  const [hasLogin, setHasLogin] = useState(false);
+  useEffect(() => { if (session?.role === "caregiver" && patient?.id) void apiJSON<{ login: { email: string; otp_target: "caregiver" | "patient" } | null }>(`/patients/${encodeURIComponent(patient.id)}/login`).then(result => { setHasLogin(!!result.login); if (result.login) { setLoginEmail(result.login.email); setOtpTarget(result.login.otp_target); } }).catch(() => undefined); }, [patient?.id, session?.role]);
   if (!patient) return null;
   return <section className="space-y-7 rounded-2xl border bg-card p-5 sm:p-7">
     <h2 className="text-2xl font-bold">Patients & Devices</h2><p className="text-xl">Managing {patient.name}</p>
@@ -96,6 +99,12 @@ export function PatientsAndDevices() {
       <label className="block">New four-digit PIN<input required className={fieldClass} type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ""))} /></label>
       <button className={secondaryClass} disabled={busy || pin.length !== 4}>Save PIN</button>
     </form>
+    {session.role === "caregiver" && <form className="space-y-4 border-t pt-6" onSubmit={async event => {
+      event.preventDefault(); setBusy(true); setNotice("");
+      try { await apiJSON(`/patients/${encodeURIComponent(patient.id)}/login`, jsonBody({ email: loginEmail, password: loginPassword, otp_target: otpTarget })); setLoginPassword(""); setHasLogin(true); setNotice("Patient login created."); }
+      catch (error) { setNotice(error instanceof Error ? error.message : "Could not create the patient login."); }
+      finally { setBusy(false); }
+    }}><h3 className="text-xl font-bold">Give the patient their own login</h3>{hasLogin && <p className="text-base">Login: {loginEmail}</p>}<label className="block">Patient email<input required type="email" className={fieldClass} value={loginEmail} onChange={e => setLoginEmail(e.target.value)} /></label><PasswordField label={hasLogin ? "New patient password" : "Patient password"} value={loginPassword} onChange={setLoginPassword} /><fieldset><legend className="font-semibold">Send login codes to</legend><label className="mr-5 inline-flex items-center gap-2"><input type="radio" checked={otpTarget === "caregiver"} onChange={() => setOtpTarget("caregiver")} /> Me</label><label className="inline-flex items-center gap-2"><input type="radio" checked={otpTarget === "patient"} onChange={() => setOtpTarget("patient")} /> The patient</label></fieldset><button className={secondaryClass} disabled={busy || loginPassword.length < 8}>Create patient login</button>{hasLogin && <button type="button" className={secondaryClass} disabled={busy} onClick={async () => { if (!window.confirm("Remove this patient login?")) return; setBusy(true); try { await apiJSON(`/patients/${encodeURIComponent(patient.id)}/login`, { method: "DELETE" }); setHasLogin(false); setLoginEmail(""); setNotice("Patient login removed."); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not remove the patient login."); } finally { setBusy(false); } }}>Remove patient login</button>}</form>}
     {session.role === "caregiver" && <><form className="space-y-4 border-t pt-6" onSubmit={async event => {
       event.preventDefault(); setBusy(true); setNotice("");
       try { const result = await apiJSON<{ id: string }>("/patients", jsonBody({ name: name.trim() })); await selectPatient(result.id); }

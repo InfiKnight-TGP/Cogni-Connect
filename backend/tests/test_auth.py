@@ -66,6 +66,22 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(login.status_code, 202)
         self.assertEqual(fresh.post('/auth/otp/verify', json={'challenge': login.json['challenge'], 'code': self.send.call_args.args[1]}).status_code, 200)
 
+    def test_patient_account_is_scoped_and_can_be_unlinked(self):
+        caregiver = self.client
+        patient_id = self.verified()
+        created = caregiver.post(f'/patients/{patient_id}/login', json={
+            'email': 'patient@example.com', 'password': 'patientpass', 'otp_target': 'patient'})
+        self.assertEqual(created.status_code, 201)
+        login = app.api.test_client().post('/auth/login', json={'email': 'patient@example.com', 'password': 'patientpass'})
+        self.assertEqual(login.status_code, 202)
+        patient_client = app.api.test_client()
+        patient_client.set_cookie('cogni_session', login.headers['Set-Cookie'].split('=', 1)[1].split(';', 1)[0]) if login.headers.get('Set-Cookie') else None
+        self.assertEqual(patient_client.post('/auth/otp/verify', json={'challenge': login.json['challenge'], 'code': self.send.call_args.args[1]}).status_code, 200)
+        self.assertEqual(patient_client.get('/auth/me').json['user']['role'], 'patient')
+        self.assertEqual(patient_client.get('/reports/days', headers={'X-Cogni-Patient': 'other-patient'}).status_code, 403)
+        self.assertEqual(caregiver.delete(f'/patients/{patient_id}/login').status_code, 200)
+        self.assertEqual(patient_client.get('/auth/me').status_code, 401)
+
     def test_otp_five_failures_expiry_reuse_and_purpose(self):
         challenge, code = self.signup()
         wrong = '000000' if code != '000000' else '999999'
@@ -202,7 +218,7 @@ class AuthTests(unittest.TestCase):
 
         with app.api.app_context():
             db.execute('INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES (?,?,?,?,0,0,?,0)', ('other-user', 'other@example.com', 'Other', generate_password_hash('password1', method='scrypt'), auth.now()))
-            db.execute('INSERT INTO patients VALUES (?,?,?,?,?)', ('other-patient', 'Other patient', generate_password_hash('1234', method='scrypt'), 'other-user', auth.now()))
+            db.execute('INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,?,?,?,0)', ('other-patient', 'Other patient', generate_password_hash('1234', method='scrypt'), 'other-user', auth.now()))
             db.execute("INSERT INTO patient_members VALUES ('other-patient','other-user','owner')")
         self.assertEqual(self.client.post('/auth/login', json={'email': 'one@example.com', 'password': 'password1'}).status_code, 200)
         self.assertEqual(self.client.get('/auth/me', headers={'X-Cogni-Patient': 'other-patient'}).status_code, 403)

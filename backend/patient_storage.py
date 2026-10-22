@@ -98,7 +98,7 @@ def migrate_legacy():
             manifest.write_text(json.dumps({'patient_id': patient_id}), encoding='utf-8')
             pin = str(settings.get('pin', '1234'))
             pin_hash = pin if pin.startswith(('scrypt:', 'pbkdf2:')) else generate_password_hash(pin, method='scrypt')
-            db.execute('INSERT INTO patients VALUES (?,?,?,NULL,?)',
+            db.execute('INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,?,NULL,?,0)',
                        (patient_id, settings.get('patient_name') or 'My patient', pin_hash, auth.now()))
             patient_name = settings.get('patient_name') or 'My patient'
         else:

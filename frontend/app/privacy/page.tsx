@@ -32,6 +32,7 @@ export default function PrivacyPage() {
           <p>{t("Caregiver accounts store a name, email address, and a securely hashed password. We send short-lived login and password-reset codes by email. The server stores hashes of these codes, pairing codes, and session tokens.")}</p>
           <p>{t("Patient devices connect using a single-use pairing code without an email or password. Device sessions can last up to 90 days between visits. Caregiver sessions can last up to 30 days between visits. Caregivers can revoke paired devices from Settings.")}</p>
           <p>{t("A separate PIN for each patient allows temporary caregiver access on their device. Session cookies are used to keep you signed in. Display preferences may be stored in your browser.")}</p>
+          <p>{t("If a caregiver creates a patient login, the patient email is stored with that patient. Login codes go either to the patient or to the caregiver chosen in Patients & Devices. The caregiver can remove the patient login at any time; contact the server operator to request deletion.")}</p>
         </section>
 
         <section className="space-y-4">
