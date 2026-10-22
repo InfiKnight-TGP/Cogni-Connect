@@ -139,7 +139,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
                       selected
                         ? "border-green-600 bg-green-50 text-green-900"
                         : wrong
-                        ? "border-destructive/40 bg-destructive/5"
+                        ? "border-amber-500/50 bg-amber-100/50 dark:bg-amber-950/40"
                         : "border-border bg-background hover:border-primary"
                     }`}
                   >

@@ -196,7 +196,7 @@ function MolePathSession({ onDone }: { onDone: (score: number) => void }) {
               aria-label={`Row ${Math.floor(hole / moleLevel2Config.gridSize) + 1}, column ${
                 (hole % moleLevel2Config.gridSize) + 1
               }${active ? ", filled" : ", empty"}`}
-              className="flex aspect-square min-h-0 items-center justify-center rounded-full border-2 border-slate-300 bg-slate-50 p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-default sm:p-3"
+              className="flex aspect-square min-h-16 min-w-16 items-center justify-center rounded-full border-2 border-slate-300 bg-slate-50 p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-default sm:p-3"
             >
               <span
                 aria-hidden="true"

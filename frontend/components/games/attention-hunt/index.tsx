@@ -31,6 +31,7 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
   const [feedback, setFeedback] = useState("");
   const [timeLeft, setTimeLeft] = useState(60);
   const [started, setStarted] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
   const doneCalledRef = useRef(false);
 
   const board = boards[roundIndex];
@@ -66,16 +67,11 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
   // Round timeout handling
   useEffect(() => {
     if (!started || timeLeft > 0) return;
-    if (roundIndex < attentionRounds.length - 1) {
-      setFeedback("Time's up for this round! Moving to the next round.");
-      setRoundIndex((r) => r + 1);
-      setFoundIds([]);
-      setWrongIds([]);
-      setTimeLeft(60);
-      setStarted(false);
-    } else {
-      handleFinishSession(foundTotal, wrongTaps);
-    }
+    setFeedback(roundIndex < attentionRounds.length - 1
+      ? "Time's up. The remaining targets are highlighted. Start the next round when you are ready."
+      : "Time's up. The remaining targets are highlighted. Finish when you are ready.");
+    setTimedOut(true);
+    setStarted(false);
   }, [started, timeLeft, roundIndex, foundTotal, wrongTaps]);
 
   const reset = () => {
@@ -90,6 +86,7 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
     setFeedback("");
     setTimeLeft(60);
     setStarted(false);
+    setTimedOut(false);
   };
 
   const select = (item: BoardItem) => {
@@ -123,6 +120,7 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
     setFeedback("");
     setTimeLeft(60);
     setStarted(false);
+    setTimedOut(false);
   };
 
   return (
@@ -182,18 +180,21 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
         {board.map((item) => {
           const found = foundIds.includes(item.id);
           const wrong = wrongIds.includes(item.id);
+          const remaining = timedOut && item.isTarget && !found;
           return (
             <button
               key={item.id}
               type="button"
-              aria-label={`${item.label}${found ? ", found" : ""}`}
+              aria-label={`${item.label}${found ? ", found" : remaining ? ", remaining target" : ""}`}
               disabled={!started || found || foundInRound === targetCount}
               onClick={() => select(item)}
               className={`flex aspect-square min-w-0 items-center justify-center rounded-xl border-2 bg-background text-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-4xl ${
                 found
                   ? "border-green-600 bg-green-50 text-green-800"
                   : wrong
-                  ? "border-destructive/50 bg-destructive/10"
+                  ? "border-amber-500/60 bg-amber-100/60 dark:bg-amber-950/40"
+                  : remaining
+                  ? "border-amber-400 bg-amber-50 shadow-[0_0_0_4px_rgba(251,191,36,0.2)] dark:bg-amber-950/50"
                   : "border-border"
               }`}
             >
@@ -209,9 +210,14 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
             <Check className="mr-2 h-4 w-4" /> Start round {roundIndex + 1}
           </Button>
         ) : null}
-        {foundInRound === targetCount && roundIndex < attentionRounds.length - 1 && (
+        {(timedOut || foundInRound === targetCount) && roundIndex < attentionRounds.length - 1 && (
           <Button className="min-h-12" onClick={nextRound}>
             Next round <Check className="ml-2 h-4 w-4" />
+          </Button>
+        )}
+        {timedOut && roundIndex === attentionRounds.length - 1 && (
+          <Button className="min-h-12" onClick={() => handleFinishSession(foundTotal, wrongTaps)}>
+            Finish <Check className="ml-2 h-4 w-4" />
           </Button>
         )}
         <p className="text-sm text-muted-foreground">

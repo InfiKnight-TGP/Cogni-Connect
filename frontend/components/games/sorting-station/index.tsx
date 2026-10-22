@@ -21,10 +21,10 @@ import {
 } from "./logic";
 import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 import ReadAloud from "@/components/interaction/ReadAloud";
+import { Button } from "@/components/ui/button";
 
-const CUE_MS = 3000; // full-screen rule cue
 const CORRECT_MS = 700; // green flash + item drops into bin
-const WRONG_MS = 1000; // red flash + correct bin glows
+const WRONG_MS = 1000; // calm feedback + correct bin glows
 
 /** Sorting Station is a single Level 2 game. */
 export default function SortingStation({
@@ -83,13 +83,6 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
   const round = rounds[roundIdx];
   const trial = round.trials[trialIdx];
   const rule = ruleOf(round.pair, trial.rule);
-
-  // Hide the full-screen cue after 3 seconds.
-  useEffect(() => {
-    if (!cue) return;
-    const t = setTimeout(() => setCue(null), CUE_MS);
-    return () => clearTimeout(t);
-  }, [cue]);
 
   // After feedback, move to the next item / rule / round, or finish.
   useEffect(() => {
@@ -153,7 +146,7 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
   const binExtra = (i: BinIndex): string => {
     if (!feedback) return "";
     if (i === feedback.chosen && feedback.ok) return "scale-105";
-    if (i === feedback.chosen && !feedback.ok) return "animate-[ss-shake_0.4s_ease-in-out]";
+    if (i === feedback.chosen && !feedback.ok) return "";
     if (!feedback.ok && i === feedback.answer)
       return "ring-4 ring-green-400 ring-offset-2 ring-offset-background animate-pulse";
     return "";
@@ -169,18 +162,6 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
 
   return (
     <div className="flex flex-col items-center gap-6 select-none">
-      <style>{`
-        @keyframes ss-shake {
-          0%, 100% { transform: translateX(0); }
-          20%, 60% { transform: translateX(-8px); }
-          40%, 80% { transform: translateX(8px); }
-        }
-        @keyframes ss-shrink {
-          from { width: 100%; }
-          to { width: 0%; }
-        }
-      `}</style>
-
       {/* Progress */}
       <div className="w-full flex flex-col items-center gap-2">
         <p className="text-base md:text-lg font-semibold text-muted-foreground">
@@ -261,7 +242,7 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
           aria-live="assertive"
           className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 backdrop-blur-sm p-6 animate-in fade-in duration-300"
         >
-          <ReadAloud text={`${cue.heading}. ${cue.lead} ${cue.sortBy}.`} options={cue.bins.map(bin => bin.label)} />
+          <ReadAloud text={`${cue.heading}. ${cue.lead} ${cue.sortBy}.`} options={cue.bins.map(bin => bin.label)} onReadComplete={() => window.setTimeout(() => setCue(null), 1000)} />
           <div className="w-full max-w-xl flex flex-col items-center text-center gap-5 animate-in zoom-in-95 duration-300">
             <p className="text-4xl md:text-6xl font-extrabold text-primary">{cue.heading}</p>
             <p className="text-2xl md:text-3xl font-semibold text-muted-foreground">{cue.lead}</p>
@@ -277,13 +258,7 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
                 </div>
               ))}
             </div>
-            <div className="w-full max-w-xs h-2 rounded-full bg-muted overflow-hidden mt-4">
-              <div
-                key={cue.heading + cue.sortBy}
-                className="h-full bg-primary"
-                style={{ animation: `ss-shrink ${CUE_MS}ms linear forwards` }}
-              />
-            </div>
+            <Button type="button" className="min-h-12 px-8 text-lg" onClick={() => setCue(null)}>Start sorting</Button>
           </div>
         </div>
       )}

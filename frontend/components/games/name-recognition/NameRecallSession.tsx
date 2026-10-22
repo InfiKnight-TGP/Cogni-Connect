@@ -50,7 +50,6 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
   const [roundIndex, setRoundIndex] = useState(0);
   const [wrongCount, setWrongCount] = useState(0);
   const [revealed, setRevealed] = useState(false);
-  const [shakingId, setShakingId] = useState<string | null>(null);
   const [roundPoints, setRoundPoints] = useState<number[]>([]);
   const [reinforcement, setReinforcement] = useState(false);
   const { preferences } = usePreferences();
@@ -87,8 +86,6 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
     if (person.id !== round.target.id) {
       logAnswer(false, input);
       if (revealed) return;
-      setShakingId(person.id);
-      window.setTimeout(() => setShakingId((current) => current === person.id ? null : current), 350);
       const nextWrongCount = wrongCount + 1;
       setWrongCount(nextWrongCount);
       if (nextWrongCount >= 2) setRevealed(true);
@@ -109,7 +106,6 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
       setRoundIndex((current) => current + 1);
       setWrongCount(0);
       setRevealed(false);
-      setShakingId(null);
       feedbackActive.current = false;
       setReinforcement(false);
     }, 2000);
@@ -134,7 +130,6 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
     : activeRound.target.name;
 
   return <section className="space-y-6 text-center" aria-live="polite">
-    <style>{`@keyframes nameRecallShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }`}</style>
     <div>
       <p className="text-base font-semibold uppercase tracking-wide text-muted-foreground">Round {roundIndex + 1} of 3</p>
       <h2 className="mt-2 text-2xl font-bold text-foreground">{reinforcement && preferences.encouragingMessages ? "Well remembered" : prompt}</h2>
@@ -153,11 +148,11 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
       {activeRound.kind === "name" ? <div className="grid gap-3 sm:grid-cols-3">
         {activeRound.options.map((person) => <button key={person.id} type="button" onClick={() => choose(person)} aria-label={person.name}
           className={`min-h-14 rounded-xl border border-border bg-card px-4 py-3 text-xl font-semibold text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${revealed && person.id === round.target.id ? "border-green-600 bg-green-600/15" : ""}`}
-          style={shakingId === person.id ? { animation: "nameRecallShake 300ms ease-in-out" } : undefined}>{person.name}</button>)}
+          >{person.name}</button>)}
       </div> : <div className="grid gap-3 sm:grid-cols-3">
         {activeRound.options.map((person) => <button key={person.id} type="button" onClick={() => choose(person)} aria-label={person.name}
           className={`rounded-xl border border-border bg-card p-2 text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${revealed && person.id === round.target.id ? "border-green-600 bg-green-600/15" : ""}`}
-          style={shakingId === person.id ? { animation: "nameRecallShake 300ms ease-in-out" } : undefined}>
+          >
           <img src={mediaUrl(`/known-faces/${encodeURIComponent(person.photo)}`)} alt="" className="mx-auto aspect-square w-full min-w-36 max-w-48 rounded-lg object-cover" />
         </button>)}
       </div>}

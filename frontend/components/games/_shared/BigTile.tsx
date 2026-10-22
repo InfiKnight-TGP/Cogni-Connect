@@ -26,7 +26,7 @@ export function BigTile({
     correct:
       "bg-green-100 border-green-500 text-green-900 dark:bg-green-950/60 dark:border-green-500 dark:text-green-200",
     wrong:
-      "bg-red-100 border-red-500 text-red-900 dark:bg-red-950/60 dark:border-red-500 dark:text-red-200",
+      "bg-amber-100 border-amber-500 text-amber-950 dark:bg-amber-950/60 dark:border-amber-500 dark:text-amber-100",
     selected:
       "bg-primary/10 border-primary text-primary shadow-sm",
   };
