@@ -54,7 +54,7 @@ def setup_auth(case, kind='caregiver'):
     if kind is None:
         return
     with app.api.app_context():
-        db.execute('INSERT INTO users VALUES (?,?,?,?,0,0,?)',
+        db.execute('INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES (?,?,?,?,0,0,?,0)',
                    ('test-user', 'caregiver@example.com', 'Caregiver', generate_password_hash('password1', method='scrypt'), auth.now()))
         db.execute('INSERT INTO patients VALUES (?,?,?,?,?)',
                    ('test-patient', 'Patient', generate_password_hash('1234', method='scrypt'), 'test-user', auth.now()))

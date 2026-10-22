@@ -13,10 +13,13 @@ export default function AccountForm({ kind }: { kind: Kind }) {
   const [email, setEmail] = useState(""); const [name, setName] = useState("");
   const [password, setPassword] = useState(""); const [code, setCode] = useState("");
   const [challenge, setChallenge] = useState(""); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
+  const [devWindow, setDevWindow] = useState(process.env.NEXT_PUBLIC_DEV_LOGIN === "1");
   const verification = kind === "verify" || kind === "reset";
   useEffect(() => {
     if (verification) setChallenge(sessionStorage.getItem(`cogni-${kind}-challenge`) ?? "");
   }, [kind, verification]);
+  useEffect(() => { if (kind === "login") setDevWindow(process.env.NEXT_PUBLIC_DEV_LOGIN === "1" && !window.location.search.includes("full=1")); }, [kind]);
+  if (kind === "login" && devWindow) return <DevLoginWindow onFullSignIn={() => setDevWindow(false)} />;
   const continueLogin = async () => {
     const session = await refresh();
     if (!session) throw new Error("Could not load your account. Please try again.");
@@ -65,4 +68,45 @@ export default function AccountForm({ kind }: { kind: Kind }) {
     {kind === "login" && <div className="flex flex-wrap gap-6 text-lg"><Link className="min-h-12 text-primary underline" href="/signup">{t("Create an account")}</Link><Link className="min-h-12 text-primary underline" href="/forgot">{t("Forgot password?")}</Link></div>}
     {kind === "signup" && <Link className="inline-flex min-h-12 items-center text-primary underline" href="/login">{t("Already have an account? Sign in")}</Link>}
   </AuthFrame>;
+}
+
+function DevLoginWindow({ onFullSignIn }: { onFullSignIn: () => void }) {
+  const router = useRouter(); const { refresh } = useAuth();
+  const [email, setEmail] = useState("caregiver@demo.local"); const [password, setPassword] = useState("demo1234");
+  const [showPassword, setShowPassword] = useState(false); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
+  const choose = (next: "caregiver" | "owner" | "patient") => {
+    if (next === "patient") { setEmail(""); setPassword(""); return; }
+    setEmail(next === "owner" ? "owner@demo.local" : "caregiver@demo.local"); setPassword("demo1234");
+  };
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setBusy(true); setNotice("");
+    try {
+      if (!email) await apiJSON("/auth/dev/patient-device", { ...jsonBody({}), authRedirect: false });
+      else await apiJSON("/auth/login", { ...jsonBody({ email, password }), authRedirect: false });
+      const session = await refresh();
+      if (!session) throw new Error("Could not load your account.");
+      router.replace(session.role === "patient_device" ? "/" : "/caregiver");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not sign in."); }
+    finally { setBusy(false); }
+  };
+  return <main className="mx-auto min-h-[70vh] max-w-xl px-5 py-10 sm:py-16">
+    <div className="rounded-3xl bg-slate-950 p-6 text-white shadow-2xl sm:p-9">
+      <p className="text-sm font-bold uppercase tracking-[0.2em] text-teal-300">Welcome back</p>
+      <h1 className="mt-3 text-4xl font-bold">Sign in</h1>
+      <p className="mt-3 text-lg text-slate-300">Follow your patient&apos;s progress and manage their day.</p>
+      <p className="mt-5 rounded-xl border border-teal-300/40 bg-teal-300/10 px-4 py-3 text-base text-teal-100">Development mode: login shortcuts are on.</p>
+      <div className="mt-6 grid gap-2 sm:grid-cols-3">
+        <button type="button" onClick={() => choose("caregiver")} className={`min-h-12 rounded-xl border px-3 text-base font-semibold ${email === "caregiver@demo.local" ? "border-teal-300 bg-teal-300/20" : "border-slate-700 bg-slate-900"}`}>Demo Caregiver</button>
+        <button type="button" onClick={() => choose("patient")} className={`min-h-12 rounded-xl border px-3 text-base font-semibold ${!email ? "border-teal-300 bg-teal-300/20" : "border-slate-700 bg-slate-900"}`}>Patient Device</button>
+        <button type="button" onClick={() => choose("owner")} className={`min-h-12 rounded-xl border px-3 text-base font-semibold ${email === "owner@demo.local" ? "border-teal-300 bg-teal-300/20" : "border-slate-700 bg-slate-900"}`}>Owner</button>
+      </div>
+      <form className="mt-7 space-y-5" onSubmit={submit}>
+        <label className="block text-lg font-medium">Email<input required={!!email} type="email" autoComplete="email" className="mt-2 min-h-14 w-full rounded-xl border-2 border-slate-700 bg-slate-900 px-4 text-lg text-white" value={email} onChange={event => setEmail(event.target.value)} /></label>
+        <label className="block text-lg font-medium">Password<div className="relative mt-2"><input required={!!email} type={showPassword ? "text" : "password"} autoComplete="current-password" className="min-h-14 w-full rounded-xl border-2 border-slate-700 bg-slate-900 px-4 pe-20 text-lg text-white" value={password} onChange={event => setPassword(event.target.value)} /><button type="button" onClick={() => setShowPassword(value => !value)} className="absolute inset-y-0 end-3 text-base text-teal-300">{showPassword ? "Hide" : "Show"}</button></div></label>
+        {notice && <p role="alert" className="text-base text-rose-300">{notice}</p>}
+        <button className="min-h-14 w-full rounded-xl bg-gradient-to-r from-teal-400 to-cyan-500 px-5 text-lg font-bold text-slate-950" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+      </form>
+      <div className="mt-6 flex flex-wrap gap-x-6 gap-y-3 text-base text-slate-300"><Link className="underline" href="/signup">Create account</Link><button type="button" className="underline" onClick={onFullSignIn}>Use the full sign-in</button></div>
+    </div>
+  </main>;
 }

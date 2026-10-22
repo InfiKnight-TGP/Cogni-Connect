@@ -79,6 +79,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         attempts INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (scope, key)
     )""")
+    user_columns = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if 'is_demo' not in user_columns:
+        conn.execute('ALTER TABLE users ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0')
 
 
 def connect(database: Optional[Union[str, Path]] = None) -> sqlite3.Connection:

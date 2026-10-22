@@ -201,7 +201,7 @@ class AuthTests(unittest.TestCase):
         self.assertIsNone(self.client.get_cookie('cogni_patient'))
 
         with app.api.app_context():
-            db.execute('INSERT INTO users VALUES (?,?,?,?,0,0,?)', ('other-user', 'other@example.com', 'Other', generate_password_hash('password1', method='scrypt'), auth.now()))
+            db.execute('INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES (?,?,?,?,0,0,?,0)', ('other-user', 'other@example.com', 'Other', generate_password_hash('password1', method='scrypt'), auth.now()))
             db.execute('INSERT INTO patients VALUES (?,?,?,?,?)', ('other-patient', 'Other patient', generate_password_hash('1234', method='scrypt'), 'other-user', auth.now()))
             db.execute("INSERT INTO patient_members VALUES ('other-patient','other-user','owner')")
         self.assertEqual(self.client.post('/auth/login', json={'email': 'one@example.com', 'password': 'password1'}).status_code, 200)
@@ -237,6 +237,27 @@ class AuthTests(unittest.TestCase):
         with patch.dict(os.environ, {'SMTP_USER': '', 'SMTP_PASS': '', 'COGNI_DEV_OTP': '0'}, clear=False):
             with self.assertRaisesRegex(mailer.DeliveryError, 'Email is not configured'):
                 mailer.send_code('person@example.com', '123456', 'login')
+
+    def test_dev_login_flag_loopback_and_disabled_states(self):
+        self.assertEqual(self.client.post('/auth/dev/patient-device').status_code, 404)
+        with patch.dict(app.api.config, {'AUTH_DEV_LOGIN': True}):
+            with app.api.app_context():
+                auth.seed_dev_accounts(app.api)
+            login = self.client.post('/auth/login', json={'email': 'caregiver@demo.local', 'password': 'demo1234'})
+            self.assertEqual(login.status_code, 200)
+            self.assertEqual(self.client.get('/auth/me').json['user']['email'], 'caregiver@demo.local')
+            device = app.api.test_client()
+            self.assertEqual(device.post('/auth/dev/patient-device').status_code, 200)
+            self.assertEqual(device.post('/auth/dev/patient-device', environ_overrides={'REMOTE_ADDR': '10.0.0.8'}).status_code, 403)
+        disabled = app.api.test_client()
+        self.assertEqual(disabled.post('/auth/login', json={'email': 'caregiver@demo.local', 'password': 'demo1234'}).status_code, 401)
+
+    def test_dev_login_refuses_production_configuration(self):
+        with patch.dict(app.api.config, {'AUTH_DEV_LOGIN': True, 'AUTH_COOKIE_SECURE': False}):
+            with patch.dict(os.environ, {'COGNI_ENV': 'production', 'COGNI_HOST': '127.0.0.1'}, clear=False):
+                with app.api.app_context():
+                    with self.assertRaises(RuntimeError):
+                        auth.validate_dev_config()
 
     def test_session_expiry_sliding_and_hash_only_storage(self):
         device, _, _ = self.pair()

@@ -57,8 +57,8 @@ class PatientStorageTests(unittest.TestCase):
         with app.api.app_context():
             connection = auth.db()
             self.a = connection.execute('SELECT id FROM patients').fetchone()[0]
-            connection.execute("INSERT INTO users VALUES ('owner-a','a@example.com','A','unused',0,0,0)")
-            connection.execute("INSERT INTO users VALUES ('owner-b','b@example.com','B','unused',0,0,1)")
+            connection.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES ('owner-a','a@example.com','A','unused',0,0,0,0)")
+            connection.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES ('owner-b','b@example.com','B','unused',0,0,1,0)")
             connection.execute("UPDATE patients SET created_by='owner-a' WHERE id=?", (self.a,))
             connection.execute("INSERT INTO patient_members VALUES (?,'owner-a','owner')", (self.a,))
             connection.execute("INSERT INTO patients VALUES ('patient-b','B',NULL,'owner-b',1)")

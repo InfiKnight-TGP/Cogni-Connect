@@ -202,6 +202,18 @@ Expected output:
 - **Main App**: http://localhost:3000
 - **API Server**: http://localhost:5000
 
+### Development shortcuts
+
+For local-only UI testing, enable both flags in the backend/frontend environments:
+
+```env
+COGNI_DEV_LOGIN=1
+NEXT_PUBLIC_DEV_LOGIN=1
+DEV_DEMO_PASSWORD=demo1234
+```
+
+This seeds `caregiver@demo.local` and `owner@demo.local`, adds a demo patient with PIN `1234`, and shows shortcut sign-in roles. A Patient Device shortcut creates a patient-device session without a pairing code. These routes are restricted to requests whose socket address is `127.0.0.1` or `::1`; keep the flags off outside local development.
+
 ## 📁 Project Structure
 
 ```

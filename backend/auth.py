@@ -9,6 +9,8 @@ import secrets
 import threading
 import time
 import uuid
+from urllib.parse import urlparse
+import ipaddress
 
 from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -87,6 +89,32 @@ def limited(category, email='', maximum=3, seconds=600):
 
 def error(status=400):
     return jsonify(error='Unable to complete this request. Please check your details and try again.'), status
+
+
+def dev_login_enabled():
+    return current_app.config.get('AUTH_DEV_LOGIN', False)
+
+
+def dev_request_allowed():
+    return request.remote_addr in ('127.0.0.1', '::1')
+
+
+def validate_dev_config():
+    if not dev_login_enabled():
+        return
+    host = os.getenv('COGNI_HOST', '127.0.0.1')
+    try:
+        host_is_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        host_is_loopback = host.lower() == 'localhost'
+    if os.getenv('COGNI_ENV', '').lower() == 'production' or current_app.config['AUTH_COOKIE_SECURE'] or not host_is_loopback:
+        raise RuntimeError('COGNI_DEV_LOGIN requires a local, non-production HTTP server')
+    if not os.getenv('COGNI_DEV_OTP') and not host_is_loopback:
+        raise RuntimeError('COGNI_DEV_LOGIN requires COGNI_DEV_OTP on a non-loopback host')
+    for origin in current_app.config['AUTH_ORIGINS']:
+        hostname = (urlparse(origin).hostname or '').lower()
+        if hostname not in ('localhost', '127.0.0.1', '::1'):
+            raise RuntimeError('COGNI_DEV_LOGIN requires localhost-only COGNI_ORIGINS')
 
 
 def payload():
@@ -242,6 +270,29 @@ def revoke_user(user_id):
     database.execute('DELETE FROM trusted_devices WHERE user_id=?', (user_id,))
 
 
+def seed_dev_accounts(app):
+    password = os.getenv('DEV_DEMO_PASSWORD', 'demo1234')
+    with database.transaction():
+        users = {}
+        for email, name in (('caregiver@demo.local', 'Demo Caregiver'), ('owner@demo.local', 'Demo Owner')):
+            row = database.fetchone('SELECT * FROM users WHERE email=?', (email,))
+            if not row:
+                user_id = uuid.uuid4().hex
+                database.execute('INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES (?,?,?,?,0,0,?,1)',
+                                 (user_id, email, name, generate_password_hash(password, method='scrypt'), now()))
+                row = database.fetchone('SELECT * FROM users WHERE id=?', (user_id,))
+            elif not row['is_demo']:
+                database.execute('UPDATE users SET is_demo=1 WHERE id=?', (row['id'],))
+            users[email] = row['id']
+        patient = database.fetchone('SELECT p.* FROM patients p JOIN patient_members m ON m.patient_id=p.id WHERE m.user_id=? AND m.role=? LIMIT 1', (users['caregiver@demo.local'], 'owner'))
+        if not patient:
+            patient_id = uuid.uuid4().hex
+            database.execute('INSERT INTO patients VALUES (?,?,?,?,?)', (patient_id, 'Demo patient', generate_password_hash('1234', method='scrypt'), users['caregiver@demo.local'], now()))
+            database.execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, users['caregiver@demo.local'], 'owner'))
+            patient = database.fetchone('SELECT * FROM patients WHERE id=?', (patient_id,))
+        database.execute('INSERT INTO patient_members (patient_id,user_id,role) VALUES (?,?,?) ON CONFLICT(patient_id,user_id) DO NOTHING', (patient['id'], users['owner@demo.local'], 'owner'))
+
+
 @bp.post('/auth/signup')
 def signup():
     data = payload()
@@ -254,7 +305,7 @@ def signup():
     with database.transaction():
         if not database.fetchone('SELECT 1 FROM users WHERE email=?', (email,)):
             user_id = uuid.uuid4().hex
-            database.execute('INSERT INTO users VALUES (?,?,?,?,0,0,?)',
+            database.execute('INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES (?,?,?,?,0,0,?,0)',
                              (user_id, email, name, generate_password_hash(password, method='scrypt'), now()))
             challenge = issue_otp({'id': user_id, 'email': email}, 'login')
     return jsonify(ok=True, challenge=challenge, requiresCode=True), 202
@@ -270,6 +321,10 @@ def login():
         user = database.fetchone('SELECT * FROM users WHERE email=?', (email,))
         password_hash = user['password_hash'] if user else current_app.extensions['auth_dummy_hash']
         valid = check_password_hash(password_hash, password if isinstance(password, str) and len(password) <= 1024 else '')
+        if user and user['is_demo'] and not dev_login_enabled():
+            return error(401)
+        if user and user['is_demo'] and not dev_request_allowed():
+            return error(403)
         if not user or user['locked_until'] > now() or not valid:
             if user and user['locked_until'] <= now():
                 count = (0 if user['locked_until'] else user['failed_logins']) + 1
@@ -281,6 +336,8 @@ def login():
         trust = database.fetchone('SELECT token_hash FROM trusted_devices WHERE token_hash=? AND user_id=? AND expires_at>?',
                                   (digest(trusted), user['id'], now())) if trusted and len(trusted) <= 256 else None
         if trust and hmac.compare_digest(trust['token_hash'], digest(trusted)):
+            return session_response('caregiver', user_id=user['id'])
+        if user['is_demo'] and dev_login_enabled():
             return session_response('caregiver', user_id=user['id'])
         if limited('code', email):
             return error(429)
@@ -299,6 +356,18 @@ def verify():
         response = session_response('caregiver', user_id=user_id)
         trust_device(response, user_id)
         return response
+
+
+@bp.post('/auth/dev/patient-device')
+def dev_patient_device():
+    if not dev_login_enabled():
+        return error(404)
+    if not dev_request_allowed():
+        return error(403)
+    patient = database.fetchone("SELECT p.id,p.name FROM patients p JOIN users u ON p.created_by=u.id WHERE u.is_demo=1 AND u.email='caregiver@demo.local' ORDER BY p.created_at LIMIT 1")
+    if not patient:
+        return error(404)
+    return session_response('patient_device', patient_id=patient['id'], label='Development device', patientName=patient['name'])
 
 
 @bp.post('/auth/otp/resend')
@@ -584,11 +653,21 @@ CAREGIVER_ENDPOINTS = {
 def init_auth(app, legacy_settings):
     app.config.setdefault('AUTH_DATABASE', str(Path(__file__).with_name('auth.db')))
     app.config.setdefault('AUTH_COOKIE_SECURE', os.getenv('COGNI_COOKIE_SECURE') == '1')
+    app.config.setdefault('AUTH_DEV_LOGIN', os.getenv('COGNI_DEV_LOGIN') == '1')
     app.config.setdefault('AUTH_ORIGINS', [s.strip().rstrip('/') for s in os.getenv('COGNI_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',') if s.strip()])
     app.config['AUTH_LEGACY_SETTINGS'] = legacy_settings
+    with app.app_context():
+        validate_dev_config()
+    if app.config['AUTH_DEV_LOGIN']:
+        app.logger.warning('COGNI_DEV_LOGIN is enabled: local development accounts and shortcuts are active')
     app.extensions['auth_limits'] = RateLimits()
     app.extensions['auth_dummy_hash'] = generate_password_hash(secrets.token_urlsafe(32), method='scrypt')
     database.init_db(app)
+    if app.config['AUTH_DEV_LOGIN']:
+        seed_dev_accounts(app)
+    else:
+        database.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE is_demo=1)')
+        database.execute('DELETE FROM trusted_devices WHERE user_id IN (SELECT id FROM users WHERE is_demo=1)')
     app.register_blueprint(bp)
 
     @app.before_request
