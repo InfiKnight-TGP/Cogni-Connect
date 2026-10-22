@@ -11,6 +11,10 @@ graphify-out/
 # Environments
 .env
 .env*.local
+*.db
+*.db-*
+*.pem
+*.key
 
 # Python
 .venv/
@@ -34,6 +38,7 @@ backend/daily_plans.json
 backend/routines.json
 backend/settings.json
 backend/platform-data/
+platform-data/
 
 # Local patient data and repository snapshots
 /daily_plans.json
