@@ -53,6 +53,7 @@ export default function AccountForm({ kind }: { kind: Kind }) {
     finally { setBusy(false); }
   };
   return <AuthFrame title={titles[kind]}>
+    {kind === "login" && process.env.NEXT_PUBLIC_DEMO === "1" && <div className="mb-5 space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4"><h2 className="text-xl font-bold">Try the demo</h2><p className="text-base">Caregiver: demo@cogniconnect.com / Demo@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("demo@cogniconnect.com"); setPassword("Demo@1234"); }}>Fill in caregiver</button><p className="text-base">Patient: patient@cogniconnect.com / Patient@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("patient@cogniconnect.com"); setPassword("Patient@1234"); }}>Fill in patient</button><p className="text-base">Demo code: 123456</p></div>}
     {verification && <p>{t("Enter the six-digit code from your email. It is valid for five minutes.")}</p>}
     {kind === "forgot" && <p>{t("If an account exists for this email, we will send a reset code.")}</p>}
     <form onSubmit={submit} className="space-y-5">

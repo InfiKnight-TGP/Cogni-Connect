@@ -12,6 +12,7 @@ export default function Pair() {
   if (session?.role === "caregiver") return <AuthFrame title="Set up the patient's device"><p>{t("Open this page on the patient's device or in a private window, then enter the pairing code.")}</p><Link className={actionClass} href="/caregiver/settings">{t("Patients & Devices")}</Link></AuthFrame>;
   if (name) return <AuthFrame title={`Hello ${name}`}><p>{t("You are ready. Let's open your Home.")}</p><a className={actionClass} href="/">{t("Open Home")}</a></AuthFrame>;
   return <AuthFrame title="Enter your pairing code"><p>{t("Your caregiver will give you this code.")}</p>
+    {process.env.NEXT_PUBLIC_DEMO === "1" && <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 font-semibold">Demo code: DEMA-2345</p>}
     <form className="space-y-6" onSubmit={async e => {
       e.preventDefault(); setBusy(true); setError("");
       try { const result = await apiJSON<{ patientName: string }>("/pair/redeem", { ...jsonBody({ code, device_label: label }), authRedirect: false }); setName(result.patientName); }

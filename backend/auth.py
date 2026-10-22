@@ -2,6 +2,7 @@
 from functools import wraps
 import hashlib
 import hmac
+import json
 import os
 from pathlib import Path
 import re
@@ -9,6 +10,7 @@ import secrets
 import threading
 import time
 import uuid
+import shutil
 from urllib.parse import urlparse
 import ipaddress
 
@@ -93,6 +95,27 @@ def error(status=400):
 
 def dev_login_enabled():
     return current_app.config.get('AUTH_DEV_LOGIN', False)
+
+
+def demo_enabled():
+    return current_app.config.get('AUTH_DEMO', False)
+
+
+def demo_value(name, default):
+    return os.getenv(name, default)
+
+
+def demo_request_allowed():
+    return request.remote_addr in ('127.0.0.1', '::1') or current_app.config.get('AUTH_DEMO_PUBLIC', False)
+
+
+def is_demo_session(session=None):
+    session = session or g.get('auth_session')
+    if not session:
+        return False
+    if session.get('user_id') and database.fetchone('SELECT is_demo FROM users WHERE id=?', (session['user_id'],)):
+        return True
+    return bool(session.get('patient_id') and database.fetchone('SELECT is_demo FROM patients WHERE id=?', (session['patient_id'],)))
 
 
 def dev_request_allowed():
@@ -263,14 +286,18 @@ def bootstrap_patient(user_id):
 
 
 def issue_otp(user, purpose):
-    challenge, code = secrets.token_urlsafe(32), f'{secrets.randbelow(1000000):06d}'
+    challenge = secrets.token_urlsafe(32)
+    demo_emails = {demo_value('DEMO_CAREGIVER_EMAIL', 'demo@cogniconnect.com').lower(), demo_value('DEMO_PATIENT_EMAIL', 'patient@cogniconnect.com').lower()}
+    email = user['email'] if 'email' in user.keys() else ''
+    code = demo_value('DEMO_OTP', '123456') if demo_enabled() and email.lower() in demo_emails else f'{secrets.randbelow(1000000):06d}'
     database.execute('UPDATE otps SET used=1 WHERE user_id=? AND purpose=?', (user['id'], purpose))
     database.execute('INSERT INTO otps VALUES (?,?,?,?,?,?,0,0)',
                      (uuid.uuid4().hex, user['id'], purpose, digest(code), digest(challenge), now() + 300))
     recipient = otp_recipient(user)
     if not recipient:
         raise mailer.DeliveryError('Ask your caregiver to help you sign in')
-    mailer.send_code(recipient, code, purpose)
+    if not (demo_enabled() and email.lower() in demo_emails):
+        mailer.send_code(recipient, code, purpose)
     return challenge
 
 
@@ -321,6 +348,47 @@ def seed_dev_accounts(app):
         database.execute('INSERT INTO patient_members (patient_id,user_id,role) VALUES (?,?,?) ON CONFLICT(patient_id,user_id) DO NOTHING', (patient['id'], users['owner@demo.local'], 'owner'))
 
 
+def seed_shared_demo(app):
+    caregiver_email = demo_value('DEMO_CAREGIVER_EMAIL', 'demo@cogniconnect.com').lower()
+    patient_email = demo_value('DEMO_PATIENT_EMAIL', 'patient@cogniconnect.com').lower()
+    with database.transaction():
+        caregiver = database.fetchone('SELECT * FROM users WHERE email=?', (caregiver_email,))
+        if caregiver and not caregiver['is_demo']:
+            raise RuntimeError(f'DEMO email {caregiver_email} belongs to a real user; refusing to seed')
+        patient_user = database.fetchone('SELECT * FROM users WHERE email=?', (patient_email,))
+        if patient_user and not patient_user['is_demo']:
+            raise RuntimeError(f'DEMO email {patient_email} belongs to a real user; refusing to seed')
+        if not caregiver:
+            uid = uuid.uuid4().hex
+            database.execute("INSERT INTO users (id,email,name,password_hash,created_at,is_demo,role,otp_target) VALUES (?,?,?,?,?,1,'caregiver','caregiver')",
+                             (uid, caregiver_email, 'Demo Caregiver', generate_password_hash(demo_value('DEMO_CAREGIVER_PASSWORD', 'Demo@1234'), method='scrypt'), now()))
+            caregiver = database.fetchone('SELECT * FROM users WHERE id=?', (uid,))
+        else:
+            database.execute("UPDATE users SET is_demo=1,role='caregiver',patient_id=NULL WHERE id=?", (caregiver['id'],))
+        patient = database.fetchone('SELECT * FROM patients WHERE is_demo=1 ORDER BY created_at LIMIT 1')
+        if not patient:
+            pid = uuid.uuid4().hex
+            database.execute("INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,?,?,?,1)", (pid, 'Demo Patient', generate_password_hash(demo_value('DEMO_PIN', '1234'), method='scrypt'), caregiver['id'], now()))
+            patient = database.fetchone('SELECT * FROM patients WHERE id=?', (pid,))
+        database.execute('INSERT INTO patient_members (patient_id,user_id,role) VALUES (?,?,?) ON CONFLICT(patient_id,user_id) DO NOTHING', (patient['id'], caregiver['id'], 'owner'))
+        if not patient_user:
+            uid = uuid.uuid4().hex
+            database.execute("INSERT INTO users (id,email,name,password_hash,created_at,is_demo,role,patient_id,otp_target) VALUES (?,?,?,?,?,1,'patient',?,'patient')",
+                             (uid, patient_email, 'Demo Patient', generate_password_hash(demo_value('DEMO_PATIENT_PASSWORD', 'Patient@1234'), method='scrypt'), now(), patient['id']))
+        else:
+            database.execute("UPDATE users SET is_demo=1,role='patient',patient_id=?,otp_target='patient' WHERE id=?", (patient['id'], patient_user['id']))
+        from patient_storage import initialize_patient
+        base = Path(app.config['PATIENT_DATA_ROOT']).resolve() / patient['id']
+        initialize_patient(base, 'Demo Patient')
+        sample = Path(__file__).with_name('sample_data')
+        for item in sample.iterdir():
+            target = base / item.name
+            if item.is_dir():
+                shutil.copytree(item, target, dirs_exist_ok=True)
+            elif item.is_file() and not target.exists():
+                shutil.copy2(item, target)
+
+
 @bp.post('/auth/signup')
 def signup():
     data = payload()
@@ -349,9 +417,9 @@ def login():
         user = database.fetchone('SELECT * FROM users WHERE email=?', (email,))
         password_hash = user['password_hash'] if user else current_app.extensions['auth_dummy_hash']
         valid = check_password_hash(password_hash, password if isinstance(password, str) and len(password) <= 1024 else '')
-        if user and user['is_demo'] and not dev_login_enabled():
+        if user and user['is_demo'] and not dev_login_enabled() and not demo_enabled():
             return error(401)
-        if user and user['is_demo'] and not dev_request_allowed():
+        if user and user['is_demo'] and not dev_request_allowed() and not (demo_enabled() and current_app.config.get('AUTH_DEMO_PUBLIC')):
             return error(403)
         if not user or user['locked_until'] > now() or not valid:
             if user and user['locked_until'] <= now():
@@ -478,6 +546,28 @@ def logout():
     cookie(response, COOKIES[session['kind']], '', 0)
     cookie(response, 'cogni_patient', '', 0)
     return response
+
+
+@bp.post('/demo/reset')
+@caregiver_required
+def demo_reset():
+    if not demo_enabled() or not is_demo_session():
+        return error(404)
+    patient = database.fetchone('SELECT id FROM patients WHERE is_demo=1 ORDER BY created_at LIMIT 1')
+    if not patient:
+        return error(404)
+    from patient_storage import initialize_patient
+    base = Path(current_app.config['PATIENT_DATA_ROOT']).resolve() / patient['id']
+    if base.exists():
+        shutil.rmtree(base)
+    initialize_patient(base, 'Demo Patient')
+    sample = Path(__file__).with_name('sample_data')
+    for item in sample.iterdir():
+        if item.is_file():
+            shutil.copy2(item, base / item.name)
+    database.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE is_demo=1) OR patient_id=?', (patient['id'],))
+    database.execute('DELETE FROM trusted_devices WHERE user_id IN (SELECT id FROM users WHERE is_demo=1)')
+    return jsonify(ok=True)
 
 
 @bp.get('/auth/me')
@@ -612,7 +702,8 @@ def unlock():
         return error(429)
     patient = database.fetchone('SELECT * FROM patients WHERE id=?', (session['patient_id'],))
     pin = text_field(payload(), 'pin')
-    if not patient or not patient['pin_hash'] or not re.fullmatch(r'[0-9]{4}', pin) or not check_password_hash(patient['pin_hash'], pin):
+    demo_pin = demo_enabled() and patient and patient['is_demo'] and hmac.compare_digest(pin, demo_value('DEMO_PIN', '1234'))
+    if not patient or not patient['pin_hash'] or not re.fullmatch(r'[0-9]{4}', pin) or not (demo_pin or check_password_hash(patient['pin_hash'], pin)):
         return error(403)
     database.execute('UPDATE sessions SET elevated_until=? WHERE id=?', (now() + 1800, session['id']))
     return jsonify(ok=True)
@@ -695,6 +786,18 @@ def record_pairing_failure(address):
 @bp.post('/pair/redeem')
 def pair_redeem():
     with database.transaction():
+        fixed = text_field(payload(), 'code').upper().replace('-', '')
+        if demo_enabled() and fixed == demo_value('DEMO_PAIR_CODE', 'DEMA-2345').replace('-', '').upper():
+            if not demo_request_allowed():
+                return error(403)
+            patient = database.fetchone('SELECT id,name FROM patients WHERE is_demo=1 ORDER BY created_at LIMIT 1')
+            if not patient:
+                return error(404)
+            response = session_response('patient_device', patient_id=patient['id'], label='Shared demo device', patientName=patient['name'])
+            # Keep the shared demo device effectively non-expiring while preserving the normal schema.
+            token = response.headers.get('Set-Cookie', '').split('=', 1)[-1].split(';', 1)[0]
+            database.execute('UPDATE sessions SET expires_at=? WHERE token_hash=?', (now() + 100 * 365 * DAY, digest(token)))
+            return response
         patient_id, status = consume_pair('device')
         if not patient_id:
             msg = 'Pairing code not found or expired. Please generate a new code and try again.' if status == 400 else 'Too many attempts. Please wait a few minutes before trying again.'
@@ -745,26 +848,42 @@ CAREGIVER_ENDPOINTS = {
     'upload_video', 'get_processing_status', 'add_person', 'update_person', 'delete_person',
     'delete_performance', 'get_reports_days', 'get_report_for_day', 'save_settings', 'save_routine',
 }
+DEMO_BLOCKED_ENDPOINTS = {'pair_invite', 'unpair', 'create_patient_login', 'remove_patient_login', 'reset_patient_login_password', 'patient_pin', 'legacy_change_pin'}
+DEMO_AI_ENDPOINTS = {'accuracy', 'generate_questions', 'search', 'transcribe', 'speak', 'crossword'}
 
 
 def init_auth(app, legacy_settings):
     app.config.setdefault('AUTH_DATABASE', str(Path(__file__).with_name('auth.db')))
     app.config.setdefault('AUTH_COOKIE_SECURE', os.getenv('COGNI_COOKIE_SECURE') == '1')
     app.config.setdefault('AUTH_DEV_LOGIN', os.getenv('COGNI_DEV_LOGIN') == '1')
+    app.config.setdefault('AUTH_DEMO', os.getenv('COGNI_DEMO') == '1')
+    app.config.setdefault('AUTH_DEMO_PUBLIC', os.getenv('COGNI_DEMO_PUBLIC') == '1')
     app.config.setdefault('AUTH_ORIGINS', [s.strip().rstrip('/') for s in os.getenv('COGNI_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',') if s.strip()])
     app.config['AUTH_LEGACY_SETTINGS'] = legacy_settings
     with app.app_context():
         validate_dev_config()
+        if app.config['AUTH_DEMO'] and not app.config['AUTH_DEMO_PUBLIC']:
+            host = os.getenv('COGNI_HOST', '127.0.0.1')
+            try:
+                local = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                local = host.lower() == 'localhost'
+            if not local:
+                raise RuntimeError('COGNI_DEMO requires a loopback COGNI_HOST unless COGNI_DEMO_PUBLIC=1')
     if app.config['AUTH_DEV_LOGIN']:
         app.logger.warning('COGNI_DEV_LOGIN is enabled: local development accounts and shortcuts are active')
     app.extensions['auth_limits'] = RateLimits()
     app.extensions['auth_dummy_hash'] = generate_password_hash(secrets.token_urlsafe(32), method='scrypt')
     database.init_db(app)
-    if app.config['AUTH_DEV_LOGIN']:
-        seed_dev_accounts(app)
-    else:
-        database.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE is_demo=1)')
-        database.execute('DELETE FROM trusted_devices WHERE user_id IN (SELECT id FROM users WHERE is_demo=1)')
+    with app.app_context():
+        if app.config['AUTH_DEV_LOGIN']:
+            seed_dev_accounts(app)
+        if app.config['AUTH_DEMO']:
+            app.logger.warning('COGNI_DEMO is enabled: shared demo accounts and data are active; do not host real data')
+            seed_shared_demo(app)
+        else:
+            database.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE is_demo=1)')
+            database.execute('DELETE FROM trusted_devices WHERE user_id IN (SELECT id FROM users WHERE is_demo=1)')
     app.register_blueprint(bp)
 
     @app.before_request
@@ -802,6 +921,16 @@ def init_auth(app, legacy_settings):
             return None
         if not session:
             return error(401)
+        if is_demo_session(session):
+            if request.endpoint in DEMO_BLOCKED_ENDPOINTS:
+                return error(403)
+            if request.endpoint in DEMO_AI_ENDPOINTS:
+                if not limits().hit(('demo-ai', session['id']), 60, 3600):
+                    return jsonify(error='Demo AI limit reached. Please try again later.'), 429
+            if request.endpoint == 'upload_video' and request.content_length and request.content_length > 20 * 1024 * 1024:
+                return jsonify(error='Demo uploads are limited to 20 MB.'), 403
+            if request.endpoint == 'upload_video' and not limits().hit(('demo-upload', session['id']), 3, 86400):
+                return jsonify(error='Demo uploads are limited to three per day.'), 403
         if request.endpoint in CAREGIVER_ENDPOINTS and not is_caregiver():
             return error(403)
         if request.endpoint == 'save_performance' and (session['kind'] != 'patient_device' or is_elevated()):

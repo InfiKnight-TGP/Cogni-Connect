@@ -214,6 +214,18 @@ DEV_DEMO_PASSWORD=demo1234
 
 This seeds `caregiver@demo.local` and `owner@demo.local`, adds a demo patient with PIN `1234`, and shows shortcut sign-in roles. A Patient Device shortcut creates a patient-device session without a pairing code. These routes are restricted to requests whose socket address is `127.0.0.1` or `::1`; keep the flags off outside local development.
 
+### Demo access
+
+For a local shared demo, enable `COGNI_DEMO=1` and `NEXT_PUBLIC_DEMO=1`. The seeded credentials are:
+
+- Caregiver: `demo@cogniconnect.com` / `Demo@1234`
+- Patient account: `patient@cogniconnect.com` / `Patient@1234`
+- OTP: `123456`
+- Pairing code: `DEMA-2345`
+- Patient PIN: `1234`
+
+Demo mode is local-only unless `COGNI_DEMO_PUBLIC=1` is explicitly set. Demo data can be reset from caregiver Settings or with `backend/reset_demo.py`. The included “Me at the zoo” frames and team sample photos are fixtures only; replace them with consented photos before any public hosting, and never host demo mode alongside real data.
+
 ## 📁 Project Structure
 
 ```
