@@ -844,6 +844,83 @@ def unpair(device_id):
     return jsonify(ok=True)
 
 
+def _adaptive_file():
+    from patient_storage import patient_path
+    path = Path(patient_path('adaptive.json'))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists(): path.write_text(json.dumps({'games': {}}), encoding='utf-8')
+    try: data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError): data = {'games': {}}
+    data.setdefault('games', {})
+    return path, data
+
+
+def _valid_game(game_id):
+    if not isinstance(game_id, str) or not re.fullmatch(r'[a-z0-9-]+', game_id): return False
+    try:
+        games = json.loads((Path(__file__).parent / 'games.json').read_text(encoding='utf-8'))
+        return any(item.get('id') == game_id for item in games.get('games', games) if isinstance(item, dict))
+    except (OSError, ValueError): return False
+
+
+def _clean_adaptive(payload, current=None):
+    if not isinstance(payload, dict): return None
+    try: knob, rating = int(payload.get('knob')), int(payload.get('rating'))
+    except (TypeError, ValueError): return None
+    if not 1 <= knob <= 4 or not 400 <= rating <= 1800: return None
+    recent = payload.get('recent', [])
+    baselines = payload.get('baselines', {})
+    if not isinstance(recent, list) or len(recent) > 8 or not isinstance(baselines, dict): return None
+    if any(not isinstance(item, dict) for item in recent): return None
+    cleaned = {'rating': rating, 'knob': knob, 'recent': recent, 'baselines': {key: list(baselines.get(key, []))[-21:] for key in ('tap', 'typed', 'voice')}, 'decision': payload.get('decision', 'stay'), 'reason': str(payload.get('reason', '')), 'mode': (current or {}).get('mode', 'auto'), 'fixedKnob': (current or {}).get('fixedKnob'), 'lastChange': payload.get('lastChange')}
+    if cleaned['mode'] == 'fixed': cleaned['knob'] = int(cleaned['fixedKnob'])
+    return cleaned
+
+
+@bp.get('/adaptive')
+@login_required
+def get_adaptive():
+    _, data = _adaptive_file()
+    return jsonify(games=data.get('games', {}))
+
+
+@bp.put('/adaptive/state')
+@login_required
+def save_adaptive_state():
+    if g.auth_session['kind'] != 'patient_device' or is_elevated(): return error(403)
+    payload = request.get_json(silent=True) or {}
+    game_id = payload.get('game_id')
+    if not _valid_game(game_id): return jsonify(error='Invalid game'), 400
+    path, data = _adaptive_file(); state = _clean_adaptive(payload, data['games'].get(game_id))
+    if state is None: return jsonify(error='Invalid adaptive state'), 400
+    data['games'][game_id] = state; path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    return jsonify(state=state)
+
+
+@bp.post('/adaptive/override')
+@account_required
+def override_adaptive():
+    payload = request.get_json(silent=True) or {}; game_id, mode = payload.get('game_id'), payload.get('mode')
+    if not _valid_game(game_id) or mode not in ('auto', 'fixed'): return jsonify(error='Invalid adaptive override'), 400
+    if mode == 'fixed' and payload.get('knob') not in (1, 2, 3, 4): return jsonify(error='Invalid knob'), 400
+    path, data = _adaptive_file(); state = data['games'].get(game_id) or {'rating': 1000, 'knob': 2, 'recent': [], 'baselines': {'tap': [], 'typed': [], 'voice': []}, 'decision': 'stay', 'reason': 'Getting to know your pace'}
+    state['mode'] = mode; state['fixedKnob'] = payload.get('knob') if mode == 'fixed' else None
+    if mode == 'fixed': state['knob'] = int(payload['knob'])
+    data['games'][game_id] = state; path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    return jsonify(state=state)
+
+
+@bp.post('/adaptive/reset')
+@account_required
+def reset_adaptive():
+    payload = request.get_json(silent=True) or {}; game_id = payload.get('game_id'); path, data = _adaptive_file()
+    if game_id is not None and not _valid_game(game_id): return jsonify(error='Invalid game'), 400
+    if game_id: data['games'].pop(game_id, None)
+    else: data['games'] = {}
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    return jsonify(ok=True, games=data['games'])
+
+
 CAREGIVER_ENDPOINTS = {
     'upload_video', 'get_processing_status', 'add_person', 'update_person', 'delete_person',
     'delete_performance', 'get_reports_days', 'get_report_for_day', 'save_settings', 'save_routine',
