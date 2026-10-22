@@ -21,8 +21,7 @@ export default function AccountForm({ kind }: { kind: Kind }) {
     const session = await refresh();
     if (!session) throw new Error("Could not load your account. Please try again.");
     if (!session.activePatient) { router.replace("/setup"); return; }
-    const result = await apiJSON<{ devices: unknown[] }>(`/pair/devices?patient_id=${encodeURIComponent(session.activePatient.id)}`);
-    router.replace(result.devices.length ? "/caregiver" : "/setup");
+    router.replace("/caregiver");
   };
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true); setNotice("");

@@ -34,10 +34,10 @@ export function CodeInput({ value, onChange, length, label }: { value: string; o
     onChange(next.slice(0, length));
     refs.current[Math.min(input.length > 1 ? input.length : index + 1, length - 1)]?.focus();
   };
-  return <fieldset className="space-y-3"><legend className="font-medium">{label}</legend>
-    <div className="flex gap-1 sm:gap-2" onPaste={event => { event.preventDefault(); const text = clean(event.clipboardData.getData("text")); onChange(text); refs.current[Math.min(text.length, length - 1)]?.focus(); }}>
+  return <fieldset className="min-w-0 w-full space-y-3"><legend className="font-medium">{label}</legend>
+    <div className={`grid w-full min-w-0 ${length === 6 ? "grid-cols-6" : "grid-cols-8"} gap-1 sm:gap-2`} onPaste={event => { event.preventDefault(); const text = clean(event.clipboardData.getData("text")); onChange(text); refs.current[Math.min(text.length, length - 1)]?.focus(); }}>
       {Array.from({ length }, (_, index) => <input key={index} ref={element => { refs.current[index] = element; }}
-        aria-label={`${label}, ${index + 1} of ${length}`} className="h-16 min-w-0 flex-1 rounded-lg border-2 border-input bg-background text-center text-2xl font-bold focus:outline-none focus:ring-4 focus:ring-primary/30 sm:text-3xl"
+        aria-label={`${label}, ${index + 1} of ${length}`} className="h-12 w-full min-w-0 rounded-lg border-2 border-input bg-background px-0 text-center text-xl font-bold focus:outline-none focus:ring-4 focus:ring-primary/30 sm:h-16 sm:text-3xl"
         inputMode={length === 6 ? "numeric" : "text"} autoComplete={index === 0 ? "one-time-code" : "off"} autoCapitalize="characters" spellCheck={false}
         value={value[index] ?? ""} maxLength={length} onFocus={event => event.target.select()}
         onChange={event => update(index, event.target.value)} onKeyDown={event => {
