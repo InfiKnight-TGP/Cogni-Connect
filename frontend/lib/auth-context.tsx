@@ -66,13 +66,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refresh, expire]);
   const publicRoute = PUBLIC_ROUTES.has(pathname);
-  const needsSetup = session?.role === "caregiver" && !session.activePatient;
   useEffect(() => {
     if (!ready || error || publicRoute) return;
     if (!session) router.replace(expiredPatient.current ? "/welcome?expired=patient" : "/welcome");
-    else if (needsSetup && pathname !== "/setup") router.replace("/setup");
     else if (session.role === "caregiver" && pathname === "/") router.replace("/caregiver");
-  }, [ready, error, publicRoute, session, needsSetup, pathname, router]);
+  }, [ready, error, publicRoute, session, pathname, router]);
   const selectPatient = async (id: string) => {
     const next = await apiJSON<AuthSession>("/auth/me", { headers: { "X-Cogni-Patient": id } });
     if (next.role !== "caregiver" || next.activePatient?.id !== id) throw new Error("Unable to select this patient.");
@@ -83,7 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     await apiJSON("/auth/logout", jsonBody({})); commit(null); window.location.assign("/welcome");
   };
-  const blocked = !publicRoute && (!ready || !session || (needsSetup && pathname !== "/setup") || (session?.role === "caregiver" && pathname === "/"));
+  const blocked = !publicRoute && (!ready || !session || (session?.role === "caregiver" && pathname === "/"));
   return <AuthContext.Provider value={{ session, ready, refresh, selectPatient, logout }}>
     {error && !publicRoute ? <main className="mx-auto max-w-lg space-y-5 p-8 text-xl"><p role="alert">{error}</p><button className="min-h-12 rounded-xl border px-5" onClick={() => void refresh()}>Try again</button></main>
       : blocked ? <main className="p-8 text-xl" role="status">Getting things ready…</main>

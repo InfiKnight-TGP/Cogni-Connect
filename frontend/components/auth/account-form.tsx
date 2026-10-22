@@ -20,7 +20,6 @@ export default function AccountForm({ kind }: { kind: Kind }) {
   const continueLogin = async () => {
     const session = await refresh();
     if (!session) throw new Error("Could not load your account. Please try again.");
-    if (!session.activePatient) { router.replace("/setup"); return; }
     router.replace("/caregiver");
   };
   const submit = async (event: React.FormEvent) => {
