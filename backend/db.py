@@ -71,6 +71,14 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             )
         else:
             raise FileNotFoundError(f"Schema file not found at {_SCHEMA_PATH}")
+    # Keep newly added auth tables available for databases created by older versions.
+    conn.execute("""CREATE TABLE IF NOT EXISTS pairing_attempts (
+        scope TEXT NOT NULL,
+        key TEXT NOT NULL,
+        window_start INTEGER NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (scope, key)
+    )""")
 
 
 def connect(database: Optional[Union[str, Path]] = None) -> sqlite3.Connection:

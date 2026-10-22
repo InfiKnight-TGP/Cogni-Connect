@@ -1,6 +1,8 @@
 import json
+import os
 import unittest
 from unittest.mock import patch
+from werkzeug.security import generate_password_hash
 
 import app
 import auth
@@ -83,14 +85,26 @@ class AuthTests(unittest.TestCase):
         device, patient, code = self.pair()
         self.assertEqual(device.post('/pair/redeem', json={'code': code}).status_code, 400)
         next_code = self.client.post('/pair/create', json={'patient_id': patient}).json['code']
-        with patch('auth.now', return_value=auth.now() + 86401):
-            self.assertEqual(device.post('/pair/redeem', json={'code': next_code}).status_code, 400)
-        app.api.extensions['auth_limits'] = auth.RateLimits()
-        for _ in range(5):
-            self.assertEqual(device.post('/pair/redeem', json={'code': 'AAAAAAAA'}).status_code, 400)
-        self.assertEqual(device.post('/pair/redeem', json={'code': next_code}).status_code, 429)
         with patch('auth.now', return_value=auth.now() + 901):
-            self.assertEqual(device.post('/pair/redeem', json={'code': next_code}).status_code, 200)
+            self.assertEqual(device.post('/pair/redeem', json={'code': next_code}).status_code, 400)
+        device = app.api.test_client()
+        lockout_code = self.client.post('/pair/create', json={'patient_id': patient}).json['code']
+        for _ in range(5):
+            self.assertEqual(device.post('/pair/redeem', json={'code': 'AAAAAAAA'}, environ_overrides={'REMOTE_ADDR': '10.0.0.2'}).status_code, 400)
+        self.assertEqual(device.post('/pair/redeem', json={'code': lockout_code}, environ_overrides={'REMOTE_ADDR': '10.0.0.2'}).status_code, 429)
+        with patch('auth.now', return_value=auth.now() + 3601):
+            fresh_code = self.client.post('/pair/create', json={'patient_id': patient}).json['code']
+            self.assertEqual(device.post('/pair/redeem', json={'code': fresh_code}, environ_overrides={'REMOTE_ADDR': '10.0.0.2'}).status_code, 200)
+
+    def test_pairing_limits_persist_in_database(self):
+        device, patient, _ = self.pair()
+        for index in range(5):
+            response = device.post('/pair/redeem', json={'code': 'AAAAAAAA'}, environ_overrides={'REMOTE_ADDR': '10.0.0.7'})
+            self.assertEqual(response.status_code, 400)
+        app.api.extensions['auth_limits'] = auth.RateLimits()
+        fresh = app.api.test_client()
+        self.assertEqual(fresh.post('/pair/redeem', json={'code': self.client.post('/pair/create', json={'patient_id': patient}).json['code']}, environ_overrides={'REMOTE_ADDR': '10.0.0.7'}).status_code, 429)
+        self.assertEqual(self.sql("SELECT attempts FROM pairing_attempts WHERE scope='ip' AND key='10.0.0.7'")[0][0], 5)
 
     def test_device_pin_elevation_score_restrictions_expiry_and_lock(self):
         device, _, _ = self.pair()
@@ -186,6 +200,13 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(self.client.post('/auth/logout').status_code, 200)
         self.assertIsNone(self.client.get_cookie('cogni_patient'))
 
+        with app.api.app_context():
+            db.execute('INSERT INTO users VALUES (?,?,?,?,0,0,?)', ('other-user', 'other@example.com', 'Other', generate_password_hash('password1', method='scrypt'), auth.now()))
+            db.execute('INSERT INTO patients VALUES (?,?,?,?,?)', ('other-patient', 'Other patient', generate_password_hash('1234', method='scrypt'), 'other-user', auth.now()))
+            db.execute("INSERT INTO patient_members VALUES ('other-patient','other-user','owner')")
+        self.assertEqual(self.client.post('/auth/login', json={'email': 'one@example.com', 'password': 'password1'}).status_code, 200)
+        self.assertEqual(self.client.get('/auth/me', headers={'X-Cogni-Patient': 'other-patient'}).status_code, 403)
+
     def test_login_code_request_and_pin_rate_limits(self):
         for _ in range(5):
             self.assertEqual(self.client.post('/auth/login', json={'email': 'missing@example.com', 'password': 'wrong'}).status_code, 401)
@@ -210,6 +231,12 @@ class AuthTests(unittest.TestCase):
         response = self.client.post('/auth/signup', json={'email': 'one@example.com', 'name': 'Caregiver', 'password': 'password1'})
         self.assertEqual(response.status_code, 503)
         self.assertFalse(self.sql('SELECT * FROM users'))
+
+    def test_mailer_requires_explicit_development_otp(self):
+        self.mail.stop()
+        with patch.dict(os.environ, {'SMTP_USER': '', 'SMTP_PASS': '', 'COGNI_DEV_OTP': '0'}, clear=False):
+            with self.assertRaisesRegex(mailer.DeliveryError, 'Email is not configured'):
+                mailer.send_code('person@example.com', '123456', 'login')
 
     def test_session_expiry_sliding_and_hash_only_storage(self):
         device, _, _ = self.pair()

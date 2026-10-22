@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS pairing_codes (
   attempts INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS pairing_attempts (
+  scope TEXT NOT NULL,
+  key TEXT NOT NULL,
+  window_start INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (scope, key)
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   token_hash TEXT UNIQUE NOT NULL,

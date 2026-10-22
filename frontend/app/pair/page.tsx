@@ -18,9 +18,9 @@ export default function Pair() {
       catch (error) { setError(error instanceof ApiError && error.status === 400 ? "That code may have expired or already been used. Ask your caregiver for a new one." : error instanceof Error ? error.message : "Could not connect. Please try again."); }
       finally { setBusy(false); }
     }}>
-      <CodeInput length={6} label={t("Pairing code")} value={code} onChange={setCode} />
+      <CodeInput length={8} label={t("Pairing code")} value={code} onChange={setCode} />
       <label className="block">{t("Device name (optional)")}<input className={fieldClass} maxLength={100} placeholder={t("My tablet")} value={label} onChange={e => setLabel(e.target.value)} /></label>
-      <Notice>{t(error)}</Notice><button className={`${actionClass} w-full`} disabled={busy || code.length !== 6}>{t(busy ? "Connecting…" : "Connect this device")}</button>
+      <Notice>{t(error)}</Notice><button className={`${actionClass} w-full`} disabled={busy || code.length !== 8}>{t(busy ? "Connecting…" : "Connect this device")}</button>
     </form>
   </AuthFrame>;
 }

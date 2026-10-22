@@ -18,7 +18,7 @@ import mailer
 
 bp = Blueprint('auth', __name__)
 DAY = 86400
-ALPHABET = '0123456789'
+ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 COOKIES = {'caregiver': 'cogni_session', 'patient_device': 'cogni_device'}
 
 
@@ -211,8 +211,6 @@ def bootstrap_patient(user_id):
 
 def issue_otp(user, purpose):
     challenge, code = secrets.token_urlsafe(32), f'{secrets.randbelow(1000000):06d}'
-    if user['email'] == 'demo@cogniconnect.com':
-        code = '123456'
     database.execute('UPDATE otps SET used=1 WHERE user_id=? AND purpose=?', (user['id'], purpose))
     database.execute('INSERT INTO otps VALUES (?,?,?,?,?,?,0,0)',
                      (uuid.uuid4().hex, user['id'], purpose, digest(code), digest(challenge), now() + 300))
@@ -282,7 +280,7 @@ def login():
         trusted = request.cookies.get('cogni_trusted', '')
         trust = database.fetchone('SELECT token_hash FROM trusted_devices WHERE token_hash=? AND user_id=? AND expires_at>?',
                                   (digest(trusted), user['id'], now())) if trusted and len(trusted) <= 256 else None
-        if (trust and hmac.compare_digest(trust['token_hash'], digest(trusted))) or user['email'] == 'demo@cogniconnect.com':
+        if trust and hmac.compare_digest(trust['token_hash'], digest(trusted)):
             return session_response('caregiver', user_id=user['id'])
         if limited('code', email):
             return error(429)
@@ -470,11 +468,11 @@ def create_pair(kind):
         return error(403)
     if limited('pair-create', maximum=20, seconds=600):
         return error(429)
-    code = ''.join(secrets.choice(ALPHABET) for _ in range(6))
-    expiry = now() + (1 if kind == 'device' else 2) * DAY
+    code = ''.join(secrets.choice(ALPHABET) for _ in range(8))
+    expiry = now() + (900 if kind == 'device' else 2 * DAY)
     database.execute('INSERT INTO pairing_codes VALUES (?,?,?,?,?,NULL,0)',
                      (digest(code), patient_id, kind, g.auth_session.get('user_id'), expiry))
-    return jsonify(code=code[:3] + '-' + code[3:], expiresAt=expiry), 201
+    return jsonify(code=code[:4] + '-' + code[4:], expiresAt=expiry), 201
 
 
 @bp.post('/pair/create')
@@ -490,20 +488,42 @@ def pair_invite():
 
 
 def consume_pair(kind):
-    key = ('pair-wrong', ip())
-    if limits().blocked(key, 5):
+    address = ip()
+    if pairing_blocked(address):
         return None, 429
     code = text_field(payload(), 'code').upper().replace('-', '')
     row = database.fetchone('SELECT * FROM pairing_codes WHERE code_hash=?', (digest(code),))
-    valid = (len(code) == 6 and row and row['kind'] == kind and row['used_at'] is None
+    valid = (len(code) == 8 and row and row['kind'] == kind and row['used_at'] is None
              and row['expires_at'] > now() and hmac.compare_digest(row['code_hash'], digest(code)))
     if row:
         database.execute('UPDATE pairing_codes SET attempts=attempts+1 WHERE code_hash=?', (row['code_hash'],))
     if not valid:
-        limits().wrong_pair(key)
+        record_pairing_failure(address)
         return None, 400
     database.execute('UPDATE pairing_codes SET used_at=? WHERE code_hash=?', (now(), row['code_hash']))
     return row['patient_id'], 200
+
+
+def _pairing_counter(scope, key, window):
+    row = database.fetchone('SELECT * FROM pairing_attempts WHERE scope=? AND key=?', (scope, key))
+    stamp = now()
+    if not row or stamp >= row['window_start'] + window:
+        database.execute('INSERT INTO pairing_attempts(scope,key,window_start,attempts) VALUES (?,?,?,0) '
+                         'ON CONFLICT(scope,key) DO UPDATE SET window_start=excluded.window_start,attempts=0',
+                         (scope, key, stamp))
+        return 0
+    return row['attempts']
+
+
+def pairing_blocked(address):
+    return _pairing_counter('ip', address, 900) >= 5 or _pairing_counter('global', 'all', 3600) >= 30
+
+
+def record_pairing_failure(address):
+    stamp = now()
+    for scope, key, window in (('ip', address, 900), ('global', 'all', 3600)):
+        _pairing_counter(scope, key, window)
+        database.execute('UPDATE pairing_attempts SET attempts=attempts+1 WHERE scope=? AND key=?', (scope, key))
 
 
 @bp.post('/pair/redeem')
@@ -555,26 +575,6 @@ def unpair(device_id):
     return jsonify(ok=True)
 
 
-@bp.post('/auth/demo')
-def demo():
-    if not current_app.config['AUTH_DEMO']:
-        return error(404)
-    if limited('demo', maximum=5, seconds=900):
-        return error(429)
-    with database.transaction():
-        user = database.fetchone("SELECT * FROM users WHERE email='demo@cogniconnect.invalid'")
-        if not user:
-            user_id = uuid.uuid4().hex
-            database.execute('INSERT INTO users VALUES (?,?,?,?,0,0,?)',
-                             (user_id, 'demo@cogniconnect.invalid', 'Demo caregiver', generate_password_hash(secrets.token_urlsafe(32), method='scrypt'), now()))
-            patient_id = uuid.uuid4().hex
-            database.execute('INSERT INTO patients VALUES (?,?,NULL,?,?)', (patient_id, 'Demo patient', user_id, now()))
-            database.execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, user_id, 'owner'))
-        else:
-            user_id = user['id']
-        return session_response('caregiver', user_id=user_id)
-
-
 CAREGIVER_ENDPOINTS = {
     'upload_video', 'get_processing_status', 'add_person', 'update_person', 'delete_person',
     'delete_performance', 'get_reports_days', 'get_report_for_day', 'save_settings', 'save_routine',
@@ -584,7 +584,6 @@ CAREGIVER_ENDPOINTS = {
 def init_auth(app, legacy_settings):
     app.config.setdefault('AUTH_DATABASE', str(Path(__file__).with_name('auth.db')))
     app.config.setdefault('AUTH_COOKIE_SECURE', os.getenv('COGNI_COOKIE_SECURE') == '1')
-    app.config.setdefault('AUTH_DEMO', os.getenv('COGNI_DEMO', '').lower() == 'true')
     app.config.setdefault('AUTH_ORIGINS', [s.strip().rstrip('/') for s in os.getenv('COGNI_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',') if s.strip()])
     app.config['AUTH_LEGACY_SETTINGS'] = legacy_settings
     app.extensions['auth_limits'] = RateLimits()
@@ -653,4 +652,4 @@ def init_auth(app, legacy_settings):
     @app.errorhandler(mailer.DeliveryError)
     def delivery_error(_error):
         app.logger.error('Verification email could not be delivered')
-        return error(503)
+        return jsonify(error=str(_error)), 503

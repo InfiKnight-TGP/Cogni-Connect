@@ -71,8 +71,8 @@ export function JoinPatient() {
   }}>
     <h3 className="text-xl font-bold">Have a caregiver invite?</h3>
     <p className="text-base text-muted-foreground">Only enter a code if another caregiver shared an invite code with you. If you are managing your own patient, you don&apos;t need an invite code.</p>
-    <CodeInput label="Caregiver invite code" length={6} value={code} onChange={setCode} />
-    <button className={secondaryClass} disabled={busy || code.length !== 6}>Join patient</button>
+    <CodeInput label="Caregiver invite code" length={8} value={code} onChange={setCode} />
+    <button className={secondaryClass} disabled={busy || code.length !== 8}>Join patient</button>
     <Notice>{notice}</Notice>
   </form>;
 }
