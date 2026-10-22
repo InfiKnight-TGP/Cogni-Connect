@@ -131,6 +131,7 @@ export default function ContextQuestions({
             date: format(date, "yyyy-MM-dd"),
             game_id: "daily_recall",
             level: 1,
+            difficulty: 2,
             skill: "personal memory",
             breakdown: {
               activity1_faceRecognition: activityScores?.activity1,

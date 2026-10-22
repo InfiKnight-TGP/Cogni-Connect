@@ -90,6 +90,7 @@ export default function MyDayRunner() {
       level: 1,
       skill: current.skill,
       score,
+      difficulty: 2,
     });
     if (!saved) {
       setSaveError(true);

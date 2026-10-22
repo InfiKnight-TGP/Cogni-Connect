@@ -10,6 +10,7 @@ import { localDateKey } from "./date";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 import { usePreferences } from "@/components/interaction/InteractionProvider";
 import { ReadAloud } from "@/components/interaction/ReadAloud";
+import { readSkill } from "@/lib/interaction/events";
 
 /** True on the caregiver's All Games page: games can be tried without saving a score. */
 export const PreviewContext = createContext(false);
@@ -74,6 +75,7 @@ export default function GameShell({
       level,
       skill,
       score: clampedScore,
+      difficulty: Math.max(1, Math.min(4, Math.round(readSkill(gameId).knob))) as 1 | 2 | 3 | 4,
     });
 
     if (onFinish) {

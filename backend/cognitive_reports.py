@@ -202,6 +202,11 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
 
 LEVEL_NAMES: dict[int, str] = {1: "Easy", 2: "Medium", 3: "Hard"}
 
+def difficulty_label(value: Any, fallback: str) -> str:
+    if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 4:
+        return "Easier" if value == 1 else "Normal" if value == 2 else "Harder"
+    return fallback
+
 
 def parse_iso(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
@@ -420,7 +425,7 @@ def build_day_report(
             continue
         ts = s.get("completed_at") or s.get("timestamp") or s.get("date") or ""
         lvl_num = s.get("level")
-        diff_str = LEVEL_NAMES.get(lvl_num, "Easy") if isinstance(lvl_num, int) else "Easy"
+        diff_str = difficulty_label(s.get("difficulty"), LEVEL_NAMES.get(lvl_num, "Easy") if isinstance(lvl_num, int) else "Easy")
         breakdown = s.get("breakdown")
         game_id = s.get("game_id")
 
@@ -535,7 +540,7 @@ def build_day_report(
 
         ts = s.get("completed_at") or s.get("timestamp") or s.get("date") or ""
         lvl_num = s.get("level")
-        diff_str = LEVEL_NAMES.get(lvl_num, "Medium") if isinstance(lvl_num, int) else "Medium"
+        diff_str = difficulty_label(s.get("difficulty"), LEVEL_NAMES.get(lvl_num, "Medium") if isinstance(lvl_num, int) else "Medium")
         reg = GAME_REGISTRY.get(game_id, {
             "name": game_id.replace("-", " ").title(),
             "primary_domain": normalize_domain(s.get("skill")) or "Memory",

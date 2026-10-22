@@ -9,9 +9,10 @@ import { COGNITIVE_AREAS } from "@/lib/areas";
 import { dayKey, gameArea, LEVEL_NAMES, type Area } from "@/lib/progress";
 import { Download, Trash2 } from "lucide-react";
 
-type RawScore = { id?: string; date?: string; timestamp?: string; score?: number; game_id?: string; skill?: string; level?: number; breakdown?: Record<string, number | null | undefined> };
+type RawScore = { id?: string; date?: string; timestamp?: string; score?: number; game_id?: string; skill?: string; level?: number; difficulty?: number; breakdown?: Record<string, number | null | undefined> };
 type Performance = { scores?: RawScore[]; game_scores?: RawScore[] };
-type Activity = { id: string; sourceId: string; legacySplit: boolean; date: string; activity: string; gameId: string; area: Area; level: number; score: number; stars: number };
+type Activity = { id: string; sourceId: string; legacySplit: boolean; date: string; activity: string; gameId: string; area: Area; level: number; difficulty?: number; score: number; stars: number };
+function difficultyName(value?: number) { return value === 1 ? "Easier" : value === 2 ? "Normal" : value != null && value >= 3 ? "Harder" : "Not recorded"; }
 const REAL_NAMES: Record<string, string> = { daily_recall: "Daily Recall", "face-recognition": "Face Recognition", "name-recognition": "Name Recall", "context-recall": "Relive Memories" };
 
 function localDay(raw?: string) {
@@ -30,7 +31,7 @@ function activityRows(performance: Performance): Activity[] {
     const area = gameArea(gameId, raw.skill) ?? game?.area ?? (gameId === "daily_recall" ? "Memory" : undefined);
     if (!date || !area || !Number.isFinite(score)) return;
     const sourceId = raw.id || `${date}:${gameId}:${rows.length}`;
-    rows.push({ id: `${sourceId}:${rows.length}`, sourceId, legacySplit, date, activity: REAL_NAMES[gameId] ?? game?.name ?? gameId, gameId, area, level: raw.level ?? 1, score, stars: stars(score) });
+    rows.push({ id: `${sourceId}:${rows.length}`, sourceId, legacySplit, date, activity: REAL_NAMES[gameId] ?? game?.name ?? gameId, gameId, area, level: raw.level ?? 1, difficulty: raw.difficulty, score, stars: stars(score) });
   };
   for (const score of performance.scores ?? []) {
     const breakdown = score.breakdown;
@@ -71,7 +72,7 @@ export default function ActivityLog() {
   }), [rows, area, level, from, to, sort]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / 20));
   const exportCsv = () => {
-    const values = [["Date", "Activity", "Area", "Level", "Score", "Stars"], ...filtered.map((row) => [row.date, row.activity, row.area, LEVEL_NAMES[row.level as keyof typeof LEVEL_NAMES], row.score, row.stars])];
+    const values = [["Date", "Activity", "Area", "Level", "Difficulty", "Score", "Stars"], ...filtered.map((row) => [row.date, row.activity, row.area, LEVEL_NAMES[row.level as keyof typeof LEVEL_NAMES], difficultyName(row.difficulty), row.score, row.stars])];
     const csv = values.map((line) => line.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = "cogniconnect-activity-log.csv"; anchor.click(); URL.revokeObjectURL(url);
@@ -91,7 +92,7 @@ export default function ActivityLog() {
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not remove activity."); }
   };
   const sortBy = (key: keyof Activity) => { setSort((current) => ({ key, direction: current.key === key && current.direction === "asc" ? "desc" : "asc" })); setPage(0); };
-  const headings: [keyof Activity, string][] = [["date", "Date"], ["activity", "Activity"], ["area", "Area"], ["level", "Level"], ["score", "Score"], ["stars", "Stars"]];
+  const headings: [keyof Activity, string][] = [["date", "Date"], ["activity", "Activity"], ["area", "Area"], ["level", "Level"], ["difficulty", "Difficulty"], ["score", "Score"], ["stars", "Stars"]];
 
   return <Card className="rounded-xl border border-border bg-card p-5 shadow-sm">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Activity Log</h2><p className="text-sm text-muted-foreground">{filtered.length} activities</p></div><Button variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download className="mr-2 h-4 w-4" />Export CSV</Button></div>
@@ -101,7 +102,7 @@ export default function ActivityLog() {
       <label className="text-sm">From<input type="date" value={from} onChange={(event) => { setFrom(event.target.value); setPage(0); }} className="ml-2 min-h-10 rounded-md border bg-background px-2" /></label>
       <label className="text-sm">To<input type="date" value={to} onChange={(event) => { setTo(event.target.value); setPage(0); }} className="ml-2 min-h-10 rounded-md border bg-background px-2" /></label>
     </div>
-    {loadError ? <p role="alert" className="py-10 text-center text-sm text-muted-foreground">Could not load activities.</p> : !filtered.length ? <p className="py-12 text-center text-sm text-muted-foreground">No activities yet.</p> : <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[850px] text-sm"><thead><tr className="border-y">{headings.map(([key, title]) => <th key={key} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"><button onClick={() => sortBy(key)} className="hover:text-foreground">{title}{sort.key === key ? sort.direction === "asc" ? " ↑" : " ↓" : ""}</button></th>)}<th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Action</th></tr></thead><tbody>{filtered.slice(page * 20, page * 20 + 20).map((row) => { const areaMeta = COGNITIVE_AREAS.find((item) => item.name === row.area); return <tr key={row.id} className="border-b last:border-0"><td className="px-3 py-3 tabular-nums">{row.date}</td><td className="px-3 py-3 font-medium">{row.activity}</td><td className="px-3 py-3"><span className={`inline-flex rounded-full border px-2 py-1 text-xs font-medium ${areaMeta?.colorClasses ?? ""}`}>{row.area}</span></td><td className="px-3 py-3">{LEVEL_NAMES[row.level as keyof typeof LEVEL_NAMES] ?? "Easy"}</td><td className="px-3 py-3 tabular-nums">{row.score}/100</td><td className="px-3 py-3" aria-label={`${row.stars} stars`}>{"★".repeat(row.stars)}<span className="sr-only"> {row.stars} stars</span></td><td className="px-3 py-2 text-right"><Button variant="ghost" size="sm" className="min-h-10" onClick={() => void remove(row)}><Trash2 className="mr-1 h-4 w-4" />Remove</Button></td></tr>; })}</tbody></table></div>}
+    {loadError ? <p role="alert" className="py-10 text-center text-sm text-muted-foreground">Could not load activities.</p> : !filtered.length ? <p className="py-12 text-center text-sm text-muted-foreground">No activities yet.</p> : <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead><tr className="border-y">{headings.map(([key, title]) => <th key={key} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"><button onClick={() => sortBy(key)} className="hover:text-foreground">{title}{sort.key === key ? sort.direction === "asc" ? " ↑" : " ↓" : ""}</button></th>)}<th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Action</th></tr></thead><tbody>{filtered.slice(page * 20, page * 20 + 20).map((row) => { const areaMeta = COGNITIVE_AREAS.find((item) => item.name === row.area); return <tr key={row.id} className="border-b last:border-0"><td className="px-3 py-3 tabular-nums">{row.date}</td><td className="px-3 py-3 font-medium">{row.activity}</td><td className="px-3 py-3"><span className={`inline-flex rounded-full border px-2 py-1 text-xs font-medium ${areaMeta?.colorClasses ?? ""}`}>{row.area}</span></td><td className="px-3 py-3">{LEVEL_NAMES[row.level as keyof typeof LEVEL_NAMES] ?? "Easy"}</td><td className="px-3 py-3">{difficultyName(row.difficulty)}</td><td className="px-3 py-3 tabular-nums">{row.score}/100</td><td className="px-3 py-3" aria-label={`${row.stars} stars`}>{"★".repeat(row.stars)}<span className="sr-only"> {row.stars} stars</span></td><td className="px-3 py-2 text-right"><Button variant="ghost" size="sm" className="min-h-10" onClick={() => void remove(row)}><Trash2 className="mr-1 h-4 w-4" />Remove</Button></td></tr>; })}</tbody></table></div>}
     {filtered.length > 20 && <div className="mt-4 flex items-center justify-between"><span className="text-sm text-muted-foreground">Page {page + 1} of {pageCount}</span><div className="flex gap-2"><Button variant="outline" disabled={!page} onClick={() => setPage(page - 1)}>Previous</Button><Button variant="outline" disabled={page + 1 >= pageCount} onClick={() => setPage(page + 1)}>Next</Button></div></div>}
     {notice && <p role="status" className="mt-3 text-sm text-muted-foreground">{notice}</p>}
   </Card>;

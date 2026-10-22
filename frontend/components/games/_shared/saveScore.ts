@@ -7,6 +7,7 @@ export interface SaveScoreParams {
   level: number;
   skill: string;
   score: number;
+  difficulty?: 1 | 2 | 3 | 4;
 }
 
 export async function saveScore(params: SaveScoreParams): Promise<boolean> {

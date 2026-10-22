@@ -1373,9 +1373,12 @@ def save_performance():
         score = data.get('score')
         date = data.get('date')
         breakdown = data.get('breakdown', {})
+        difficulty = data.get('difficulty')
         
         if score is None:
             return jsonify({"error": "Score is required"}), 400
+        if difficulty is not None and (isinstance(difficulty, bool) or not isinstance(difficulty, int) or difficulty < 1 or difficulty > 4):
+            return jsonify({"error": "Difficulty must be an integer from 1 to 4"}), 400
 
         # Load existing performance data
         performance_file = PERFORMANCE_PATH
@@ -1399,6 +1402,8 @@ def save_performance():
             }
             if 'source' in data:
                 record['source'] = data['source']
+            if difficulty is not None:
+                record['difficulty'] = difficulty
             performance_data.setdefault("game_scores", []).append(record)
         else:
             # Add new score with timestamp and breakdown
@@ -1414,6 +1419,8 @@ def save_performance():
             }
             if 'source' in data:
                 record['source'] = data['source']
+            if difficulty is not None:
+                record['difficulty'] = difficulty
             performance_data.setdefault("scores", []).append(record)
         
         # Save updated data

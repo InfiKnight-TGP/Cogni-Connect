@@ -54,6 +54,17 @@ class PerformanceTests(unittest.TestCase):
         self.assertEqual(remaining[0]["id"], rows[1]["id"])
         self.assertEqual(self.client.delete(f"/performance/{rows[0]['id']}").status_code, 404)
 
+    def test_difficulty_is_optional_but_validated_and_saved(self):
+        response = self.client.post("/performance", json={
+            "game_id": "mole-path", "level": 2, "skill": "working memory",
+            "score": 80, "date": "2026-10-22", "difficulty": 4,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.read_data()["game_scores"][0]["difficulty"], 4)
+        for invalid in (0, 5, "2", True):
+            response = self.client.post("/performance", json={"game_id": "mole-path", "score": 80, "difficulty": invalid})
+            self.assertEqual(response.status_code, 400)
+
     def test_old_records_receive_ids_once_and_backup_only_on_change(self):
         old = {
             "scores": [{"score": 70, "game_id": "daily_recall"}],
