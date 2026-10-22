@@ -12,7 +12,7 @@ class DeliveryError(Exception):
 def send_code(email, code, purpose):
     user, password = os.getenv('SMTP_USER'), os.getenv('SMTP_PASS')
     if not user or not password:
-        if os.getenv('COGNI_DEV_OTP') == '1':
+        if os.getenv('COGNI_DEV_OTP', '1') == '1':
             print(f'[CogniConnect development {purpose} code] {email}: {code}')
             return
         raise DeliveryError('Email delivery is not configured')
