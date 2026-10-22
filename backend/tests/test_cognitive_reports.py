@@ -63,13 +63,34 @@ class CognitiveReportTests(unittest.TestCase):
         self.assertEqual(normalize_domain("Recognition and Orientation"), "Recognition & Orientation")
         self.assertEqual(normalize_domain("Recognition & Orientation"), "Recognition & Orientation")
 
-    def test_registry_marks_unimplemented_games_unavailable(self):
-        for game_id in ("word-association", "odd-one-out", "whack-a-mole"):
+    def test_registry_playability_matches_built_games(self):
+        for game_id in ("word-association", "whack-a-mole", "pill-box-planner"):
             self.assertFalse(GAME_REGISTRY[game_id]["playable"])
+        for game_id in ("sound-tap", "memory-cards", "pattern-completion", "object-naming", "yesterday-quiz", "memory-crossword", "odd-one-out"):
+            self.assertTrue(GAME_REGISTRY[game_id]["playable"])
         self.assertEqual(GAME_REGISTRY["story-builder"]["primary_domain"], "Memory")
         self.assertEqual(GAME_REGISTRY["face-recognition"]["primary_domain"], "Recognition & Orientation")
         self.assertEqual(GAME_REGISTRY["attention-hunt"]["primary_domain"], "Attention")
         self.assertEqual(GAME_REGISTRY["plan-the-day"]["primary_domain"], "Executive Function")
+
+    def test_every_playable_game_score_counts_in_its_report_area(self):
+        date_str = "2026-10-21"
+        scores = [
+            {"game_id": game_id, "score": 80, "date": date_str}
+            for game_id, entry in GAME_REGISTRY.items()
+            if entry["playable"] and game_id != "daily_recall"
+        ]
+        report = build_day_report(
+            {"scores": [], "game_scores": scores},
+            date_str,
+            games_file=self.games_path,
+            plans_file=self.plans_path,
+            settings_file=self.settings_path,
+            performance_file=self.perf_path,
+        )
+        for game_id, entry in GAME_REGISTRY.items():
+            if entry["playable"] and game_id != "daily_recall":
+                self.assertEqual(report["domains"][entry["primary_domain"]]["score"], 80, game_id)
 
     def test_domain_isolation_no_evidence_leaves_null(self):
         perf = {

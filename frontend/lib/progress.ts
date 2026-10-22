@@ -25,6 +25,7 @@ const GAME_AREA: Record<string, Area> = {
   "sound-tap": "Attention",
   "pattern-completion": "Executive Function",
   "object-naming": "Recognition & Orientation",
+  "pill-box-planner": "Executive Function",
 };
 
 const SKILL_AREA: Record<string, Area> = {
@@ -42,6 +43,7 @@ const SKILL_AREA: Record<string, Area> = {
   flexibility: "Executive Function",
   planning: "Executive Function",
   switching: "Executive Function",
+  "rule switching": "Executive Function",
   spatial: "Recognition & Orientation",
   directions: "Recognition & Orientation",
 };
