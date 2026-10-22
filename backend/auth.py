@@ -1,5 +1,4 @@
 """Server-side accounts, pairing, and authorization for patient-scoped storage."""
-from contextlib import contextmanager
 from functools import wraps
 import hashlib
 import hmac
@@ -7,7 +6,6 @@ import os
 from pathlib import Path
 import re
 import secrets
-import sqlite3
 import threading
 import time
 import uuid
@@ -15,42 +13,13 @@ import uuid
 from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import db as database
 import mailer
 
 bp = Blueprint('auth', __name__)
 DAY = 86400
 ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 COOKIES = {'caregiver': 'cogni_session', 'patient_device': 'cogni_device'}
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
- id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
- password_hash TEXT NOT NULL, failed_logins INTEGER NOT NULL DEFAULT 0,
- locked_until REAL NOT NULL DEFAULT 0, created_at REAL NOT NULL);
-CREATE TABLE IF NOT EXISTS patients (
- id TEXT PRIMARY KEY, name TEXT NOT NULL, pin_hash TEXT,
- created_by TEXT REFERENCES users(id), created_at REAL NOT NULL);
-CREATE TABLE IF NOT EXISTS patient_members (
- patient_id TEXT REFERENCES patients(id), user_id TEXT REFERENCES users(id),
- role TEXT CHECK(role IN ('owner','caregiver')), PRIMARY KEY(patient_id,user_id));
-CREATE TABLE IF NOT EXISTS pairing_codes (
- code_hash TEXT PRIMARY KEY, patient_id TEXT NOT NULL REFERENCES patients(id),
- kind TEXT NOT NULL CHECK(kind IN ('device','caregiver')), created_by TEXT,
- expires_at REAL NOT NULL, used_at REAL, attempts INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS sessions (
- id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL,
- kind TEXT NOT NULL CHECK(kind IN ('caregiver','patient_device')),
- user_id TEXT REFERENCES users(id), patient_id TEXT REFERENCES patients(id),
- device_label TEXT, created_at REAL NOT NULL, expires_at REAL NOT NULL,
- last_seen REAL NOT NULL, elevated_until REAL NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS otps (
- id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
- purpose TEXT NOT NULL CHECK(purpose IN ('login','reset')), code_hash TEXT NOT NULL,
- challenge_hash TEXT UNIQUE NOT NULL, expires_at REAL NOT NULL,
- attempts INTEGER NOT NULL DEFAULT 0, used INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS trusted_devices (
- token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
- expires_at REAL NOT NULL);
-"""
 
 
 def digest(value):
@@ -58,29 +27,14 @@ def digest(value):
 
 
 def now():
-    return time.time()
+    return int(time.time())
 
 
 def db():
-    if 'auth_db' not in g:
-        connection = sqlite3.connect(current_app.config['AUTH_DATABASE'], timeout=15, isolation_level=None)
-        connection.row_factory = sqlite3.Row
-        connection.execute('PRAGMA foreign_keys=ON')
-        connection.executescript(SCHEMA)
-        g.auth_db = connection
-    return g.auth_db
+    return database.get_connection()
 
 
-@contextmanager
-def transaction():
-    connection = db()
-    connection.execute('BEGIN IMMEDIATE')
-    try:
-        yield connection
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        raise
+transaction = database.transaction
 
 
 class RateLimits:
@@ -153,9 +107,9 @@ def cookie(response, key, value, age):
 def new_session(kind, user_id=None, patient_id=None, label=''):
     token, stamp = secrets.token_urlsafe(32), now()
     age = (30 if kind == 'caregiver' else 90) * DAY
-    db().execute('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',
-                 (uuid.uuid4().hex, digest(token), kind, user_id, patient_id, label,
-                  stamp, stamp + age, stamp, 0))
+    database.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',
+                     (uuid.uuid4().hex, digest(token), kind, user_id, patient_id, label,
+                      stamp, stamp + age, stamp, 0))
     return token, age
 
 
@@ -172,8 +126,8 @@ def resolve_session(kind):
     token = request.cookies.get(COOKIES[kind], '')
     if not token or len(token) > 256:
         return None
-    row = db().execute('SELECT * FROM sessions WHERE token_hash=? AND kind=? AND expires_at>?',
-                       (digest(token), kind, now())).fetchone()
+    row = database.fetchone('SELECT * FROM sessions WHERE token_hash=? AND kind=? AND expires_at>?',
+                            (digest(token), kind, now()))
     if row is None or not hmac.compare_digest(row['token_hash'], digest(token)):
         return None
     return dict(row)
@@ -224,24 +178,24 @@ def authorized_patient(patient_id):
         return False
     if session['kind'] == 'patient_device':
         return is_elevated() and session['patient_id'] == patient_id
-    return db().execute('SELECT 1 FROM patient_members WHERE patient_id=? AND user_id=?',
-                        (patient_id, session['user_id'])).fetchone() is not None
+    return database.fetchone('SELECT 1 FROM patient_members WHERE patient_id=? AND user_id=?',
+                             (patient_id, session['user_id'])) is not None
 
 
 def patients_for(user_id):
-    return [dict(row) for row in db().execute(
+    return [dict(row) for row in database.fetchall(
         'SELECT p.id,p.name,m.role FROM patients p JOIN patient_members m ON p.id=m.patient_id WHERE m.user_id=? ORDER BY p.created_at,p.id',
         (user_id,))]
 
 
 def bootstrap_patient(user_id):
     """Claim the existing installation once, after successful email verification."""
-    if db().execute("SELECT 1 FROM patients p JOIN users u ON p.created_by=u.id WHERE u.email!='demo@cogniconnect.invalid' LIMIT 1").fetchone():
+    if database.fetchone("SELECT 1 FROM patients p JOIN users u ON p.created_by=u.id WHERE u.email!='demo@cogniconnect.invalid' LIMIT 1"):
         return
-    unclaimed = db().execute('SELECT * FROM patients WHERE created_by IS NULL ORDER BY created_at LIMIT 1').fetchone()
+    unclaimed = database.fetchone('SELECT * FROM patients WHERE created_by IS NULL ORDER BY created_at LIMIT 1')
     if unclaimed:
-        db().execute('UPDATE patients SET created_by=? WHERE id=?', (user_id, unclaimed['id']))
-        db().execute('INSERT INTO patient_members VALUES (?,?,?)', (unclaimed['id'], user_id, 'owner'))
+        database.execute('UPDATE patients SET created_by=? WHERE id=?', (user_id, unclaimed['id']))
+        database.execute('INSERT INTO patient_members VALUES (?,?,?)', (unclaimed['id'], user_id, 'owner'))
         return
     settings = current_app.config['AUTH_LEGACY_SETTINGS']()
     patient_id = uuid.uuid4().hex
@@ -250,42 +204,42 @@ def bootstrap_patient(user_id):
         pin_hash = str(pin_hash)
         if pin_hash and not pin_hash.startswith(('scrypt:', 'pbkdf2:')):
             pin_hash = generate_password_hash(pin_hash, method='scrypt')
-    db().execute('INSERT INTO patients VALUES (?,?,?,?,?)',
-                 (patient_id, settings.get('patient_name') or 'My patient', pin_hash, user_id, now()))
-    db().execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, user_id, 'owner'))
+    database.execute('INSERT INTO patients VALUES (?,?,?,?,?)',
+                     (patient_id, settings.get('patient_name') or 'My patient', pin_hash, user_id, now()))
+    database.execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, user_id, 'owner'))
 
 
 def issue_otp(user, purpose):
     challenge, code = secrets.token_urlsafe(32), f'{secrets.randbelow(1000000):06d}'
-    db().execute('UPDATE otps SET used=1 WHERE user_id=? AND purpose=?', (user['id'], purpose))
-    db().execute('INSERT INTO otps VALUES (?,?,?,?,?,?,0,0)',
-                 (uuid.uuid4().hex, user['id'], purpose, digest(code), digest(challenge), now() + 300))
+    database.execute('UPDATE otps SET used=1 WHERE user_id=? AND purpose=?', (user['id'], purpose))
+    database.execute('INSERT INTO otps VALUES (?,?,?,?,?,?,0,0)',
+                     (uuid.uuid4().hex, user['id'], purpose, digest(code), digest(challenge), now() + 300))
     mailer.send_code(user['email'], code, purpose)
     return challenge
 
 
 def check_otp(data, purpose):
     challenge, code = text_field(data, 'challenge'), text_field(data, 'code')
-    row = db().execute('SELECT * FROM otps WHERE challenge_hash=? AND purpose=?',
-                       (digest(challenge), purpose)).fetchone()
+    row = database.fetchone('SELECT * FROM otps WHERE challenge_hash=? AND purpose=?',
+                            (digest(challenge), purpose))
     if not row or row['used'] or row['expires_at'] <= now() or row['attempts'] >= 5:
         return None
     valid = bool(re.fullmatch(r'[0-9]{6}', code)) and hmac.compare_digest(row['code_hash'], digest(code))
-    db().execute('UPDATE otps SET attempts=attempts+1,used=? WHERE id=?',
-                 (int(valid or row['attempts'] >= 4), row['id']))
+    database.execute('UPDATE otps SET attempts=attempts+1,used=? WHERE id=?',
+                     (int(valid or row['attempts'] >= 4), row['id']))
     return row['user_id'] if valid else None
 
 
 def trust_device(response, user_id):
-    token = secrets.token_urlsafe(32)
-    db().execute('INSERT INTO trusted_devices VALUES (?,?,?)', (digest(token), user_id, now() + 30 * DAY))
-    cookie(response, 'cogni_trusted', token, 30 * DAY)
+    trusted = secrets.token_urlsafe(32)
+    cookie(response, 'cogni_trusted', trusted, 30 * DAY)
+    database.execute('DELETE FROM trusted_devices WHERE expires_at<=?', (now(),))
+    database.execute('INSERT INTO trusted_devices VALUES (?,?,?)', (digest(trusted), user_id, now() + 30 * DAY))
 
 
 def revoke_user(user_id):
-    db().execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
-    db().execute('DELETE FROM trusted_devices WHERE user_id=?', (user_id,))
-    db().execute('UPDATE otps SET used=1 WHERE user_id=?', (user_id,))
+    database.execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
+    database.execute('DELETE FROM trusted_devices WHERE user_id=?', (user_id,))
 
 
 @bp.post('/auth/signup')
@@ -297,11 +251,11 @@ def signup():
     if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or not name or not isinstance(password, str) or not 8 <= len(password) <= 1024:
         return error()
     challenge = secrets.token_urlsafe(32)
-    with transaction():
-        if not db().execute('SELECT 1 FROM users WHERE email=?', (email,)).fetchone():
+    with database.transaction():
+        if not database.fetchone('SELECT 1 FROM users WHERE email=?', (email,)):
             user_id = uuid.uuid4().hex
-            db().execute('INSERT INTO users VALUES (?,?,?,?,0,0,?)',
-                         (user_id, email, name, generate_password_hash(password, method='scrypt'), now()))
+            database.execute('INSERT INTO users VALUES (?,?,?,?,0,0,?)',
+                             (user_id, email, name, generate_password_hash(password, method='scrypt'), now()))
             challenge = issue_otp({'id': user_id, 'email': email}, 'login')
     return jsonify(ok=True, challenge=challenge, requiresCode=True), 202
 
@@ -312,20 +266,20 @@ def login():
     email, password = text_field(data, 'email').lower(), data.get('password')
     if limited('login', email, 5, 900):
         return error(429)
-    with transaction():
-        user = db().execute('SELECT * FROM users WHERE email=?', (email,)).fetchone()
+    with database.transaction():
+        user = database.fetchone('SELECT * FROM users WHERE email=?', (email,))
         password_hash = user['password_hash'] if user else current_app.extensions['auth_dummy_hash']
         valid = check_password_hash(password_hash, password if isinstance(password, str) and len(password) <= 1024 else '')
         if not user or user['locked_until'] > now() or not valid:
             if user and user['locked_until'] <= now():
                 count = (0 if user['locked_until'] else user['failed_logins']) + 1
-                db().execute('UPDATE users SET failed_logins=?,locked_until=? WHERE id=?',
-                             (count, now() + 900 if count >= 5 else 0, user['id']))
+                database.execute('UPDATE users SET failed_logins=?,locked_until=? WHERE id=?',
+                                 (count, now() + 900 if count >= 5 else 0, user['id']))
             return error(401)
-        db().execute('UPDATE users SET failed_logins=0,locked_until=0 WHERE id=?', (user['id'],))
+        database.execute('UPDATE users SET failed_logins=0,locked_until=0 WHERE id=?', (user['id'],))
         trusted = request.cookies.get('cogni_trusted', '')
-        trust = db().execute('SELECT token_hash FROM trusted_devices WHERE token_hash=? AND user_id=? AND expires_at>?',
-                             (digest(trusted), user['id'], now())).fetchone() if trusted and len(trusted) <= 256 else None
+        trust = database.fetchone('SELECT token_hash FROM trusted_devices WHERE token_hash=? AND user_id=? AND expires_at>?',
+                                  (digest(trusted), user['id'], now())) if trusted and len(trusted) <= 256 else None
         if trust and hmac.compare_digest(trust['token_hash'], digest(trusted)):
             return session_response('caregiver', user_id=user['id'])
         if limited('code', email):
@@ -337,7 +291,7 @@ def login():
 def verify():
     if limited('verify', maximum=30, seconds=300):
         return error(429)
-    with transaction():
+    with database.transaction():
         user_id = check_otp(payload(), 'login')
         if not user_id:
             return error()
@@ -350,9 +304,9 @@ def verify():
 @bp.post('/auth/otp/resend')
 def resend():
     challenge = text_field(payload(), 'challenge')
-    with transaction():
-        row = db().execute('SELECT o.*,u.email FROM otps o JOIN users u ON u.id=o.user_id WHERE challenge_hash=?',
-                           (digest(challenge),)).fetchone()
+    with database.transaction():
+        row = database.fetchone('SELECT o.*,u.email FROM otps o JOIN users u ON u.id=o.user_id WHERE challenge_hash=?',
+                                (digest(challenge),))
         if limited('code', row['email'] if row else ''):
             return error(429)
         if not row or row['used'] or row['attempts'] >= 5 or row['expires_at'] <= now():
@@ -366,8 +320,8 @@ def forgot():
     if limited('code', email):
         return error(429)
     challenge = secrets.token_urlsafe(32)
-    with transaction():
-        user = db().execute('SELECT * FROM users WHERE email=?', (email,)).fetchone()
+    with database.transaction():
+        user = database.fetchone('SELECT * FROM users WHERE email=?', (email,))
         if user:
             challenge = issue_otp(user, 'reset')
     return jsonify(ok=True, challenge=challenge), 202
@@ -381,12 +335,12 @@ def reset():
         return error(429)
     if not isinstance(password, str) or not 8 <= len(password) <= 1024:
         return error()
-    with transaction():
+    with database.transaction():
         user_id = check_otp(data, 'reset')
         if not user_id:
             return error()
-        db().execute('UPDATE users SET password_hash=?,failed_logins=0,locked_until=0 WHERE id=?',
-                     (generate_password_hash(password, method='scrypt'), user_id))
+        database.execute('UPDATE users SET password_hash=?,failed_logins=0,locked_until=0 WHERE id=?',
+                         (generate_password_hash(password, method='scrypt'), user_id))
         revoke_user(user_id)
     response = jsonify(ok=True)
     cookie(response, 'cogni_session', '', 0)
@@ -401,11 +355,11 @@ def change_password():
     if limited('password', maximum=5, seconds=900):
         return error(429)
     password, old = data.get('password'), data.get('current_password')
-    with transaction():
-        user = db().execute('SELECT * FROM users WHERE id=?', (g.auth_session['user_id'],)).fetchone()
+    with database.transaction():
+        user = database.fetchone('SELECT * FROM users WHERE id=?', (g.auth_session['user_id'],))
         if not isinstance(password, str) or not 8 <= len(password) <= 1024 or not isinstance(old, str) or len(old) > 1024 or not check_password_hash(user['password_hash'], old):
             return error()
-        db().execute('UPDATE users SET password_hash=? WHERE id=?', (generate_password_hash(password, method='scrypt'), user['id']))
+        database.execute('UPDATE users SET password_hash=? WHERE id=?', (generate_password_hash(password, method='scrypt'), user['id']))
         revoke_user(user['id'])
         response = session_response('caregiver', user_id=user['id'])
         trust_device(response, user['id'])
@@ -416,7 +370,7 @@ def change_password():
 @login_required
 def logout():
     session = g.auth_session
-    db().execute('DELETE FROM sessions WHERE id=?', (session['id'],))
+    database.execute('DELETE FROM sessions WHERE id=?', (session['id'],))
     response = jsonify(ok=True)
     cookie(response, COOKIES[session['kind']], '', 0)
     cookie(response, 'cogni_patient', '', 0)
@@ -429,7 +383,7 @@ def me():
     session = g.auth_session
     user, patients = None, []
     if session['kind'] == 'caregiver':
-        user = dict(db().execute('SELECT id,email,name FROM users WHERE id=?', (session['user_id'],)).fetchone())
+        user = dict(database.fetchone('SELECT id,email,name FROM users WHERE id=?', (session['user_id'],)))
         patients = patients_for(user['id'])
     elif g.active_patient:
         patients = [g.active_patient]
@@ -446,9 +400,9 @@ def patients():
     if not name:
         return error()
     patient_id = uuid.uuid4().hex
-    with transaction():
-        db().execute('INSERT INTO patients VALUES (?,?,NULL,?,?)', (patient_id, name, user_id, now()))
-        db().execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, user_id, 'owner'))
+    with database.transaction():
+        database.execute('INSERT INTO patients VALUES (?,?,NULL,?,?)', (patient_id, name, user_id, now()))
+        database.execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, user_id, 'owner'))
     return jsonify(id=patient_id, name=name), 201
 
 
@@ -461,12 +415,12 @@ def change_pin(patient_id):
     new_pin, current_pin = text_field(data, 'new_pin'), text_field(data, 'current_pin')
     if not re.fullmatch(r'[0-9]{4}', new_pin):
         return error()
-    with transaction():
-        patient = db().execute('SELECT * FROM patients WHERE id=?', (patient_id,)).fetchone()
+    with database.transaction():
+        patient = database.fetchone('SELECT * FROM patients WHERE id=?', (patient_id,))
         if patient['pin_hash'] and not check_password_hash(patient['pin_hash'], current_pin):
             return error()
-        db().execute('UPDATE patients SET pin_hash=? WHERE id=?', (generate_password_hash(new_pin, method='scrypt'), patient_id))
-        db().execute('UPDATE sessions SET elevated_until=0 WHERE patient_id=?', (patient_id,))
+        database.execute('UPDATE patients SET pin_hash=? WHERE id=?', (generate_password_hash(new_pin, method='scrypt'), patient_id))
+        database.execute('UPDATE sessions SET elevated_until=0 WHERE patient_id=?', (patient_id,))
     return jsonify(ok=True)
 
 
@@ -490,11 +444,11 @@ def unlock():
         return error(403)
     if limited('unlock', maximum=5, seconds=900):
         return error(429)
-    patient = db().execute('SELECT * FROM patients WHERE id=?', (session['patient_id'],)).fetchone()
+    patient = database.fetchone('SELECT * FROM patients WHERE id=?', (session['patient_id'],))
     pin = text_field(payload(), 'pin')
     if not patient or not patient['pin_hash'] or not re.fullmatch(r'[0-9]{4}', pin) or not check_password_hash(patient['pin_hash'], pin):
         return error(403)
-    db().execute('UPDATE sessions SET elevated_until=? WHERE id=?', (now() + 1800, session['id']))
+    database.execute('UPDATE sessions SET elevated_until=? WHERE id=?', (now() + 1800, session['id']))
     return jsonify(ok=True)
 
 
@@ -504,7 +458,7 @@ def lock():
     session = g.get('device_session')
     if not session:
         return error(403)
-    db().execute('UPDATE sessions SET elevated_until=0 WHERE id=?', (session['id'],))
+    database.execute('UPDATE sessions SET elevated_until=0 WHERE id=?', (session['id'],))
     return jsonify(ok=True)
 
 
@@ -516,8 +470,8 @@ def create_pair(kind):
         return error(429)
     code = ''.join(secrets.choice(ALPHABET) for _ in range(8))
     expiry = now() + (1 if kind == 'device' else 2) * DAY
-    db().execute('INSERT INTO pairing_codes VALUES (?,?,?,?,?,NULL,0)',
-                 (digest(code), patient_id, kind, g.auth_session.get('user_id'), expiry))
+    database.execute('INSERT INTO pairing_codes VALUES (?,?,?,?,?,NULL,0)',
+                     (digest(code), patient_id, kind, g.auth_session.get('user_id'), expiry))
     return jsonify(code=code[:4] + '-' + code[4:], expiresAt=expiry), 201
 
 
@@ -538,25 +492,25 @@ def consume_pair(kind):
     if limits().blocked(key, 5):
         return None, 429
     code = text_field(payload(), 'code').upper().replace('-', '')
-    row = db().execute('SELECT * FROM pairing_codes WHERE code_hash=?', (digest(code),)).fetchone()
+    row = database.fetchone('SELECT * FROM pairing_codes WHERE code_hash=?', (digest(code),))
     valid = (len(code) == 8 and row and row['kind'] == kind and row['used_at'] is None
              and row['expires_at'] > now() and hmac.compare_digest(row['code_hash'], digest(code)))
     if row:
-        db().execute('UPDATE pairing_codes SET attempts=attempts+1 WHERE code_hash=?', (row['code_hash'],))
+        database.execute('UPDATE pairing_codes SET attempts=attempts+1 WHERE code_hash=?', (row['code_hash'],))
     if not valid:
         limits().wrong_pair(key)
         return None, 400
-    db().execute('UPDATE pairing_codes SET used_at=? WHERE code_hash=?', (now(), row['code_hash']))
+    database.execute('UPDATE pairing_codes SET used_at=? WHERE code_hash=?', (now(), row['code_hash']))
     return row['patient_id'], 200
 
 
 @bp.post('/pair/redeem')
 def pair_redeem():
-    with transaction():
+    with database.transaction():
         patient_id, status = consume_pair('device')
         if not patient_id:
             return error(status)
-        patient = db().execute('SELECT name FROM patients WHERE id=?', (patient_id,)).fetchone()
+        patient = database.fetchone('SELECT name FROM patients WHERE id=?', (patient_id,))
         return session_response('patient_device', patient_id=patient_id,
                                 label=text_field(payload(), 'device_label', 100), patientName=patient['name'])
 
@@ -564,12 +518,15 @@ def pair_redeem():
 @bp.post('/pair/join')
 @account_required
 def pair_join():
-    with transaction():
+    with database.transaction():
         patient_id, status = consume_pair('caregiver')
         if not patient_id:
             return error(status)
-        db().execute('INSERT OR IGNORE INTO patient_members VALUES (?,?,?)',
-                     (patient_id, g.auth_session['user_id'], 'caregiver'))
+        database.execute(
+            'INSERT INTO patient_members (patient_id, user_id, role) VALUES (?,?,?) '
+            'ON CONFLICT (patient_id, user_id) DO NOTHING',
+            (patient_id, g.auth_session['user_id'], 'caregiver')
+        )
     return jsonify(ok=True, patient_id=patient_id)
 
 
@@ -579,18 +536,18 @@ def devices():
     patient_id = request.args.get('patient_id')
     if not authorized_patient(patient_id):
         return error(403)
-    rows = db().execute("SELECT id,device_label,created_at,expires_at,last_seen FROM sessions WHERE kind='patient_device' AND patient_id=? AND expires_at>?", (patient_id, now()))
+    rows = database.fetchall("SELECT id,device_label,created_at,expires_at,last_seen FROM sessions WHERE kind='patient_device' AND patient_id=? AND expires_at>?", (patient_id, now()))
     return jsonify(devices=[dict(row) for row in rows])
 
 
 @bp.delete('/pair/devices/<device_id>')
 @caregiver_required
 def unpair(device_id):
-    with transaction():
-        row = db().execute("SELECT * FROM sessions WHERE id=? AND kind='patient_device'", (device_id,)).fetchone()
+    with database.transaction():
+        row = database.fetchone("SELECT * FROM sessions WHERE id=? AND kind='patient_device'", (device_id,))
         if not row or not authorized_patient(row['patient_id']):
             return error(403)
-        db().execute('DELETE FROM sessions WHERE id=?', (device_id,))
+        database.execute('DELETE FROM sessions WHERE id=?', (device_id,))
     return jsonify(ok=True)
 
 
@@ -600,15 +557,15 @@ def demo():
         return error(404)
     if limited('demo', maximum=5, seconds=900):
         return error(429)
-    with transaction():
-        user = db().execute("SELECT * FROM users WHERE email='demo@cogniconnect.invalid'").fetchone()
+    with database.transaction():
+        user = database.fetchone("SELECT * FROM users WHERE email='demo@cogniconnect.invalid'")
         if not user:
             user_id = uuid.uuid4().hex
-            db().execute('INSERT INTO users VALUES (?,?,?,?,0,0,?)',
-                         (user_id, 'demo@cogniconnect.invalid', 'Demo caregiver', generate_password_hash(secrets.token_urlsafe(32), method='scrypt'), now()))
+            database.execute('INSERT INTO users VALUES (?,?,?,?,0,0,?)',
+                             (user_id, 'demo@cogniconnect.invalid', 'Demo caregiver', generate_password_hash(secrets.token_urlsafe(32), method='scrypt'), now()))
             patient_id = uuid.uuid4().hex
-            db().execute('INSERT INTO patients VALUES (?,?,NULL,?,?)', (patient_id, 'Demo patient', user_id, now()))
-            db().execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, user_id, 'owner'))
+            database.execute('INSERT INTO patients VALUES (?,?,NULL,?,?)', (patient_id, 'Demo patient', user_id, now()))
+            database.execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, user_id, 'owner'))
         else:
             user_id = user['id']
         return session_response('caregiver', user_id=user_id)
@@ -628,6 +585,7 @@ def init_auth(app, legacy_settings):
     app.config['AUTH_LEGACY_SETTINGS'] = legacy_settings
     app.extensions['auth_limits'] = RateLimits()
     app.extensions['auth_dummy_hash'] = generate_password_hash(secrets.token_urlsafe(32), method='scrypt')
+    database.init_db(app)
     app.register_blueprint(bp)
 
     @app.before_request
@@ -650,7 +608,7 @@ def init_auth(app, legacy_settings):
         session = g.auth_session
         if session:
             if session['kind'] == 'patient_device':
-                row = db().execute('SELECT id,name FROM patients WHERE id=?', (session['patient_id'],)).fetchone()
+                row = database.fetchone('SELECT id,name FROM patients WHERE id=?', (session['patient_id'],))
                 g.active_patient = dict(row) if row else None
             else:
                 linked = patients_for(session['user_id'])
@@ -675,7 +633,7 @@ def init_auth(app, legacy_settings):
         session = g.get('auth_session')
         if session and response.status_code < 400:
             age = (30 if session['kind'] == 'caregiver' else 90) * DAY
-            updated = db().execute('UPDATE sessions SET expires_at=?,last_seen=? WHERE id=?', (now() + age, now(), session['id'])).rowcount
+            updated = database.execute('UPDATE sessions SET expires_at=?,last_seen=? WHERE id=?', (now() + age, now(), session['id'])).rowcount
             # Do not replace cookies issued by login/password changes or logout.
             key = COOKIES[session['kind']]
             if updated and not any(value.startswith(key + '=') for value in response.headers.getlist('Set-Cookie')):
@@ -683,13 +641,7 @@ def init_auth(app, legacy_settings):
         response.headers['Cache-Control'] = 'no-store'
         return response
 
-    @app.teardown_appcontext
-    def close(_error):
-        connection = g.pop('auth_db', None)
-        if connection is not None:
-            connection.close()
-
-    @app.errorhandler(sqlite3.Error)
+    @app.errorhandler(database.DatabaseError)
     def database_error(_error):
         app.logger.error('Authentication database operation failed')
         return error(503)

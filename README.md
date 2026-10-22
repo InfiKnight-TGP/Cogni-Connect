@@ -88,10 +88,10 @@ A full-stack AI-powered memory support application designed to help individuals 
   - MoviePy 2.x for video manipulation
   - OpenCV (cv2) for frame extraction
   - ORB keypoint detection for unique frame filtering
-- **Data Storage**: JSON-based file storage
-  - `qas.json`: Quiz questions and answers
-  - `video_journals.json`: Video metadata
-  - `performance_data.json`: Quiz performance history
+- **Data Storage**:
+  - `backend/auth.db`: SQLite database (WAL mode, foreign keys, 5-second busy timeout) storing caregiver accounts, patient profiles, device/caregiver sessions, pairing codes, and OTPs (gitignored, managed via `backend/db.py` and `backend/schema.sql` for easy migration to Supabase/PostgreSQL).
+  - **Video Media**: Uploaded video journals, video chunks, and extracted frames stay on the backend disk under patient-scoped directories (`backend/data/<patient_id>/content/`, `video_chunks/`, `frames/`, `known_faces/`).
+  - **JSON Data**: Performance records, quiz Q&As, daily plans, routines, and settings stay on the backend disk as JSON files within patient-scoped storage (`backend/data/<patient_id>/`).
 - **Utilities**: 
   - python-dotenv for environment variables
   - NumPy for numerical operations

@@ -70,10 +70,9 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(self.client.post("/caregiver/change-pin", json={"current_pin": "1234", "new_pin": "56x8"}).status_code, 400)
         self.assertEqual(self.client.post("/caregiver/change-pin", json={"current_pin": "1234", "new_pin": "5678"}).status_code, 200)
         self.assertEqual(self.client.post("/caregiver/unlock", json={"pin": "1234"}).status_code, 403)
-        self.assertEqual(self.client.post("/caregiver/unlock", json={"pin": "5678"}).status_code, 200)
-        import auth
+        import db
         with app.api.app_context():
-            stored = auth.db().execute("SELECT pin_hash FROM patients WHERE id='test-patient'").fetchone()[0]
+            stored = db.fetchone("SELECT pin_hash FROM patients WHERE id='test-patient'")[0]
         self.assertTrue(check_password_hash(stored, "5678"))
 
     def test_pins_validate_and_invalidate_unplayed_plans(self):

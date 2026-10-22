@@ -6,13 +6,17 @@ import unittest
 from unittest.mock import patch
 import app
 import auth
+import db
 from patient_storage import FILES, FOLDERS, initialize_patient, migrate_legacy
 
 
 class PatientStorageTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
+        def _cleanup():
+            db.close_connection()
+            temp.cleanup()
+        self.addCleanup(_cleanup)
         self.root = Path(temp.name)
         self.legacy = self.root / 'legacy'
         self.legacy.mkdir()

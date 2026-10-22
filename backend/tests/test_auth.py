@@ -1,11 +1,10 @@
 import json
-import sqlite3
 import unittest
-from contextlib import closing
 from unittest.mock import patch
 
 import app
 import auth
+import db
 import mailer
 from tests.auth_support import setup_auth
 
@@ -19,11 +18,7 @@ class AuthTests(unittest.TestCase):
         self.client = app.api.test_client()
 
     def sql(self, query, args=()):
-        with closing(sqlite3.connect(app.api.config['AUTH_DATABASE'])) as connection:
-            connection.row_factory = sqlite3.Row
-            rows = connection.execute(query, args).fetchall()
-            connection.commit()
-            return rows
+        return db.fetchall(query, args)
 
     def signup(self, client=None, email='one@example.com'):
         client = client or self.client

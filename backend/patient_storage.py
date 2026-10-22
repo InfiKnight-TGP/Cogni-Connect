@@ -78,12 +78,11 @@ def migrate_legacy():
     if not current_app.config.get('STORAGE_MIGRATION', True):
         return
     import auth
-    connection = auth.db()
-    connection.execute('CREATE TABLE IF NOT EXISTS installation (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
-    if connection.execute("SELECT 1 FROM installation WHERE key='patient_storage_complete'").fetchone():
+    import db
+    if db.fetchone("SELECT 1 FROM installation WHERE key='patient_storage_complete'"):
         return
-    with _migration_lock, auth.transaction():
-        if connection.execute("SELECT 1 FROM installation WHERE key='patient_storage_complete'").fetchone():
+    with _migration_lock, db.transaction():
+        if db.fetchone("SELECT 1 FROM installation WHERE key='patient_storage_complete'"):
             return
         legacy = Path(current_app.config['LEGACY_DATA_ROOT']).resolve()
         backup = Path(current_app.config['MIGRATION_BACKUP_ROOT']).resolve()
@@ -92,15 +91,15 @@ def migrate_legacy():
         if not settings_path.exists():
             settings_path = backup / 'settings.json'
         settings = json.loads(settings_path.read_text(encoding='utf-8')) if settings_path.exists() else {}
-        patient = connection.execute('SELECT * FROM patients ORDER BY created_at,id LIMIT 1').fetchone()
+        patient = db.fetchone('SELECT * FROM patients ORDER BY created_at,id LIMIT 1')
         if patient is None:
             manifest = backup / 'migration.json'
             patient_id = json.loads(manifest.read_text(encoding='utf-8'))['patient_id'] if manifest.exists() else uuid.uuid4().hex
             manifest.write_text(json.dumps({'patient_id': patient_id}), encoding='utf-8')
             pin = str(settings.get('pin', '1234'))
             pin_hash = pin if pin.startswith(('scrypt:', 'pbkdf2:')) else generate_password_hash(pin, method='scrypt')
-            connection.execute('INSERT INTO patients VALUES (?,?,?,NULL,?)',
-                               (patient_id, settings.get('patient_name') or 'My patient', pin_hash, auth.now()))
+            db.execute('INSERT INTO patients VALUES (?,?,?,NULL,?)',
+                       (patient_id, settings.get('patient_name') or 'My patient', pin_hash, auth.now()))
             patient_name = settings.get('patient_name') or 'My patient'
         else:
             patient_id, patient_name = patient['id'], patient['name']
@@ -144,7 +143,11 @@ def migrate_legacy():
                 if not source.resolve().is_relative_to(legacy):
                     raise ValueError('Unsafe legacy path')
                 shutil.rmtree(source) if source.is_dir() else source.unlink()
-        connection.execute("INSERT INTO installation VALUES ('patient_storage_complete',?)", (patient_id,))
+        db.execute(
+            "INSERT INTO installation (key, value) VALUES ('patient_storage_complete', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (patient_id,)
+        )
 
 
 def configure(app):
