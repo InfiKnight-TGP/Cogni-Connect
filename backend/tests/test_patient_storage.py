@@ -203,6 +203,20 @@ class PatientStorageTests(unittest.TestCase):
             'completed',
         )
 
+    def test_memories_use_opaque_ids_and_reject_unsafe_media_paths(self):
+        response = self.client.get('/memories')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json['memories']), 1)
+        memory = response.json['memories'][0]
+        self.assertNotEqual(memory['id'], 'legacy.mp4')
+        self.assertRegex(memory['id'], r'^[0-9a-f]{32}$')
+        self.assertEqual(self.client.get(f"/memories/{memory['id']}/video").status_code, 200)
+        self.assertEqual(self.client.get(f"/memories/{memory['id']}/thumbnail").status_code, 200)
+        self.assertEqual(self.client.get('/memories/../patient-b/video').status_code, 404)
+        for path in ('/video_chunks/../patient-b/video_chunks/b.mp4', '/video_chunks/%2e%2e/patient-b/video_chunks/b.mp4', '/frames/..%2Fpatient-b%2Fframes%2Fb.jpg'):
+            self.assertEqual(self.client.get(path).status_code, 404)
+        self.assertEqual(self.client.get('/memories/not-a-real-id/video').status_code, 404)
+
     def test_video_chunk_copy_stays_in_patient_directory(self):
         from process_video import copy_chunks_to_video_chunks
 

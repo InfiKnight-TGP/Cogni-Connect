@@ -1,192 +1,27 @@
 "use client";
-import { mediaUrl, apiFetch, API_URL } from "@/lib/api";
+import Nav from "@/components/nav";
+import ReadAloud from "@/components/interaction/ReadAloud";
+import { usePreferences, useTranslate } from "@/components/interaction/InteractionProvider";
+import { API_URL, apiFetch } from "@/lib/api";
+import { Calendar, ChevronLeft, ChevronRight, Loader2, Play, Search, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  ArrowRight,
-  BrainCircuit,
-  Home,
-  Loader2,
-  Minus,
-  Plus,
-  Search,
-} from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+type Memory = { id: string; title: string; date?: string; note?: string; thumbnailUrl: string; status: "ready" | "processing" | "failed" };
 
-export default function Page() {
-  const [value, setValue] = useState("");
-  const [query, setQuery] = useState("");
-
-  const router = useRouter();
-
-  const [loading, setLoading] = useState(false);
-  const [minimized, setMinimized] = useState(false);
-
-  const [results, setResults] = useState<string[]>([]);
-  const [metadata, setMetadata] = useState<Record<string, any>>({});
-  const [index, setIndex] = useState(0);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  // Load all available videos on mount
-  useEffect(() => {
-    const loadVideos = async () => {
-      try {
-        const res = await apiFetch("/api/videos");
-        const data = await res.json();
-        if (data.videos && data.videos.length > 0) {
-          setResults(data.videos);
-        }
-      } catch (error) {
-        console.error("Failed to load videos:", error);
-      }
-    };
-    loadVideos();
-  }, []);
-
-  const onSearch = async () => {
-    const res = await apiFetch(`/api/semSearch`, {
-      method: "POST",
-      body: JSON.stringify({
-        query: value,
-      }),
-    });
-    const data = await res.json();
-    console.log("Search response:", data);
-    
-    // Handle new format with metadata
-    let videoPaths: string[] = [];
-    let meta: Record<string, any> = {};
-    
-    if (Array.isArray(data.data)) {
-      data.data.forEach((item: any) => {
-        if (typeof item === 'string') {
-          // Use path as-is
-          videoPaths.push(item);
-        } else if (item && item.path) {
-          const path = item.path;
-          videoPaths.push(path);
-          meta[path] = item;
-          console.log("Video metadata:", path, item);
-        }
-      });
-    }
-    
-    console.log("Final results:", videoPaths);
-    console.log("Final metadata:", meta);
-    
-    setResults(videoPaths);
-    setMetadata(meta);
-    setIndex(0);
-    setLoading(false);
-    router.refresh();
-  };
-
-  useEffect(() => {
-    // video end listener
-
-    const video = videoRef.current;
-    if (!video) return;
-
-    const onEnd = () => {
-      setIndex((index) => index + 1);
-    };
-
-    video.addEventListener("ended", onEnd);
-    return () => {
-      video.removeEventListener("ended", onEnd);
-    };
-  }, []);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.play();
-  }, [results, index]);
-
-  return (
-    <div className="relative flex h-screen w-screen items-center justify-center bg-black">
-      <video
-        controls={true}
-        ref={videoRef}
-        className="min-w-screen absolute top-0 min-h-screen object-cover"
-        src={results.length ? mediaUrl(results[index % results.length]) : undefined}
-        // src={"/video_chunks/capitalone_chunks/chunk_0000_0010.mp4"}
-      />
-      <div className="absolute bottom-8 w-full max-w-screen-sm rounded-xl border border-border bg-background p-4 transition-all">
-        <div className="flex w-full justify-between">
-          <Link href="/">
-            <Button variant="secondary" className="h-12 min-h-[48px] px-5 text-lg">
-              <BrainCircuit className="mr-3 h-6 w-6" /> Back to Today
-            </Button>
-          </Link>
-          <Button
-            onClick={() => setMinimized(!minimized)}
-            variant="secondary"
-            size="icon"
-            className="h-12 w-12 min-h-[48px] min-w-[48px]"
-          >
-            {minimized ? (
-              <Plus className="h-6 w-6" />
-            ) : (
-              <Minus className="h-6 w-6" />
-            )}
-          </Button>
-        </div>
-        {minimized ? null : (
-          <>
-            <div className="mt-4 flex w-full space-x-4">
-              <Input
-                placeholder="Search through your memories..."
-                className="h-12 grow bg-background text-lg text-foreground placeholder:text-muted-foreground"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-              />
-              <Button
-                disabled={value === ""}
-                className="h-12 min-h-[48px] px-6 text-lg"
-                onClick={() => {
-                  setLoading(true);
-                  setQuery(value);
-                  onSearch();
-                  setValue("");
-                }}
-              >
-                Search{" "}
-                {loading ? (
-                  <Loader2 className="ml-2 h-5 w-5 animate-spin" />
-                ) : (
-                  <Search className="ml-2 h-5 w-5" />
-                )}
-              </Button>
-            </div>
-            {query !== "" ? (
-              <div className="mb-2 mt-4 text-center text-lg font-medium">
-                {results.length === 0 ? (
-                  <div className="text-muted-foreground text-lg">No matching memories found</div>
-                ) : (
-                  <>
-                    Showing memories for: {query}
-                    {results[index] && metadata[results[index]]?.vision_answer && (
-                      <div className="mt-3 rounded-lg border border-border bg-muted/70 p-4 text-left text-lg text-foreground">
-                        <div className="mb-1 font-semibold text-primary">About this memory:</div>
-                        {metadata[results[index]].vision_answer}
-                      </div>
-                    )}
-                    {results[index] && metadata[results[index]]?.people && metadata[results[index]]?.people.length > 0 && (
-                      <div className="mt-2 text-lg font-medium text-primary">
-                        👤 {metadata[results[index]].people.join(", ")}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            ) : null}
-          </>
-        )}
-      </div>
-    </div>
-  );
+export default function ExplorePage() {
+  const { t } = useTranslate(); const { preferences } = usePreferences();
+  const [memories, setMemories] = useState<Memory[]>([]); const [cursor, setCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true); const [open, setOpen] = useState<Memory | null>(null); const [openIndex, setOpenIndex] = useState(0); const [query, setQuery] = useState(""); const [searchResults, setSearchResults] = useState<string[]>([]);
+  const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const load = useCallback(async (next = false) => {
+    if (next && !cursor) return; setLoading(true);
+    try { const params = new URLSearchParams({ limit: "30" }); if (next && cursor) params.set("cursor", cursor); const response = await apiFetch(`${API_URL}/memories?${params}`); if (!response.ok) throw new Error("Unable to load memories"); const data = await response.json() as { memories?: Memory[]; nextCursor?: string | null }; setMemories(previous => next ? [...previous, ...(data.memories ?? [])] : (data.memories ?? [])); setCursor(data.nextCursor ?? null); } finally { setLoading(false); }
+  }, [cursor]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { const timer = window.setInterval(() => { if (document.visibilityState !== "visible") return; const pending = memories.filter(memory => memory.status === "processing"); if (!pending.length) return; void Promise.all(pending.map(async memory => { const response = await apiFetch(`${API_URL}/processing-status/${encodeURIComponent(memory.id)}`, { authRedirect: false }); if (!response.ok) return null; const status = await response.json() as { status?: string }; return { id: memory.id, status: status.status === "completed" ? "ready" : status.status === "failed" ? "failed" : "processing" } as const; })).then(updates => setMemories(current => current.map(memory => { const update = updates.find(item => item?.id === memory.id); return update ? { ...memory, status: update.status } : memory; }))); }, 2500); return () => window.clearInterval(timer); }, [memories]);
+  const close = useCallback(() => { const id = open?.id; setOpen(null); if (window.history.state?.memoryPlayer) window.history.back(); window.setTimeout(() => { if (id) cardRefs.current[id]?.focus(); }, 0); }, [open]);
+  useEffect(() => { if (!open) return; const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") close(); }; const onPop = () => setOpen(null); window.addEventListener("keydown", onKey); window.addEventListener("popstate", onPop); return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("popstate", onPop); }; }, [open, close]);
+  const grouped = memories.reduce<Record<string, Memory[]>>((groups, memory) => { const key = memory.date ? new Date(memory.date).toLocaleDateString() : t("Earlier"); (groups[key] ??= []).push(memory); return groups; }, {});
+  const search = async () => { if (!query.trim()) return; const response = await apiFetch(`${API_URL}/search?query=${encodeURIComponent(query)}`); if (response.ok) { const data = await response.json(); setSearchResults(Array.isArray(data) ? data.filter((item): item is string => typeof item === "string") : []); } };
+  return <><Nav /><main className="mx-auto max-w-6xl px-5 pb-20 pt-24 lg:ml-[260px] lg:pt-10"><header className="mb-8"><p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t("My Memories")}</p><h1 className="mt-2 text-4xl font-bold">{t("My Memories")}</h1><ReadAloud text={t("My Memories")} autoRead={false} /><p className="mt-3 text-xl text-muted-foreground">{t("Look back at moments that matter.")}</p></header><button type="button" className="mb-8 inline-flex min-h-14 items-center gap-2 rounded-xl border-2 border-border px-5 text-lg font-semibold"><Search className="h-5 w-5" />{t("Ask about your memories")}</button>{loading && memories.length === 0 ? <p className="text-xl" role="status"><Loader2 className="mr-2 inline h-6 w-6 animate-spin" />{t("Loading memories…")}</p> : Object.keys(grouped).length === 0 ? <section className="rounded-2xl border border-border bg-card p-8 text-center"><p className="text-2xl font-semibold">{t("Add your first video")}</p><p className="mt-2 text-lg text-muted-foreground">{t("Your memories will appear here when they are ready.")}</p></section> : <div className="space-y-10">{Object.entries(grouped).map(([label, items]) => <section key={label}><h2 className="mb-4 text-2xl font-bold">{label}</h2><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{items.map(memory => <button key={memory.id} ref={element => { cardRefs.current[memory.id] = element; }} type="button" onClick={() => memory.status === "ready" && (() => { setOpen(memory); setOpenIndex(memories.findIndex(item => item.id === memory.id)); window.history.pushState({ memoryPlayer: memory.id }, "", `#memory-${memory.id}`); })()} disabled={memory.status !== "ready"} className="overflow-hidden rounded-2xl border-2 border-border bg-card text-left shadow-sm transition hover:border-primary disabled:cursor-default disabled:opacity-80"><div className="relative aspect-video bg-muted"><img src={`${API_URL}${memory.thumbnailUrl}`} alt="" className="h-full w-full object-cover" />{memory.status === "ready" && <span className="absolute inset-0 flex items-center justify-center"><span className="rounded-full bg-primary p-4 text-primary-foreground"><Play className="h-7 w-7 fill-current" /></span></span>}{memory.status !== "ready" && <span className="absolute inset-0 flex items-center justify-center bg-background/70 text-lg font-semibold">{memory.status === "processing" ? t("Processing") : t("Could not process this video")}</span>}</div><div className="space-y-2 p-5"><h3 className="text-xl font-bold">{memory.title}</h3>{memory.date && <p className="flex items-center gap-2 text-lg text-muted-foreground"><Calendar className="h-5 w-5" />{new Date(memory.date).toLocaleDateString()}</p>}{memory.note && <p className="line-clamp-2 text-lg text-muted-foreground">{memory.note}</p>}<ReadAloud text={`${memory.title}. ${memory.note ?? ""}`} autoRead={false} /></div></button>)}</div></section>)}</div>}{cursor && <button type="button" onClick={() => void load(true)} className="mt-10 min-h-14 rounded-xl border-2 border-border px-6 text-lg font-semibold">{t("Show more")}</button>}</main>{open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" role="dialog" aria-modal="true" aria-label={open.title}><div className="relative flex max-h-full w-full max-w-5xl flex-col rounded-2xl bg-background p-4"><div className="mb-3 flex items-center justify-between"><button type="button" onClick={close} className="min-h-12 rounded-xl border-2 border-border px-4 text-lg font-semibold"><X className="mr-2 inline h-5 w-5" />{t("Close")}</button><div className="flex gap-2"><button type="button" disabled={openIndex <= 0} onClick={() => { const next = memories[openIndex - 1]; if (next) { setOpen(next); setOpenIndex(openIndex - 1); } }} className="min-h-12 min-w-12 rounded-xl border-2 border-border disabled:opacity-40" aria-label={t("Previous memory")}><ChevronLeft /></button><button type="button" disabled={openIndex >= memories.length - 1} onClick={() => { const next = memories[openIndex + 1]; if (next) { setOpen(next); setOpenIndex(openIndex + 1); } }} className="min-h-12 min-w-12 rounded-xl border-2 border-border disabled:opacity-40" aria-label={t("Next memory")}><ChevronRight /></button></div></div><video controls playsInline muted={preferences.readAloud} autoPlay={!preferences.readAloud} className="max-h-[65vh] w-full rounded-xl bg-black" src={`${API_URL}/memories/${open.id}/video`} /><div className="space-y-2 p-3"><h2 className="text-2xl font-bold">{open.title}</h2>{open.date && <p className="text-lg text-muted-foreground">{new Date(open.date).toLocaleDateString()}</p>}{open.note && <p className="text-lg">{open.note}</p>}<button type="button" className="mt-2 min-h-12 rounded-xl border-2 border-border px-4 text-lg">{t("Ask about this memory")}</button></div></div></div>}</>;
 }

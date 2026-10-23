@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 import json
 from openai import OpenAI
@@ -14,6 +14,8 @@ import threading
 import sys
 import uuid
 from io import BytesIO
+from urllib.parse import unquote
+from datetime import datetime
 
 # process_video prints "✓"; under `npm run dev` stdout is a pipe, which Windows encodes as cp1252
 sys.stdout.reconfigure(encoding="utf-8")
@@ -34,6 +36,11 @@ api.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 
 # Track processing status
 processing_status = {}  
+thumbnail_slots = threading.BoundedSemaphore(2)
+NEUTRAL_THUMBNAIL = base64.b64decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAYAAAB49x7jAAAAFElEQVR42mNkYPj/n4GBgYGJAQoAAAwABQAB'
+    'JzQnCgAAAABJRU5ErkJggg=='
+)
 
 client = OpenAI(
     api_key=os.getenv('OPENAI_API_KEY', 'not_configured')
@@ -64,6 +71,49 @@ SUMMARY_ROOT = scoped('summary')
 FRAMES_ROOT = scoped('frames')  # process_video writes frames/<video>_chunks/chunk_SSSS_EEEE/<n>.jpg
 JOURNALS_PATH = scoped('video_journals.json')
 CROSSWORDS_PATH = scoped('crosswords.json')
+MEMORIES_PATH = scoped('memories.json')
+THUMBNAILS_ROOT = scoped('memory_thumbnails')
+
+
+def _memory_data():
+    """Return the opaque-id index for this patient's uploaded videos."""
+    try:
+        with open(MEMORIES_PATH, 'r', encoding='utf-8') as stream:
+            data = json.load(stream)
+    except (OSError, ValueError, TypeError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    changed = False
+    # Migrate existing uploads without exposing their names as public IDs.
+    for filename in os.listdir(UPLOAD_FOLDER) if os.path.isdir(UPLOAD_FOLDER) else []:
+        if not allowed_file(filename):
+            continue
+        if not any(isinstance(row, dict) and row.get('filename') == filename for row in data.values()):
+            data[uuid.uuid4().hex] = {'filename': filename, 'createdAt': os.path.getmtime(os.path.join(UPLOAD_FOLDER, filename))}
+            changed = True
+    if changed or not os.path.exists(MEMORIES_PATH):
+        with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
+            json.dump(data, stream, ensure_ascii=False, indent=2)
+    return data
+
+
+def _memory_for_id(memory_id):
+    if not isinstance(memory_id, str) or not re.fullmatch(r'[0-9a-f]{32}', memory_id):
+        return None
+    row = _memory_data().get(memory_id)
+    return row if isinstance(row, dict) and isinstance(row.get('filename'), str) else None
+
+
+def _safe_media_path(value):
+    """Reject traversal and encoded separators before send_from_directory."""
+    if not isinstance(value, str) or not value or '\\' in value or '\x00' in value:
+        return False
+    decoded = unquote(value)
+    if decoded != value or decoded.startswith('/') or decoded.startswith('\\'):
+        return False
+    parts = decoded.split('/')
+    return all(part not in ('', '.', '..') for part in parts)
 
 
 def allowed_file(filename):
@@ -462,6 +512,10 @@ def upload_video():
             counter += 1
         
         file.save(filepath)
+
+        memories = _memory_data()
+        memory_id = uuid.uuid4().hex
+        memories[memory_id] = {"filename": filename, "createdAt": datetime.now().timestamp()}
         
         # Save journal entry and date if provided
         if journal_entry or video_date:
@@ -472,7 +526,6 @@ def upload_video():
             else:
                 journals = {}
             
-            from datetime import datetime
             journals[filename] = {
                 "entry": journal_entry,
                 "timestamp": datetime.now().isoformat(),
@@ -483,6 +536,9 @@ def upload_video():
             with open(journal_file, 'w', encoding='utf-8') as f:
                 json.dump(journals, f, indent=2, ensure_ascii=False)
             invalidate_crossword_cache(video_date)
+            memories[memory_id].update({"title": filename.rsplit('.', 1)[0], "date": video_date, "note": journal_entry})
+        with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
+            json.dump(memories, stream, ensure_ascii=False, indent=2)
         
         # Initialize processing status
         status_key = (base_dir, filename)
@@ -525,6 +581,7 @@ def upload_video():
             "success": True,
             "message": "Video uploaded successfully and processing started",
             "filename": filename,
+            "memoryId": memory_id,
             "path": filepath,
             "processing": True,
             "journal_saved": bool(journal_entry)
@@ -538,6 +595,11 @@ def upload_video():
 @api.route('/processing-status/<filename>', methods=['GET'])
 def get_processing_status(filename):
     """Get the processing status of an uploaded video."""
+    row = _memory_for_id(filename)
+    if row:
+        filename = row['filename']
+    if not _safe_media_path(filename) or '/' in filename:
+        return jsonify(error='Invalid filename'), 404
     status_key = (patient_path(""), filename)
     if status_key in processing_status:
         return jsonify(processing_status[status_key]), 200
@@ -582,6 +644,89 @@ def list_videos():
     except Exception as e:
         print(f"List videos error: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@api.route('/memories', methods=['GET'])
+def list_memories():
+    """List opaque, patient-scoped memory records for the gallery."""
+    try:
+        limit = min(max(int(request.args.get('limit', 30)), 1), 100)
+    except (TypeError, ValueError):
+        return jsonify(error='Invalid limit'), 400
+    cursor = request.args.get('cursor')
+    memories = _memory_data()
+    rows = []
+    for memory_id, row in memories.items():
+        filename = row.get('filename')
+        if not isinstance(filename, str) or not allowed_file(filename):
+            continue
+        path = os.path.join(os.path.abspath(UPLOAD_FOLDER), filename)
+        if not os.path.isfile(path):
+            continue
+        journal = {}
+        try:
+            with open(JOURNALS_PATH, 'r', encoding='utf-8') as stream:
+                journal = json.load(stream).get(filename, {})
+        except (OSError, ValueError, TypeError):
+            pass
+        status = processing_status.get((patient_path(''), filename), {}).get('status', 'ready')
+        if status == 'processing': status = 'processing'
+        elif status == 'failed': status = 'failed'
+        else: status = 'ready'
+        rows.append({
+            'id': memory_id, 'title': row.get('title') or filename.rsplit('.', 1)[0],
+            'date': journal.get('date') or row.get('date'), 'note': journal.get('entry') or row.get('note', ''),
+            'durationSeconds': row.get('durationSeconds'), 'thumbnailUrl': f'/memories/{memory_id}/thumbnail',
+            'people': row.get('people', []), 'status': status,
+        })
+    rows.sort(key=lambda item: item.get('date') or '', reverse=True)
+    start = 0
+    if cursor:
+        ids = [item['id'] for item in rows]
+        if cursor in ids: start = ids.index(cursor) + 1
+    page = rows[start:start + limit]
+    next_cursor = rows[start + limit - 1]['id'] if start + limit < len(rows) else None
+    return jsonify(memories=page, nextCursor=next_cursor)
+
+
+@api.route('/memories/<memory_id>/video', methods=['GET'])
+def serve_memory_video(memory_id):
+    row = _memory_for_id(memory_id)
+    if not row:
+        return jsonify(error='Memory not found'), 404
+    path = os.path.abspath(os.path.join(os.path.abspath(UPLOAD_FOLDER), row['filename']))
+    root = os.path.abspath(UPLOAD_FOLDER)
+    if not path.startswith(root + os.sep) or not os.path.isfile(path):
+        return jsonify(error='Memory not found'), 404
+    return send_from_directory(root, row['filename'])
+
+
+@api.route('/memories/<memory_id>/thumbnail', methods=['GET'])
+def memory_thumbnail(memory_id):
+    row = _memory_for_id(memory_id)
+    if not row:
+        return Response(NEUTRAL_THUMBNAIL, mimetype='image/png')
+    thumb_root = os.path.abspath(THUMBNAILS_ROOT)
+    os.makedirs(thumb_root, exist_ok=True)
+    target = os.path.join(thumb_root, memory_id + '.png')
+    if not os.path.exists(target):
+        acquired = thumbnail_slots.acquire(timeout=2)
+        if acquired:
+            try:
+                if not os.path.exists(target):
+                    cap = cv2.VideoCapture(os.path.join(os.path.abspath(UPLOAD_FOLDER), row['filename']))
+                    cap.set(cv2.CAP_PROP_POS_MSEC, 1000)
+                    ok, frame = cap.read()
+                    cap.release()
+                    if ok:
+                        cv2.imwrite(target, frame)
+            except Exception:
+                pass
+            finally:
+                thumbnail_slots.release()
+    if os.path.exists(target):
+        return send_from_directory(thumb_root, memory_id + '.png', mimetype='image/png')
+    return Response(NEUTRAL_THUMBNAIL, mimetype='image/png')
 
 
 @api.route('/journals', methods=['GET'])
@@ -764,6 +909,8 @@ def list_video_chunks():
 def serve_video_chunk_file(filepath):
     """Serve video chunk files (videos, audio, JSON)."""
     try:
+        if not _safe_media_path(filepath):
+            return jsonify({"error": "Invalid media path"}), 404
         print(f"Attempting to serve video chunk file: {filepath}")
         # filepath will be something like "Me_at_the_zoo_chunks/chunk_0000_0010_faces.json"
         video_chunks_root = os.path.abspath(VIDEO_CHUNKS_ROOT)
@@ -1150,6 +1297,8 @@ def day_frames():
 @api.route('/frames/<path:filepath>', methods=['GET'])
 def serve_frame(filepath):
     """Serve frames extracted by the video pipeline."""
+    if not _safe_media_path(filepath):
+        return jsonify(error='Invalid media path'), 404
     return send_from_directory(os.path.abspath(FRAMES_ROOT), filepath)
 
 
