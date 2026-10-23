@@ -8,6 +8,7 @@ import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 import ReadAloud from "@/components/interaction/ReadAloud";
+import { useAuth } from "@/lib/auth-context";
 
 interface ScoreEntry {
   date: string;
@@ -34,6 +35,7 @@ const calcStars = (score: number) => (score >= 80 ? 3 : score >= 50 ? 2 : 1);
 
 export default function MyProgressPage() {
   const { t } = useTranslate();
+  const { session } = useAuth();
   const [loading, setLoading] = useState(true);
   const [playedDays, setPlayedDays] = useState<boolean[]>([false, false, false, false, false, false, false]);
   const [daysCount, setDaysCount] = useState(0);
@@ -125,6 +127,7 @@ export default function MyProgressPage() {
           </p>
           <ReadAloud autoRead={false} text={`${t("My Progress")}. ${t("A look at your activities this week")}. ${t("You played {count} {days} this week!", { count: daysCount, days: t(daysCount === 1 ? "day" : "days") })}. ${t(encouragingMessage())}`} />
         </header>
+        {session?.role === "self" && <Link href="/settings" className="block rounded-2xl border-2 border-primary/30 bg-card p-5 text-xl font-bold shadow-sm">{t("Accessibility")}</Link>}
 
         {loading ? (
           <p className="text-2xl font-medium">{t("Loading your progress…")}</p>

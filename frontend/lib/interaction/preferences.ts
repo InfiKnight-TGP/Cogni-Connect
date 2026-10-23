@@ -21,9 +21,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
 };
 
 const STORAGE_KEY = "cogniconnect.preferences.v1";
-export function readPreferences(): Preferences {
+export function readPreferences(storageKey = STORAGE_KEY): Preferences {
   try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    const value = JSON.parse(localStorage.getItem(storageKey) || "{}");
     if (!value || typeof value !== "object" || Array.isArray(value)) return { ...DEFAULT_PREFERENCES };
     const answerBySpeaking = value.answerBySpeaking === true;
     return {
@@ -41,8 +41,8 @@ export function readPreferences(): Preferences {
   }
 }
 
-export function writePreferences(value: Preferences) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(value)); } catch { /* Preferences remain active for this session. */ }
+export function writePreferences(value: Preferences, storageKey = STORAGE_KEY) {
+  try { localStorage.setItem(storageKey, JSON.stringify(value)); } catch { /* Preferences remain active for this session. */ }
 }
 
 export function textSizePixels(size: Preferences["textSize"]) {
