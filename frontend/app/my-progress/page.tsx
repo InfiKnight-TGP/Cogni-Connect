@@ -226,7 +226,7 @@ export default function MyProgressPage() {
               </Link>
             </div>
 
-            <section className="space-y-5" aria-label={t("Progress and reports")}>
+            {session?.role === "self" && <section className="space-y-5" aria-label={t("Progress and reports")}>
               <div role="tablist" className="flex flex-wrap gap-2 border-b pb-2">
                 {([["summary", "Summary"], ["trends", "Trends"], ["difficulty", "Difficulty"], ["log", "Activity Log"], ["report", "Share with doctor"]] as const).map(([key, label]) => (
                   <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`min-h-12 rounded-lg px-4 text-lg font-semibold ${tab === key ? "bg-primary text-primary-foreground" : "border bg-card"}`}>{t(label)}</button>
@@ -237,7 +237,7 @@ export default function MyProgressPage() {
               {tab === "difficulty" && <ProgressContent audience="self" />}
               {tab === "log" && <ActivityLog audience="self" />}
               {tab === "report" && <Link href="/report" className="inline-flex min-h-14 items-center rounded-xl bg-primary px-6 text-lg font-semibold text-primary-foreground">{t("Open printable report")}</Link>}
-            </section>
+            </section>}
           </div>
         )}
       </main>
