@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { PinDialog } from "./caregiver";
 import { lockCaregiver, SHOW_DEVICE_CAREGIVER_ACCESS, useCaregiver } from "@/lib/mode";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
@@ -40,6 +40,12 @@ const PATIENT_LINKS: NavItem[] = [
   { href: "/people", label: "My People", short: "People", icon: Users2, color: "text-pink-500" },
 ];
 
+const SELF_LINKS: NavItem[] = [
+  ...PATIENT_LINKS,
+  { href: "/games", label: "All Games", short: "Games", icon: Gamepad2, color: "text-amber-500" },
+  { href: "/routine", label: "Daily Routine", short: "Routine", icon: CalendarDays, color: "text-teal-500" },
+];
+
 const CAREGIVER_LINKS: NavItem[] = [
   { href: "/caregiver", label: "Home", short: "Home", icon: Home, color: "text-orange-500" },
   { href: "/progress", label: "Progress & Reports", short: "Progress", icon: TrendingUp, color: "text-green-600 dark:text-green-500" },
@@ -48,6 +54,15 @@ const CAREGIVER_LINKS: NavItem[] = [
   { href: "/routine", label: "Daily Routine", short: "Routine", icon: CalendarDays, color: "text-teal-500" },
   { href: "/games", label: "All Games", short: "Games", icon: Gamepad2, color: "text-amber-500" },
 ];
+
+export type NavAccount = "caregiver" | "self" | "patient_device";
+
+/** Navigation is intentionally explicit so device sessions remain unchanged while self-care gets its own tools. */
+export function navFor(account: NavAccount): NavItem[] {
+  if (account === "caregiver") return CAREGIVER_LINKS;
+  if (account === "self") return SELF_LINKS;
+  return PATIENT_LINKS;
+}
 
 /** Duolingo-style "LEARN" highlight: rounded border + tint on the active item. */
 const itemClass = (active: boolean) =>
@@ -66,7 +81,29 @@ export default function Nav() {
   const { session, selectPatient, logout } = useAuth();
   const [notice, setNotice] = useState("");
   const [switching, setSwitching] = useState(false);
-  const links = caregiver ? CAREGIVER_LINKS : PATIENT_LINKS;
+  const account: NavAccount = caregiver ? "caregiver" : session?.role === "self" ? "self" : "patient_device";
+  const links = navFor(account);
+  const selfCare = account === "self";
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const moreSheetRef = useRef<HTMLDivElement>(null);
+  const hadMoreOpen = useRef(false);
+  useEffect(() => {
+    if (moreOpen) {
+      hadMoreOpen.current = true;
+      const first = moreSheetRef.current?.querySelector<HTMLElement>("button, a");
+      first?.focus();
+    } else if (hadMoreOpen.current) {
+      hadMoreOpen.current = false;
+      moreButtonRef.current?.focus();
+    }
+    if (!moreOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); setMoreOpen(false); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [moreOpen]);
   const isActive = (href: string) => pathname === href;
 
   const showDeviceCaregiver = session?.role === "patient_device" && SHOW_DEVICE_CAREGIVER_ACCESS;
@@ -143,7 +180,7 @@ export default function Nav() {
         aria-label={t("Main")}
         className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t-2 border-border bg-background print:hidden lg:hidden"
       >
-        {links.map((l) => {
+        {(selfCare ? links.slice(0, 4) : links).map((l) => {
           const Icon = l.icon;
           const active = isActive(l.href);
           return (
@@ -160,7 +197,16 @@ export default function Nav() {
             </Link>
           );
         })}
-        {!caregiver && <Link href="/settings" aria-current={isActive("/settings") ? "page" : undefined} className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${isActive("/settings") ? "border-primary text-primary" : "border-transparent text-foreground"}`}><Settings className="h-7 w-7" /><span className="whitespace-nowrap">{t("Settings")}</span></Link>}
+        {selfCare && <button
+          ref={moreButtonRef}
+          type="button"
+          aria-label={t("More navigation")}
+          aria-haspopup="dialog"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen(true)}
+          className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${moreOpen ? "border-primary text-primary" : "border-transparent text-foreground"}`}
+        ><Settings className="h-7 w-7" /><span className="whitespace-nowrap">{t("More")}</span></button>}
+        {!caregiver && !selfCare && <Link href="/settings" aria-current={isActive("/settings") ? "page" : undefined} className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${isActive("/settings") ? "border-primary text-primary" : "border-transparent text-foreground"}`}><Settings className="h-7 w-7" /><span className="whitespace-nowrap">{t("Settings")}</span></Link>}
         {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${isActive("/caregiver/settings") ? "border-primary text-primary" : "border-transparent text-foreground"}`}><Settings className="h-7 w-7" /><span className="whitespace-nowrap">{t("Settings")}</span></Link>}
         {modeButton && <button
           type="button"
@@ -173,6 +219,15 @@ export default function Nav() {
       </nav>
 
       <PinDialog open={pinOpen} onOpenChange={setPinOpen} onUnlocked={() => router.push("/caregiver")} />
+      {selfCare && moreOpen && <div className="fixed inset-0 z-50 lg:hidden" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setMoreOpen(false); }}>
+        <div ref={moreSheetRef} role="dialog" aria-modal="true" aria-labelledby="more-navigation-title" className="absolute inset-x-0 bottom-0 rounded-t-3xl border-t-2 border-border bg-background p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl">
+          <h2 id="more-navigation-title" className="mb-3 text-2xl font-bold">{t("More")}</h2>
+          <div className="grid gap-2">
+            {links.slice(4).map((l) => { const Icon = l.icon; return <Link key={l.href} href={l.href} onClick={() => setMoreOpen(false)} className={itemClass(isActive(l.href))}><Icon className={`h-8 w-8 shrink-0 ${l.color}`} /><span>{t(l.label)}</span></Link>; })}
+            <Link href="/settings" onClick={() => setMoreOpen(false)} className={itemClass(isActive("/settings"))}><Settings className="h-8 w-8 shrink-0 text-muted-foreground" /><span>{t("Settings")}</span></Link>
+          </div>
+        </div>
+      </div>}
     </>
   );
 }

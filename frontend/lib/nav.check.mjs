@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const source = readFileSync(new URL("../components/nav.tsx", import.meta.url), "utf8");
+
+assert.match(source, /export function navFor\(account: NavAccount\)/);
+const patientBlock = source.match(/const PATIENT_LINKS: NavItem\[\] = \[([\s\S]*?)\n\];/);
+assert.ok(patientBlock, "patient-device navigation should be declared");
+const selfBlock = source.match(/const SELF_LINKS: NavItem\[\] = \[([\s\S]*?)\n\];/);
+assert.ok(selfBlock, "self-care navigation should be declared");
+for (const href of ["/", "/today", "/explore", "/my-progress", "/people"]) {
+  assert.ok(patientBlock[1].includes(`href: "${href}"`), `patient-device nav should include ${href}`);
+}
+for (const href of ["/games", "/routine"]) {
+  assert.ok(selfBlock[1].includes(`href: "${href}"`), `self-care nav should include ${href}`);
+}
+const selfOrder = ["/", "/today", "/explore", "/my-progress", "/people", "/games", "/routine"];
+const combined = patientBlock[1] + selfBlock[1];
+for (let i = 0; i < selfOrder.length - 1; i++) assert.ok(combined.indexOf(`href: "${selfOrder[i]}"`) < combined.indexOf(`href: "${selfOrder[i + 1]}"`));
+assert.match(source, /aria-haspopup="dialog"/);
+assert.match(source, /event\.key === "Escape"/);
+assert.match(source, /event\.target === event\.currentTarget/);
+console.log("navigation checks passed");
