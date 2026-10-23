@@ -717,9 +717,12 @@ def list_memories():
         if status == 'processing': status = 'processing'
         elif status == 'failed': status = 'failed'
         else: status = 'ready'
+        d_info = _friendly_memory_date(journal.get('date') or row.get('date'))
         rows.append({
             'id': memory_id, 'title': row.get('title') or filename.rsplit('.', 1)[0],
-            'date': journal.get('date') or row.get('date'), 'note': journal.get('entry') or row.get('note', ''),
+            'date': journal.get('date') or row.get('date'),
+            'dateLabel': d_info.get('dateLabel', ''),
+            'note': journal.get('entry') or row.get('note', ''),
             'durationSeconds': row.get('durationSeconds'), 'thumbnailUrl': f'/memories/{memory_id}/thumbnail',
             'people': row.get('people', []), 'status': status,
         })
@@ -1951,60 +1954,262 @@ def generate_questions():
 
 
 
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+
+def _format_day_full(day):
+    return f"{WEEKDAYS[day.weekday()]} {day.day} {MONTHS[day.month - 1]}"
+
 def _friendly_memory_date(value):
-    try: day = datetime.fromisoformat(str(value)[:10]).date()
-    except (TypeError, ValueError): return {'date': value, 'label': ''}
-    today = datetime.now().date(); return {'date': day.isoformat(), 'label': 'today' if day == today else 'yesterday' if (today-day).days == 1 else day.strftime('%A')}
+    try:
+        day = datetime.fromisoformat(str(value)[:10]).date()
+    except (TypeError, ValueError):
+        return {'date': str(value) if value else '', 'dateLabel': '', 'label': ''}
+    today = datetime.now().date()
+    full_str = _format_day_full(day)
+    if day == today:
+        dl = 'today'
+    elif (today - day).days == 1:
+        dl = 'yesterday'
+    else:
+        dl = full_str
+    return {'date': day.isoformat(), 'dateLabel': dl, 'label': dl}
+
+def _about_sentence1(c, today):
+    date_phrase = "In this memory"
+    if c.get('date'):
+        try:
+            day = datetime.fromisoformat(str(c['date'])[:10]).date()
+            full_date = _format_day_full(day)
+            if day == today:
+                date_phrase = f"On {full_date} (today)"
+            elif (today - day).days == 1:
+                date_phrase = f"On {full_date} (yesterday)"
+            else:
+                date_phrase = f"On {full_date}"
+        except Exception:
+            pass
+    note = (c.get('note') or '').strip().rstrip('.')
+    title = (c.get('title') or '').strip()
+    if note:
+        low_note = note.lower()
+        if low_note.startswith('a day at '):
+            activity = 'you were at ' + note[9:]
+        elif low_note.startswith('day at '):
+            activity = 'you were at ' + note[7:]
+        elif low_note.startswith('you were ') or low_note.startswith('you visited ') or low_note.startswith('you '):
+            activity = note
+        elif low_note.startswith('at '):
+            activity = 'you were ' + note
+        elif low_note.startswith('looking at ') or low_note.startswith('visiting '):
+            activity = 'you were ' + note
+        else:
+            activity = f"you were at {title}, {note}" if title and title.lower() not in low_note else note
+        s1 = f"{date_phrase} {activity}."
+    elif title:
+        s1 = f"{date_phrase} you were at {title}."
+    else:
+        s1 = f"{date_phrase} you recorded this video."
+    return s1
+
+def _build_about_summary(c):
+    today = datetime.now().date()
+    s1 = _about_sentence1(c, today)
+    people = c.get('people') or []
+    s2 = None
+    if people:
+        if len(people) == 1:
+            s2 = f"{people[0]} is in this video."
+        else:
+            s2 = f"{', '.join(people[:-1])} and {people[-1]} are in this video."
+    s3 = None
+    transcript = c.get('transcript') or []
+    if transcript:
+        full_tr = ' '.join(str(t).strip() for t in transcript if str(t).strip())
+        parts = [p.strip() for p in re.split(r'(?<=[.!?])\s+', full_tr) if len(p.strip()) > 3]
+        if parts:
+            first_sent = parts[0].strip().strip('"\'')
+            if len(first_sent) > 120:
+                first_sent = first_sent[:117].rsplit(' ', 1)[0] + '...'
+            first_sent = first_sent.rstrip('.!?')
+            s3 = f"In the video you say: '{first_sent}'."
+    return ' '.join(s for s in [s1, s2, s3] if s)
 
 def _ask_context(memory_id=None):
-    memories=_memory_data(); selected=list(memories.items()) if not memory_id else ([(memory_id,memories[memory_id])] if memory_id in memories else None)
-    if selected is None: return None
+    memories = _memory_data()
+    selected = list(memories.items()) if not memory_id else ([(memory_id, memories[memory_id])] if memory_id in memories else None)
+    if selected is None:
+        return None
     try:
-        with open(JOURNALS_PATH,encoding='utf-8') as f: journals=json.load(f)
-    except Exception: journals={}
-    people=_load_people(); out=[]
-    for mid,row in selected:
-        fn=row.get('filename',''); j=journals.get(fn,{}) if isinstance(journals,dict) else {}; tr=[]; folder=os.path.join(os.path.abspath(VIDEO_CHUNKS_ROOT),os.path.splitext(fn)[0]+'_chunks')
+        with open(JOURNALS_PATH, encoding='utf-8') as f:
+            journals = json.load(f)
+    except Exception:
+        journals = {}
+    people = _load_people()
+    out = []
+    chunks_root = os.path.abspath(VIDEO_CHUNKS_ROOT)
+    for mid, row in selected:
+        fn = row.get('filename', '')
+        j = journals.get(fn, {}) if isinstance(journals, dict) else {}
+        tr = []
+        stem = os.path.splitext(fn)[0]
+        folder = os.path.join(chunks_root, stem + '_chunks')
+        if not os.path.isdir(folder):
+            cand = os.path.join(chunks_root, stem.replace(' ', '_') + '_chunks')
+            if os.path.isdir(cand):
+                folder = cand
+            else:
+                cand = os.path.join(chunks_root, stem.replace('_', ' ') + '_chunks')
+                if os.path.isdir(cand):
+                    folder = cand
         try:
-            with open(os.path.join(folder,'full_transcript.json'),encoding='utf-8') as f:
-                raw=json.load(f); tr=[str(v) for v in raw.values()] if isinstance(raw,dict) else [str(v) for v in raw]
-        except Exception: pass
-        names=[]
+            with open(os.path.join(folder, 'full_transcript.json'), encoding='utf-8') as f:
+                raw = json.load(f)
+                tr = [str(v) for v in raw.values()] if isinstance(raw, dict) else [str(v) for v in raw]
+        except Exception:
+            pass
+        names = []
         for face_file in os.listdir(folder) if os.path.isdir(folder) else []:
             if face_file.endswith('_faces.json'):
                 try:
-                    with open(os.path.join(folder, face_file), encoding='utf-8') as f: face=json.load(f)
-                    ids={n for values in face.values() for n in values} if isinstance(face,dict) else set()
+                    with open(os.path.join(folder, face_file), encoding='utf-8') as f:
+                        face = json.load(f)
+                    ids = {n for values in face.values() for n in values} if isinstance(face, dict) else set()
                     names.extend(display_name(n, people) for n in ids)
-                except Exception: pass
-        out.append({'id':mid,'title':row.get('title') or j.get('title') or os.path.splitext(fn)[0],'note':row.get('note') or j.get('entry') or '','date':row.get('date') or j.get('date'),'transcript':tr,'people':list(dict.fromkeys(names))})
+                except Exception:
+                    pass
+        out.append({
+            'id': mid,
+            'title': row.get('title') or j.get('title') or os.path.splitext(fn)[0],
+            'note': row.get('note') or j.get('entry') or '',
+            'date': row.get('date') or j.get('date'),
+            'transcript': tr,
+            'people': list(dict.fromkeys(names)),
+        })
     return out
 
-@api.route('/memories/ask',methods=['POST'])
+@api.route('/memories/ask', methods=['POST'])
 def ask_memory():
-    payload=request.get_json(silent=True) or {}; q=payload.get('question')
-    if not isinstance(q,str) or not q.strip() or len(q)>300: return jsonify(error='Question must be up to 300 characters.'),400
-    q=re.sub(r'[\x00-\x1f\x7f]',' ',q).strip(); contexts=_ask_context(payload.get('memory_id'))
-    if contexts is None: return jsonify(error='Memory not found'),404
-    import auth; session=g.get('auth_session')
-    if session and not auth.limits().hit(('memory-ask',session['id']),60,3600): return jsonify(error='Please try again in a moment.'),429
-    try: lang=_load_settings().get('language','en')
-    except Exception: lang='en'
-    if lang not in ('en','hi','as'): lang='en'
-    low=q.lower(); words=set(re.findall(r'[a-z0-9]+',low)); when=bool(words & {'when','date','day'}); who=bool(words & {'who','whom','with'}); what=bool(words & {'where','what','which','animal','see','saw'})
-    if not payload.get('memory_id'):
-        scored=[(sum(1 for t in re.findall(r'[a-z0-9]+',low) if t in (c['title']+' '+c['note']+' '+' '.join(c['transcript'])).lower()),c) for c in contexts]; contexts=[c for n,c in scored if n>0] or contexts
-    sources=[{'memory_id':c['id'],'title':c['title'],**_friendly_memory_date(c['date'])} for c in contexts[:3]]; ans=None
-    if contexts and when:
-        c=contexts[0]; d=_friendly_memory_date(c['date']); ans=f"You went to {c['title']} on {d['label'] or d['date']}."
-    elif contexts and who:
-        c=contexts[0]; ans=f"{', '.join(c['people'])} was in this video." if c['people'] else (c['note'] or None)
-    elif contexts and what:
-        c=contexts[0]; text=' '.join([c['note'],*c['transcript']]); ss=[x.strip() for x in re.split(r'(?<=[.!?])\s+',text) if any(t in x.lower() for t in words if len(t)>2)]
-        if not ss and ('animal' in words or 'behind' in words): ss=[x.strip() for x in re.split(r'(?<=[.!?])\s+',text) if re.search(r'elephant|animal|lion|dog|cat|bird', x, re.I)]
-        ans=ss[0] if ss else None
-    if ans: return jsonify(answer=ans,language=lang,sources=sources,grounded=True)
-    return jsonify(answer=("I can't look at the pictures right now." if what and not AI_AVAILABLE else "I couldn't find that in your memories."),language=lang,sources=sources,grounded=False),200
+    payload = request.get_json(silent=True) or {}
+    q = payload.get('question')
+    if not isinstance(q, str) or not q.strip() or len(q) > 300:
+        return jsonify(error='Question must be up to 300 characters.'), 400
+    q = re.sub(r'[\x00-\x1f\x7f]', ' ', q).strip()
+
+    scope = payload.get('scope')
+    memory_id = payload.get('memory_id')
+
+    if scope == 'memory' or (memory_id and scope != 'all'):
+        if not memory_id or not isinstance(memory_id, str):
+            return jsonify(error='memory_id is required for scope "memory"'), 400
+        scope = 'memory'
+        contexts = _ask_context(memory_id)
+        if contexts is None:
+            return jsonify(error='Memory not found'), 404
+    else:
+        scope = 'all'
+        contexts = _ask_context(None)
+        if contexts is None:
+            return jsonify(error='Memory not found'), 404
+
+    import auth
+    session = g.get('auth_session')
+    if session and not auth.limits().hit(('memory-ask', session['id']), 60, 3600):
+        return jsonify(error='Please try again in a moment.'), 429
+    try:
+        lang = _load_settings().get('language', 'en')
+    except Exception:
+        lang = 'en'
+    if lang not in ('en', 'hi', 'as'):
+        lang = 'en'
+
+    low = q.lower()
+    words = set(re.findall(r'[a-z0-9]+', low))
+
+    is_when = bool(words & {'when', 'date', 'day'})
+    is_who = bool(words & {'who', 'whom', 'with'})
+
+    about_phrases = (
+        'tell me about', 'describe', 'what happened', 'what is this',
+        'summarise', 'summarize', 'remember', 'about this video',
+        'about the video', 'about this memory', 'about the memory',
+    )
+    is_about = any(p in low for p in about_phrases) or bool(words & {'describe', 'summarise', 'summarize', 'remember'})
+
+    if not is_when and not is_who:
+        if any(c.get('title') and len(c['title']) >= 3 and c['title'].lower() in low for c in contexts):
+            is_about = True
+
+    is_what = bool(words & {'where', 'what', 'which', 'animal', 'see', 'saw'}) and not is_about
+
+    if scope == 'all':
+        scored = []
+        for c in contexts:
+            sc = 0
+            title_l = c['title'].lower()
+            note_l = c['note'].lower()
+            trans_l = ' '.join(c['transcript']).lower()
+            if title_l in low:
+                sc += 50
+            for t in words:
+                if len(t) > 1:
+                    if t in title_l: sc += 5
+                    elif t in note_l: sc += 2
+                    elif t in trans_l: sc += 1
+            scored.append((sc, c))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        matched = [c for sc, c in scored if sc > 0]
+        if matched:
+            contexts = matched
+
+    c = contexts[0] if contexts else None
+    ans = None
+
+    if c and is_about:
+        ans = _build_about_summary(c)
+    elif c and is_when:
+        d = _friendly_memory_date(c['date'])
+        ans = f"You went to {c['title']} on {d['dateLabel'] or d['date']}."
+    elif c and is_who:
+        if c['people']:
+            if len(c['people']) == 1:
+                ans = f"{c['people'][0]} was in this video."
+            else:
+                ans = f"{', '.join(c['people'][:-1])} and {c['people'][-1]} were in this video."
+        else:
+            ans = c['note'] or None
+    elif c and is_what:
+        text = ' '.join([c['note'], *c['transcript']])
+        ss = [x.strip() for x in re.split(r'(?<=[.!?])\s+', text) if any(t in x.lower() for t in words if len(t) > 2)]
+        if not ss and ('animal' in words or 'behind' in words):
+            ss = [x.strip() for x in re.split(r'(?<=[.!?])\s+', text) if re.search(r'elephant|animal|lion|dog|cat|bird', x, re.I)]
+        ans = ss[0] if ss else None
+
+    if ans:
+        sources = [{
+            'memory_id': item['id'],
+            'title': item['title'],
+            'dateLabel': _friendly_memory_date(item['date'])['dateLabel'],
+            'date': _friendly_memory_date(item['date'])['date'],
+        } for item in contexts[:3]]
+        return jsonify(answer=ans, language=lang, sources=sources, grounded=True), 200
+
+    if scope == 'memory' and c:
+        summary = _build_about_summary(c)
+        return jsonify(
+            answer="I couldn't find that in this memory.",
+            summary=summary,
+            language=lang,
+            sources=[],
+            grounded=False
+        ), 200
+
+    return jsonify(
+        answer="I couldn't find that in your memories.",
+        language=lang,
+        sources=[],
+        grounded=False
+    ), 200
 
 from auth import init_auth
 
