@@ -56,6 +56,16 @@ def resolve_database_path(database: Optional[Union[str, Path]] = None) -> str:
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """Ensure schema tables and schema_version exist on startup."""
+    # Repair an interrupted self-role migration from an older development build.
+    # SQLite rewrote foreign-key references when the users table was renamed.
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'").fetchone() and conn.execute("SELECT 1 FROM sqlite_master WHERE sql LIKE '%users_legacy_self_migration%'").fetchone():
+        conn.execute('PRAGMA writable_schema=ON')
+        conn.execute("UPDATE sqlite_master SET sql=replace(sql, 'users_legacy_self_migration', 'users') WHERE sql LIKE '%users_legacy_self_migration%'")
+        version = conn.execute('PRAGMA schema_version').fetchone()[0]
+        conn.execute(f'PRAGMA schema_version = {version + 1}')
+        conn.execute('PRAGMA writable_schema=OFF')
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='users_legacy_self_migration'").fetchone():
+            conn.execute('DROP TABLE users_legacy_self_migration')
     cursor = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_version'"
     )
@@ -80,6 +90,22 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         PRIMARY KEY (scope, key)
     )""")
     user_columns = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+    # Older installations used a CHECK constraint that omitted self accounts.
+    # Rebuild only that table, preserving all rows and keeping existing users as caregivers.
+    table_sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").fetchone()
+    if table_sql and "'self'" not in (table_sql[0] or ''):
+        conn.execute('PRAGMA foreign_keys=OFF')
+        conn.execute('PRAGMA legacy_alter_table=ON')
+        conn.execute('ALTER TABLE users RENAME TO users_legacy_self_migration')
+        conn.execute("""CREATE TABLE users (
+          id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, password_hash TEXT NOT NULL,
+          failed_logins INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL,
+          is_demo INTEGER NOT NULL DEFAULT 0, role TEXT NOT NULL DEFAULT 'caregiver' CHECK(role IN ('caregiver','patient','self')),
+          patient_id TEXT REFERENCES patients(id), otp_target TEXT NOT NULL DEFAULT 'caregiver' CHECK(otp_target IN ('caregiver','patient'))
+        )""")
+        conn.execute("INSERT INTO users SELECT id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo,CASE WHEN role='patient' THEN 'patient' ELSE 'caregiver' END,patient_id,otp_target FROM users_legacy_self_migration")
+        conn.execute('DROP TABLE users_legacy_self_migration')
+        conn.execute('PRAGMA foreign_keys=ON')
     if 'is_demo' not in user_columns:
         conn.execute('ALTER TABLE users ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0')
     if 'role' not in user_columns:

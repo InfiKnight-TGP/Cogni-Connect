@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   locked_until INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   is_demo INTEGER NOT NULL DEFAULT 0,
-  role TEXT NOT NULL DEFAULT 'caregiver' CHECK(role IN ('caregiver','patient')),
+  role TEXT NOT NULL DEFAULT 'caregiver' CHECK(role IN ('caregiver','patient','self')),
   patient_id TEXT REFERENCES patients(id),
   otp_target TEXT NOT NULL DEFAULT 'caregiver' CHECK(otp_target IN ('caregiver','patient'))
 );

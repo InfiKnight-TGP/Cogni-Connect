@@ -191,7 +191,26 @@ def is_elevated():
 
 def is_caregiver():
     session = g.get('auth_session')
-    return bool(session and (session['kind'] == 'caregiver' or is_elevated()))
+    if not session:
+        return False
+    if is_elevated() or session['kind'] == 'caregiver':
+        return True
+    return False
+
+
+def self_account():
+    session = g.get('auth_session')
+    if not session or not session.get('user_id'):
+        return False
+    row = database.fetchone('SELECT role FROM users WHERE id=?', (session['user_id'],))
+    return bool(row and row['role'] == 'self')
+
+
+def owner_of(patient_id):
+    session = g.get('auth_session')
+    return bool(session and session.get('user_id') and database.fetchone(
+        "SELECT 1 FROM patient_members WHERE patient_id=? AND user_id=? AND role='owner'",
+        (patient_id, session['user_id'])))
 
 
 def login_required(fn):
@@ -217,7 +236,7 @@ def account_required(fn):
     @wraps(fn)
     @login_required
     def wrapped(*args, **kwargs):
-        if g.auth_session['kind'] != 'caregiver':
+        if g.auth_session['kind'] != 'caregiver' and not self_account():
             return error(403)
         return fn(*args, **kwargs)
     return wrapped
@@ -373,10 +392,13 @@ def seed_shared_demo(app):
         database.execute('INSERT INTO patient_members (patient_id,user_id,role) VALUES (?,?,?) ON CONFLICT(patient_id,user_id) DO NOTHING', (patient['id'], caregiver['id'], 'owner'))
         if not patient_user:
             uid = uuid.uuid4().hex
-            database.execute("INSERT INTO users (id,email,name,password_hash,created_at,is_demo,role,patient_id,otp_target) VALUES (?,?,?,?,?,1,'patient',?,'patient')",
+            database.execute("INSERT INTO users (id,email,name,password_hash,created_at,is_demo,role,patient_id,otp_target) VALUES (?,?,?,?,?,1,'self',?,'caregiver')",
                              (uid, patient_email, 'Demo Patient', generate_password_hash(demo_value('DEMO_PATIENT_PASSWORD', 'Patient@1234'), method='scrypt'), now(), patient['id']))
         else:
-            database.execute("UPDATE users SET is_demo=1,role='patient',patient_id=?,otp_target='patient' WHERE id=?", (patient['id'], patient_user['id']))
+            database.execute("UPDATE users SET is_demo=1,role='self',patient_id=?,otp_target='caregiver' WHERE id=?", (patient['id'], patient_user['id']))
+        patient_user = database.fetchone('SELECT id FROM users WHERE email=?', (patient_email,))
+        if patient_user:
+            database.execute('INSERT INTO patient_members (patient_id,user_id,role) VALUES (?,?,?) ON CONFLICT(patient_id,user_id) DO UPDATE SET role=excluded.role', (patient['id'], patient_user['id'], 'owner'))
         from patient_storage import initialize_patient
         base = Path(app.config['PATIENT_DATA_ROOT']).resolve() / patient['id']
         initialize_patient(base, 'Demo Patient')
@@ -393,16 +415,23 @@ def seed_shared_demo(app):
 def signup():
     data = payload()
     email, name, password = text_field(data, 'email').lower(), text_field(data, 'name', 100), data.get('password')
+    mode = text_field(data, 'mode') or 'caregiver'
     if limited('code', email):
         return error(429)
-    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or not name or not isinstance(password, str) or not 8 <= len(password) <= 1024:
+    if mode not in ('self', 'caregiver') or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or not name or not isinstance(password, str) or not 8 <= len(password) <= 1024:
         return error()
     challenge = secrets.token_urlsafe(32)
     with database.transaction():
         if not database.fetchone('SELECT 1 FROM users WHERE email=?', (email,)):
             user_id = uuid.uuid4().hex
-            database.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo,role,otp_target) VALUES (?,?,?,?,0,0,?,0,'caregiver','caregiver')",
-                             (user_id, email, name, generate_password_hash(password, method='scrypt'), now()))
+            role = 'self' if mode == 'self' else 'caregiver'
+            database.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo,role,otp_target) VALUES (?,?,?,?,0,0,?,0,?, 'caregiver')",
+                             (user_id, email, name, generate_password_hash(password, method='scrypt'), now(), role))
+            if role == 'self':
+                patient_id = uuid.uuid4().hex
+                database.execute('INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,NULL,?,?,0)', (patient_id, name, user_id, now()))
+                database.execute('UPDATE users SET patient_id=? WHERE id=?', (patient_id, user_id))
+                database.execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, user_id, 'owner'))
             challenge = issue_otp({'id': user_id, 'email': email}, 'login')
     return jsonify(ok=True, challenge=challenge, requiresCode=True), 202
 
@@ -522,6 +551,8 @@ def reset():
 @bp.post('/auth/password')
 @account_required
 def change_password():
+    if is_demo_session():
+        return error(403)
     data = payload()
     if limited('password', maximum=5, seconds=900):
         return error(429)
@@ -582,7 +613,7 @@ def me():
         patients = patients_for(user['id'])
     elif g.active_patient:
         patients = [g.active_patient]
-    return jsonify(role=session['kind'], user=user, patients=patients, activePatient=g.active_patient, elevated=is_elevated())
+    return jsonify(role=(user['role'] if user and user.get('role') == 'self' else session['kind']), user=user, patients=patients, activePatient=g.active_patient, elevated=is_elevated())
 
 
 @bp.route('/patients', methods=['GET', 'POST'])
@@ -604,7 +635,7 @@ def patients():
 @bp.get('/patients/<patient_id>/login')
 @account_required
 def get_patient_login(patient_id):
-    if not authorized_patient(patient_id):
+    if not authorized_patient(patient_id) or (self_account() and not owner_of(patient_id)):
         return error(403)
     row = database.fetchone("SELECT email,otp_target FROM users WHERE patient_id=? AND role='patient'", (patient_id,))
     return jsonify(login=dict(row) if row else None)
@@ -617,7 +648,7 @@ def create_patient_login(patient_id):
     email = text_field(data, 'email').lower()
     password = data.get('password')
     target = text_field(data, 'otp_target') or 'caregiver'
-    if not authorized_patient(patient_id) or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
+    if not authorized_patient(patient_id) or (self_account() and not owner_of(patient_id)) or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
         return error(403)
     if not isinstance(password, str) or not 8 <= len(password) <= 1024 or target not in ('caregiver', 'patient'):
         return error()
@@ -636,7 +667,7 @@ def create_patient_login(patient_id):
 @bp.delete('/patients/<patient_id>/login')
 @account_required
 def remove_patient_login(patient_id):
-    if not authorized_patient(patient_id):
+    if not authorized_patient(patient_id) or (self_account() and not owner_of(patient_id)):
         return error(403)
     user = database.fetchone("SELECT id FROM users WHERE patient_id=? AND role='patient'", (patient_id,))
     if user:
@@ -649,7 +680,7 @@ def remove_patient_login(patient_id):
 @bp.post('/patients/<patient_id>/login/password')
 @account_required
 def reset_patient_login_password(patient_id):
-    if not authorized_patient(patient_id):
+    if not authorized_patient(patient_id) or (self_account() and not owner_of(patient_id)):
         return error(403)
     password = payload().get('password')
     if not isinstance(password, str) or not 8 <= len(password) <= 1024:
@@ -663,7 +694,10 @@ def reset_patient_login_password(patient_id):
 
 
 def change_pin(patient_id):
-    if not authorized_patient(patient_id):
+    if not authorized_patient(patient_id) or (self_account() and not owner_of(patient_id)):
+        return error(403)
+    owner = database.fetchone("SELECT u.id,u.role FROM patient_members m JOIN users u ON u.id=m.user_id WHERE m.patient_id=? AND m.role='owner' LIMIT 1", (patient_id,))
+    if owner and owner['role'] == 'self' and owner['id'] != g.auth_session.get('user_id'):
         return error(403)
     if limited('pin-change', maximum=5, seconds=900):
         return error(429)
@@ -721,7 +755,7 @@ def lock():
 
 def create_pair(kind):
     patient_id = payload().get('patient_id')
-    if not authorized_patient(patient_id):
+    if not authorized_patient(patient_id) or (self_account() and not owner_of(patient_id)):
         return error(403)
     if limited('pair-create', maximum=20, seconds=600):
         return error(429)
@@ -821,6 +855,31 @@ def pair_join():
             (patient_id, g.auth_session['user_id'], 'caregiver')
         )
     return jsonify(ok=True, patient_id=patient_id)
+
+
+@bp.get('/patients/<patient_id>/members')
+@login_required
+def patient_members(patient_id):
+    if not authorized_patient(patient_id):
+        return error(403)
+    rows = database.fetchall(
+        'SELECT u.id,u.email,u.name,m.role FROM patient_members m JOIN users u ON u.id=m.user_id WHERE m.patient_id=? ORDER BY m.role,u.created_at',
+        (patient_id,))
+    return jsonify(members=[dict(row) for row in rows])
+
+
+@bp.delete('/patients/<patient_id>/members/<user_id>')
+@login_required
+def remove_patient_member(patient_id, user_id):
+    if not owner_of(patient_id):
+        return error(403)
+    target = database.fetchone('SELECT role FROM patient_members WHERE patient_id=? AND user_id=?', (patient_id, user_id))
+    if not target or target['role'] == 'owner' or user_id == g.auth_session.get('user_id'):
+        return error(403)
+    with database.transaction():
+        database.execute('DELETE FROM patient_members WHERE patient_id=? AND user_id=?', (patient_id, user_id))
+        database.execute('DELETE FROM sessions WHERE user_id=? AND patient_id=?', (user_id, patient_id))
+    return jsonify(ok=True)
 
 
 @bp.get('/pair/devices')
@@ -1010,7 +1069,7 @@ def init_auth(app, legacy_settings):
                 return jsonify(error='Demo uploads are limited to three per day.'), 403
         if request.endpoint in CAREGIVER_ENDPOINTS and not is_caregiver():
             return error(403)
-        if request.endpoint == 'save_performance' and (session['kind'] != 'patient_device' or is_elevated()):
+        if request.endpoint == 'save_performance' and ((session['kind'] != 'patient_device' and not self_account()) or is_elevated()):
             return error(403)
 
     @app.after_request
