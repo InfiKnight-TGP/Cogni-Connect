@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Nav from "@/components/nav";
 import { CaregiverOnly } from "@/components/caregiver";
 import { GAME_REGISTRY, getGameById, GameRegistryEntry } from "@/components/games/registry";
@@ -29,6 +30,7 @@ const SELF_AREA_ORDER = ["Memory", "Attention", "Executive Function", "Recogniti
 
 function SelfGames() {
   const { t } = useTranslate();
+  const searchParams = useSearchParams();
   const [active, setActive] = useState<{ game: GameRegistryEntry; level: Level } | null>(null);
   const [todayPlan, setTodayPlan] = useState<Set<string>>(new Set());
   const [playedToday, setPlayedToday] = useState<Set<string>>(new Set());
@@ -64,6 +66,11 @@ function SelfGames() {
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
+  useEffect(() => {
+    const requested = searchParams.get("game");
+    const game = requested ? getGameById(requested) : undefined;
+    if (game?.component && !game.comingSoon) setActive({ game, level: game.levels[0] });
+  }, [searchParams]);
 
   if (active && Game) {
     return <main className="mx-auto max-w-screen-lg space-y-6 px-4 pb-16 pt-24 lg:pt-8">

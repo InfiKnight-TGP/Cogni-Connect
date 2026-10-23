@@ -1052,7 +1052,7 @@ def reset_adaptive():
 
 CAREGIVER_ENDPOINTS = {
     'upload_video', 'get_processing_status', 'add_person', 'update_person', 'delete_person',
-    'delete_performance', 'get_reports_days', 'get_report_for_day', 'save_settings', 'save_routine',
+    'delete_performance', 'get_reports_days', 'get_report_for_day', 'save_settings',
 }
 DEMO_BLOCKED_ENDPOINTS = {'pair_invite', 'unpair', 'create_patient_login', 'remove_patient_login', 'reset_patient_login_password', 'patient_pin', 'legacy_change_pin'}
 DEMO_AI_ENDPOINTS = {'accuracy', 'generate_questions', 'search', 'transcribe', 'speak', 'crossword'}

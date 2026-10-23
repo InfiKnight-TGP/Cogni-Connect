@@ -8,7 +8,7 @@ import app
 import auth
 import db
 import mailer
-from tests.auth_support import setup_auth
+from tests.auth_support import setup_auth, make_client
 
 
 class AuthTests(unittest.TestCase):
@@ -81,6 +81,50 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(patient_client.get('/reports/days', headers={'X-Cogni-Patient': 'other-patient'}).status_code, 403)
         self.assertEqual(caregiver.delete(f'/patients/{patient_id}/login').status_code, 200)
         self.assertEqual(patient_client.get('/auth/me').status_code, 401)
+
+    def test_routine_permissions_for_caregiver_self_and_device_sessions(self):
+        patient_id = self.verified()
+        with app.api.app_context():
+            db.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo,role,patient_id,otp_target) VALUES (?,?,?,?,0,0,?,0,'self',?,'caregiver')",
+                       ('self-user', 'self@example.com', 'Self', generate_password_hash('password1', method='scrypt'), auth.now(), patient_id))
+            db.execute("INSERT INTO patient_members VALUES (?,?,?)", (patient_id, 'self-user', 'owner'))
+            login_patient_id = 'patient-login-patient'
+            db.execute("INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,?,?,?,0)",
+                       (login_patient_id, 'Patient login profile', generate_password_hash('1234', method='scrypt'), None, auth.now()))
+            db.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo,role,patient_id,otp_target) VALUES (?,?,?,?,0,0,?,0,'patient',?,'patient')",
+                       ('patient-user', 'patient@example.com', 'Patient login', generate_password_hash('password1', method='scrypt'), auth.now(), login_patient_id))
+            self_token, _ = auth.new_session('caregiver', user_id='self-user')
+            patient_token, _ = auth.new_session('patient_device', user_id='patient-user', patient_id=login_patient_id)
+        self_client = app.api.test_client(); self_client.set_cookie('cogni_session', self_token)
+        patient_client = app.api.test_client(); patient_client.set_cookie('cogni_device', patient_token)
+        with app.api.app_context():
+            device_token, _ = auth.new_session('patient_device', patient_id=patient_id)
+        device_client = app.api.test_client(); device_client.set_cookie('cogni_device', device_token)
+        body = {'steps': ['Wake up', 'Breakfast', 'Walk']}
+        self.assertEqual(self.client.post('/routine', json=body).status_code, 200)
+        self.assertEqual(self_client.get('/routine').status_code, 200)
+        self.assertEqual(self_client.post('/routine', json=body).status_code, 200)
+        self.assertEqual(device_client.get('/routine').status_code, 200)
+        self.assertEqual(device_client.post('/routine', json=body).status_code, 403)
+        self.assertEqual(patient_client.get('/routine').status_code, 200)
+        self.assertEqual(patient_client.post('/routine', json=body).status_code, 403)
+
+    def test_demo_reset_restores_demo_routine(self):
+        from pathlib import Path
+        patient_id = self.verified()
+        with app.api.app_context():
+            user_id = db.fetchone('SELECT id FROM users WHERE email=?', ('one@example.com',))['id']
+            db.execute('UPDATE users SET is_demo=1 WHERE id=?', (user_id,))
+            db.execute('UPDATE patients SET is_demo=1 WHERE id=?', (patient_id,))
+            base = Path(app.api.config['PATIENT_DATA_ROOT']) / patient_id
+            base.mkdir(parents=True, exist_ok=True)
+            (base / 'routines.json').write_text(json.dumps({'steps': ['Temporary step', 'Another step', 'Walk']}), encoding='utf-8')
+            token, _ = auth.new_session('caregiver', user_id=user_id)
+        demo_client = app.api.test_client(); demo_client.set_cookie('cogni_session', token)
+        with patch.dict(app.api.config, {'AUTH_DEMO': True}):
+            self.assertEqual(demo_client.post('/demo/reset').status_code, 200)
+        restored = json.loads((Path(app.api.config['PATIENT_DATA_ROOT']) / patient_id / 'routines.json').read_text(encoding='utf-8'))
+        self.assertEqual(restored['steps'], json.loads((Path(app.__file__).parent / 'sample_data' / 'routines.json').read_text(encoding='utf-8'))['steps'])
 
     def test_otp_five_failures_expiry_reuse_and_purpose(self):
         challenge, code = self.signup()

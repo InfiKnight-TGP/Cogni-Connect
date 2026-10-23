@@ -1330,6 +1330,18 @@ def get_routine():
 @api.route('/routine', methods=['POST'])
 def save_routine():
     """Replace the routine with {"steps": [...]}: 3 to 5 steps in order, each 1-40 characters."""
+    # Caregivers can edit the active patient's routine; self accounts can edit
+    # only the patient attached to their own account. Device and patient-login
+    # sessions may read this file for Plan the Day but cannot change it.
+    from auth import db, is_caregiver, self_account
+    from flask import g
+    session = getattr(g, 'auth_session', None)
+    if not is_caregiver():
+        if not self_account() or not session or not g.active_patient:
+            return jsonify({"error": "Only the patient or a caregiver can edit this routine"}), 403
+        user = db.fetchone('SELECT patient_id FROM users WHERE id=?', (session.get('user_id'),))
+        if not user or user['patient_id'] != g.active_patient['id']:
+            return jsonify({"error": "You can only edit your own routine"}), 403
     steps = (request.get_json(silent=True) or {}).get('steps')
     if not isinstance(steps, list) or not 3 <= len(steps) <= 5:
         return jsonify({"error": "steps must be a list of 3 to 5 items"}), 400
