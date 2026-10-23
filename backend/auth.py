@@ -1057,6 +1057,172 @@ CAREGIVER_ENDPOINTS = {
 DEMO_BLOCKED_ENDPOINTS = {'pair_invite', 'unpair', 'create_patient_login', 'remove_patient_login', 'reset_patient_login_password', 'patient_pin', 'legacy_change_pin'}
 DEMO_AI_ENDPOINTS = {'accuracy', 'generate_questions', 'search', 'transcribe', 'speak', 'crossword'}
 
+PREFERENCE_DEFAULTS = {
+    'soundEffects': True,
+    'animations': True,
+    'encouragingMessages': True,
+    'readAloud': False,
+    'answerBySpeaking': False,
+    'listenAutomatically': False,
+    'speechRate': 'normal',
+    'textSize': 'large',
+}
+PREFERENCE_BOOLEAN_KEYS = {'soundEffects', 'animations', 'encouragingMessages', 'readAloud', 'answerBySpeaking', 'listenAutomatically'}
+PREFERENCE_ENUMS = {'speechRate': {'slow', 'normal'}, 'textSize': {'large', 'larger', 'largest'}}
+PREFERENCE_KEYS = set(PREFERENCE_DEFAULTS)
+
+
+def _preferences_path():
+    from patient_storage import patient_path
+    return Path(patient_path('preferences.json'))
+
+
+def _read_preferences():
+    path = _preferences_path()
+    if not path.exists():
+        return {'values': dict(PREFERENCE_DEFAULTS), 'locked': [], 'updatedAt': 0, 'updatedBy': None,
+                'version': 0, 'imported': False, 'empty': True}
+    try:
+        raw = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError, TypeError):
+        raw = {}
+    values = dict(PREFERENCE_DEFAULTS)
+    if isinstance(raw.get('values'), dict):
+        values.update({key: raw['values'][key] for key in PREFERENCE_KEYS if key in raw['values']})
+    locked = raw.get('locked') if isinstance(raw.get('locked'), list) else []
+    locked = [key for key in locked if key in PREFERENCE_KEYS]
+    return {'values': values, 'locked': locked, 'updatedAt': int(raw.get('updatedAt') or 0),
+            'updatedBy': raw.get('updatedBy'), 'version': int(raw.get('version') or 0),
+            'imported': bool(raw.get('imported')), 'empty': False}
+
+
+def _write_preferences(state):
+    path = _preferences_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({key: state[key] for key in ('values', 'locked', 'updatedAt', 'updatedBy', 'version', 'imported')},
+                               ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def _preferences_result(state):
+    return jsonify(values=state['values'], locked=state['locked'], updatedAt=state['updatedAt'],
+                   updatedBy=state['updatedBy'], version=state['version'], empty=state['empty'])
+
+
+def _preferences_access():
+    session = g.get('auth_session')
+    patient = g.get('active_patient')
+    if not session or not patient:
+        return None
+    if session['kind'] == 'patient_device':
+        if session.get('patient_id') != patient['id']:
+            return None
+        return 'patient', patient
+    if self_account():
+        return 'self', patient
+    if session['kind'] == 'caregiver' and database.fetchone(
+            'SELECT 1 FROM patient_members WHERE patient_id=? AND user_id=?',
+            (patient['id'], session.get('user_id'))):
+        return 'caregiver', patient
+    return None
+
+
+def _validate_preference_values(values):
+    if not isinstance(values, dict):
+        return 'values must be an object'
+    unknown = set(values) - PREFERENCE_KEYS
+    if unknown:
+        return f'Unknown preference: {sorted(unknown)[0]}'
+    for key, value in values.items():
+        if key in PREFERENCE_BOOLEAN_KEYS and not isinstance(value, bool):
+            return f'{key} must be true or false'
+        if key in PREFERENCE_ENUMS and value not in PREFERENCE_ENUMS[key]:
+            return f'{key} is invalid'
+    return None
+
+
+@bp.get('/preferences')
+@login_required
+def get_preferences():
+    if request.content_length and request.content_length > 32768:
+        return error(413)
+    if not _preferences_access():
+        return error(403)
+    return _preferences_result(_read_preferences())
+
+
+@bp.put('/preferences')
+@login_required
+def put_preferences():
+    if request.content_length and request.content_length > 32768:
+        return error(413)
+    access = _preferences_access()
+    if not access:
+        return error(403)
+    kind, _patient = access
+    data = payload()
+    if set(data) - {'values', 'locked', 'version', 'source'}:
+        return error(400)
+    values = data.get('values', {})
+    if not isinstance(values, dict):
+        return jsonify(error='values must be an object'), 400
+    validation = _validate_preference_values(values)
+    if validation:
+        return jsonify(error=validation), 400
+    locked = data.get('locked', None)
+    if locked is not None and (not isinstance(locked, list) or any(key not in PREFERENCE_KEYS for key in locked)):
+        return jsonify(error='locked contains an unknown preference'), 400
+    source = data.get('source', 'user')
+    if source not in ('user', 'device-import'):
+        return jsonify(error='Invalid preference source'), 400
+    if source == 'device-import' and kind != 'patient':
+        return error(403)
+    try:
+        version = int(data.get('version', 0))
+    except (TypeError, ValueError):
+        return jsonify(error='Invalid preference version'), 400
+    if version < 0:
+        return jsonify(error='Invalid preference version'), 400
+    if not limits().hit(('preferences', g.auth_session['id']), 60, 60):
+        return jsonify(error='Too many preference changes. Please try again later.'), 429
+    current = _read_preferences()
+    if source == 'device-import' and not current['empty']:
+        return jsonify(error='Preferences already exist on the server.', values=current['values'], locked=current['locked'],
+                       updatedAt=current['updatedAt'], updatedBy=current['updatedBy'], version=current['version']), 409
+    if version != current['version']:
+        return jsonify(error='Preferences changed elsewhere. Please reload.', values=current['values'], locked=current['locked'],
+                       updatedAt=current['updatedAt'], updatedBy=current['updatedBy'], version=current['version']), 409
+    if kind == 'patient':
+        changed_locked = {key for key in values if key in current['locked'] and values[key] != current['values'].get(key)}
+        if changed_locked:
+            key = sorted(changed_locked)[0]
+            return jsonify(error=f'Your caregiver has set this: {key}'), 403
+        if locked is not None:
+            return error(403)
+    next_values = dict(current['values'])
+    next_values.update(values)
+    if not next_values['answerBySpeaking']:
+        next_values['listenAutomatically'] = False
+    next_state = {'values': next_values, 'locked': current['locked'] if kind == 'patient' or locked is None else list(dict.fromkeys(locked)),
+                  'updatedAt': now(), 'updatedBy': kind, 'version': current['version'] + 1,
+                  'imported': current['imported'] or source == 'device-import', 'empty': False}
+    _write_preferences(next_state)
+    return _preferences_result(next_state)
+
+
+@bp.post('/preferences/reset')
+@login_required
+def reset_preferences():
+    access = _preferences_access()
+    if not access or access[0] == 'patient':
+        return error(403)
+    if not limits().hit(('preferences-reset', g.auth_session['id']), 10, 600):
+        return jsonify(error='Too many preference changes. Please try again later.'), 429
+    current = _read_preferences()
+    next_state = {'values': dict(PREFERENCE_DEFAULTS), 'locked': [], 'updatedAt': now(),
+                  'updatedBy': access[0], 'version': current['version'] + 1, 'imported': True, 'empty': False}
+    _write_preferences(next_state)
+    return _preferences_result(next_state)
+
 
 def init_auth(app, legacy_settings):
     app.config.setdefault('AUTH_DATABASE', str(Path(__file__).with_name('auth.db')))
