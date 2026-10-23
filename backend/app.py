@@ -45,6 +45,7 @@ NEUTRAL_THUMBNAIL = base64.b64decode(
 client = OpenAI(
     api_key=os.getenv('OPENAI_API_KEY', 'not_configured')
 )
+AI_AVAILABLE = bool(os.getenv('OPENAI_API_KEY') and os.getenv('OPENAI_API_KEY') not in ('not_configured', 'your_openai_api_key_here'))
 
 MAX_TRANSCRIPTION_BYTES = 25 * 1024 * 1024
 
@@ -1948,6 +1949,62 @@ def generate_questions():
         print(f"Generate questions error: {e}")
         return jsonify({"error": str(e)}), 500
 
+
+
+def _friendly_memory_date(value):
+    try: day = datetime.fromisoformat(str(value)[:10]).date()
+    except (TypeError, ValueError): return {'date': value, 'label': ''}
+    today = datetime.now().date(); return {'date': day.isoformat(), 'label': 'today' if day == today else 'yesterday' if (today-day).days == 1 else day.strftime('%A')}
+
+def _ask_context(memory_id=None):
+    memories=_memory_data(); selected=list(memories.items()) if not memory_id else ([(memory_id,memories[memory_id])] if memory_id in memories else None)
+    if selected is None: return None
+    try:
+        with open(JOURNALS_PATH,encoding='utf-8') as f: journals=json.load(f)
+    except Exception: journals={}
+    people=_load_people(); out=[]
+    for mid,row in selected:
+        fn=row.get('filename',''); j=journals.get(fn,{}) if isinstance(journals,dict) else {}; tr=[]; folder=os.path.join(os.path.abspath(VIDEO_CHUNKS_ROOT),os.path.splitext(fn)[0]+'_chunks')
+        try:
+            with open(os.path.join(folder,'full_transcript.json'),encoding='utf-8') as f:
+                raw=json.load(f); tr=[str(v) for v in raw.values()] if isinstance(raw,dict) else [str(v) for v in raw]
+        except Exception: pass
+        names=[]
+        for face_file in os.listdir(folder) if os.path.isdir(folder) else []:
+            if face_file.endswith('_faces.json'):
+                try:
+                    with open(os.path.join(folder, face_file), encoding='utf-8') as f: face=json.load(f)
+                    ids={n for values in face.values() for n in values} if isinstance(face,dict) else set()
+                    names.extend(display_name(n, people) for n in ids)
+                except Exception: pass
+        out.append({'id':mid,'title':row.get('title') or j.get('title') or os.path.splitext(fn)[0],'note':row.get('note') or j.get('entry') or '','date':row.get('date') or j.get('date'),'transcript':tr,'people':list(dict.fromkeys(names))})
+    return out
+
+@api.route('/memories/ask',methods=['POST'])
+def ask_memory():
+    payload=request.get_json(silent=True) or {}; q=payload.get('question')
+    if not isinstance(q,str) or not q.strip() or len(q)>300: return jsonify(error='Question must be up to 300 characters.'),400
+    q=re.sub(r'[\x00-\x1f\x7f]',' ',q).strip(); contexts=_ask_context(payload.get('memory_id'))
+    if contexts is None: return jsonify(error='Memory not found'),404
+    import auth; session=g.get('auth_session')
+    if session and not auth.limits().hit(('memory-ask',session['id']),60,3600): return jsonify(error='Please try again in a moment.'),429
+    try: lang=_load_settings().get('language','en')
+    except Exception: lang='en'
+    if lang not in ('en','hi','as'): lang='en'
+    low=q.lower(); words=set(re.findall(r'[a-z0-9]+',low)); when=bool(words & {'when','date','day'}); who=bool(words & {'who','whom','with'}); what=bool(words & {'where','what','which','animal','see','saw'})
+    if not payload.get('memory_id'):
+        scored=[(sum(1 for t in re.findall(r'[a-z0-9]+',low) if t in (c['title']+' '+c['note']+' '+' '.join(c['transcript'])).lower()),c) for c in contexts]; contexts=[c for n,c in scored if n>0] or contexts
+    sources=[{'memory_id':c['id'],'title':c['title'],**_friendly_memory_date(c['date'])} for c in contexts[:3]]; ans=None
+    if contexts and when:
+        c=contexts[0]; d=_friendly_memory_date(c['date']); ans=f"You went to {c['title']} on {d['label'] or d['date']}."
+    elif contexts and who:
+        c=contexts[0]; ans=f"{', '.join(c['people'])} was in this video." if c['people'] else (c['note'] or None)
+    elif contexts and what:
+        c=contexts[0]; text=' '.join([c['note'],*c['transcript']]); ss=[x.strip() for x in re.split(r'(?<=[.!?])\s+',text) if any(t in x.lower() for t in words if len(t)>2)]
+        if not ss and ('animal' in words or 'behind' in words): ss=[x.strip() for x in re.split(r'(?<=[.!?])\s+',text) if re.search(r'elephant|animal|lion|dog|cat|bird', x, re.I)]
+        ans=ss[0] if ss else None
+    if ans: return jsonify(answer=ans,language=lang,sources=sources,grounded=True)
+    return jsonify(answer=("I can't look at the pictures right now." if what and not AI_AVAILABLE else "I couldn't find that in your memories."),language=lang,sources=sources,grounded=False),200
 
 from auth import init_auth
 
