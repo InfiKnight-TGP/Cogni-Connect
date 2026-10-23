@@ -56,7 +56,8 @@ export default function AccountForm({ kind }: { kind: Kind }) {
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not send a new code."); }
     finally { setBusy(false); }
   };
-  return <AuthFrame title={titles[kind]}>
+  const title = kind === "login" && loginMode === "self" ? "Self-care sign in" : titles[kind];
+  return <AuthFrame title={title}>
     {kind === "login" && process.env.NEXT_PUBLIC_DEMO === "1" && <div className="mb-5 space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4"><h2 className="text-xl font-bold">Try the demo</h2>{loginMode === "self" ? <><p className="text-base">Self-care: patient@cogniconnect.com / Patient@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("patient@cogniconnect.com"); setPassword("Patient@1234"); }}>Fill in self-care</button></> : <><p className="text-base">Caregiver: demo@cogniconnect.com / Demo@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("demo@cogniconnect.com"); setPassword("Demo@1234"); }}>Fill in caregiver</button></>}<p className="text-base">Code: 123456</p></div>}
     {verification && <p>{t("Enter the six-digit code from your email. It is valid for five minutes.")}</p>}
     {kind === "forgot" && <p>{t("If an account exists for this email, we will send a reset code.")}</p>}
@@ -71,7 +72,7 @@ export default function AccountForm({ kind }: { kind: Kind }) {
     </form>
     {verification && <><button type="button" className={secondaryClass} disabled={busy || !challenge} onClick={() => void resend()}>{t("Send a new code")}</button><p className="text-lg">{t("Code expired?")} <Link className="text-primary underline" href={kind === "reset" ? "/forgot" : "/login"}>{t("Start again")}</Link></p></>}
     {kind === "login" && <div className="flex flex-wrap gap-6 text-lg"><Link className="min-h-12 text-primary underline" href="/signup">{t("Create an account")}</Link><Link className="min-h-12 text-primary underline" href="/login?mode=self">Self-care sign in</Link><Link className="min-h-12 text-primary underline" href="/forgot">{t("Forgot password?")}</Link></div>}
-    {kind === "signup" && <Link className="inline-flex min-h-12 items-center text-primary underline" href="/login">{t("Already have an account? Sign in")}</Link>}
+    {kind === "signup" && <Link className="inline-flex min-h-12 items-center text-primary underline" href={signupMode === "self" ? "/login?mode=self" : "/login"}>{t("Already have an account? Sign in")}</Link>}
   </AuthFrame>;
 }
 
