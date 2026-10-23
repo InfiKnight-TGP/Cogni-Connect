@@ -11,7 +11,7 @@ import { readSkill } from "@/lib/interaction/events";
 import motifs from "./motifs.json";
 
 function Cards({ finish }: { finish: (score: number) => void }) {
-  const [knob] = useState(() => readSkill("Memory").knob);
+  const [knob] = useState(() => readSkill("memory-cards").knob);
   const [cards] = useState(() => {
     const pairs = Math.min(motifs.items.length, knob + 1);
     return [...motifs.items.slice(0, pairs), ...motifs.items.slice(0, pairs)]

@@ -15,6 +15,7 @@ import { apiFetch, API_URL } from "@/lib/api";
 import { isCaregiverUnlocked } from "@/lib/mode";
 import { ReadAloud } from "@/components/interaction/ReadAloud";
 import { DictationButton } from "@/components/interaction/DictationButton";
+import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 
 export default function ContextQuestions({
   setProgress,
@@ -24,6 +25,7 @@ export default function ContextQuestions({
   activityScores,
   setActivityScore,
   onComplete,
+  difficulty = 2,
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
@@ -36,6 +38,7 @@ export default function ContextQuestions({
   };
   setActivityScore?: (score: number) => void;
   onComplete?: (score: number) => void;
+  difficulty?: number;
 }) {
   const [tab, setTab] = useState("1");
   const [feedback, setFeedback] = useState<{submitted: boolean; feedback: number}[]>([]);
@@ -51,6 +54,7 @@ export default function ContextQuestions({
   const [loading, setLoading] = useState(true);
 
   const [open, setOpen] = useState(false);
+  const log = useAnswerLog("context-recall", "Memory", tab, difficulty, true);
 
   // Fetch questions from backend
   useEffect(() => {
@@ -63,7 +67,7 @@ export default function ContextQuestions({
           if (questions.length === 0) {
             console.log("No questions found in qas.json");
           }
-          setData(questions);
+          setData(difficulty === 1 ? questions.slice(0, 3) : questions);
           // Initialize feedback array based on number of questions
           setFeedback(questions.map(() => ({ submitted: false, feedback: -1 })));
         } else {
@@ -253,6 +257,8 @@ export default function ContextQuestions({
               setOpen={setOpen}
               totalQuestions={data.length}
               setTab={setTab}
+              logAnswer={log}
+              difficulty={difficulty}
             />
           ) : null}
           
@@ -281,6 +287,8 @@ function Question({
   setOpen,
   totalQuestions,
   setTab,
+  logAnswer,
+  difficulty,
 }: {
   n: string;
   feedback: {
@@ -299,6 +307,8 @@ function Question({
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
   totalQuestions: number;
   setTab: React.Dispatch<React.SetStateAction<string>>;
+  logAnswer: (correct: boolean, input?: { method: "tap" | "typed" | "voice"; responseMs: number | null }) => void;
+  difficulty: number;
 }) {
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
@@ -325,6 +335,7 @@ function Question({
       }
 
       const newFeedback = [...feedback];
+      logAnswer(scoreValue >= 5, { method: "typed", responseMs: null });
       newFeedback[parseInt(n) - 1].submitted = true;
       newFeedback[parseInt(n) - 1].feedback = scoreValue;
       setFeedback(newFeedback);

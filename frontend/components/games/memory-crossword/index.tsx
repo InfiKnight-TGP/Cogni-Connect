@@ -41,7 +41,7 @@ function Crossword({ date, finish }: { date: string; finish: (score: number) => 
   const [solved, setSolved] = useState<number[]>([]);
   const [notice, setNotice] = useState("");
   const [inputMethod, setInputMethod] = useState<"typed" | "voice">("typed");
-  const [knob] = useState(() => readSkill("Memory").knob);
+  const [knob] = useState(() => readSkill("memory-crossword").knob);
   const [listShown, setListShown] = useState(() => knob === 1);
   const { t, caregiver } = useTranslate();
   const preview = useContext(PreviewContext);

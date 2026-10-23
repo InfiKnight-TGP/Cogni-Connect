@@ -18,6 +18,7 @@ import { Badge } from "../ui/badge";
 import { mediaUrl, apiFetch, API_URL } from "@/lib/api";
 import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 import ReadAloud from "@/components/interaction/ReadAloud";
+import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 
 interface KnownFace {
   name: string;
@@ -32,6 +33,7 @@ export default function PersonSelect({
   standalone = false,
   setActivityScore,
   onComplete,
+  difficulty = 2,
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
@@ -39,6 +41,7 @@ export default function PersonSelect({
   standalone?: boolean;
   setActivityScore?: (score: number) => void;
   onComplete?: (score: number) => void;
+  difficulty?: number;
 }) {
   const [selected, setSelected] = useState<number[]>([]);
   const [knownFaces, setKnownFaces] = useState<KnownFace[]>([]);
@@ -54,6 +57,7 @@ export default function PersonSelect({
     correct: boolean;
   } | null>(null);
   const [finalScore, setFinalScore] = useState(0);
+  const log = useAnswerLog("face-recognition", "Recognition & Orientation", "face-selection", difficulty, true);
 
   // Fetch data on date change
   useEffect(() => {
@@ -94,7 +98,7 @@ export default function PersonSelect({
           (kf) => !dNames.some((d) => d.toLowerCase() === kf.name.toLowerCase())
         );
 
-        const distractors = otherFaces.slice(0, 3);
+        const distractors = otherFaces.slice(0, Math.max(1, Math.min(5, difficulty - 1)));
 
         const seen = new Set<string>();
         const combined: KnownFace[] = [];
@@ -115,7 +119,7 @@ export default function PersonSelect({
     };
 
     fetchData();
-  }, [date]);
+  }, [date, difficulty]);
 
   // Calculate correct indices based on allFacesForQuiz
   const correctIndices = allFacesForQuiz
@@ -128,6 +132,7 @@ export default function PersonSelect({
 
   const onSubmit = () => {
     if (selected.length === 0) {
+      log(false);
       setSubmitted({ correct: false });
       setFinalScore(0);
       if (setActivityScore) setActivityScore(0);
@@ -149,6 +154,7 @@ export default function PersonSelect({
       const finalScore = Math.max(0, Math.min(100, rawScore));
 
       const roundedScore = Math.round(finalScore);
+      log(res);
       setFinalScore(roundedScore);
       if (setActivityScore) setActivityScore(roundedScore);
     }

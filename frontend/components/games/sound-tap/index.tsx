@@ -17,7 +17,7 @@ function Sounds({ finish }: { finish: (score: number) => void }) {
   const [ready, setReady] = useState(false);
   const [visual, setVisual] = useState(false);
   const [notice, setNotice] = useState("");
-  const [knob, setKnob] = useState(() => readSkill("Attention").knob);
+  const [knob] = useState(() => readSkill("sound-tap").knob);
   const audio = useRef<AudioContext | null>(null);
   const active = useRef(true);
   const { t } = useTranslate();
@@ -48,7 +48,7 @@ function Sounds({ finish }: { finish: (score: number) => void }) {
   };
   const next = () => {
     if (round === 5) finish(Math.round(correct / 6 * 100));
-    else { setRound(value => value + 1); setPicked(false); setReady(false); setVisual(false); setKnob(readSkill("Attention").knob); }
+    else { setRound(value => value + 1); setPicked(false); setReady(false); setVisual(false); }
   };
   const options = [1, 2, 3, 4, 5].map(value => ({ id: String(value), label: String(value), synonyms: [`${value} beats`] }));
   return <section className="space-y-5">

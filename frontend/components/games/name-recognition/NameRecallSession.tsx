@@ -8,6 +8,7 @@ import ReadAloud from "@/components/interaction/ReadAloud";
 import { usePreferences } from "@/components/interaction/InteractionProvider";
 import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 import type { AnswerInput } from "@/components/interaction/VoiceQuestion";
+import { readSkill } from "@/lib/interaction/events";
 
 type Person = {
   id: string;
@@ -31,15 +32,17 @@ function shuffle<T>(items: T[]): T[] {
   return result;
 }
 
-function makeRounds(people: Person[]): Round[] {
+function makeRounds(people: Person[], knob: number): Round[] {
   const relationPeople = people.filter((person) => person.relation?.trim());
   const roundThreeTarget = shuffle(relationPeople.length ? relationPeople : people)[0];
   const remainingTargets = shuffle(people.filter((person) => person.id !== roundThreeTarget.id));
-  const targets = [remainingTargets[0], remainingTargets[1], roundThreeTarget];
+  const targetCount = knob === 4 ? 5 : knob === 3 ? 4 : 3;
+  const targets = [roundThreeTarget, ...remainingTargets].slice(0, Math.min(targetCount, people.length));
 
   return targets.map((target, index) => {
     const kind: Round["kind"] = index === 0 ? "name" : index === 2 && target.relation?.trim() ? "relation" : "person";
-    const distractors = shuffle(people.filter((person) => person.id !== target.id)).slice(0, 2);
+    const optionCount = knob === 1 ? 2 : knob === 2 ? 3 : 4;
+    const distractors = shuffle(people.filter((person) => person.id !== target.id)).slice(0, optionCount - 1);
     return { target, kind, options: shuffle([target, ...distractors]) };
   });
 }
@@ -54,11 +57,12 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
   const [reinforcement, setReinforcement] = useState(false);
   const { preferences } = usePreferences();
   const [loading, setLoading] = useState(true);
+  const [knob] = useState(() => readSkill("name-recognition").knob);
   const [loadError, setLoadError] = useState(false);
   const nextRoundTimer = useRef<number | null>(null);
   const feedbackActive = useRef(false);
   const round = rounds[roundIndex];
-  const logAnswer = useAnswerLog("name-recognition", "recognition-orientation", `${roundIndex}-${round?.target.id ?? "loading"}`, 1);
+  const logAnswer = useAnswerLog("name-recognition", "recognition-orientation", `${roundIndex}-${round?.target.id ?? "loading"}`, knob, true);
 
   useEffect(() => {
     let active = true;
@@ -69,12 +73,12 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
         const people = Array.isArray(data)
           ? data.filter((person) => Boolean(person.id && person.name?.trim() && person.photo?.trim()))
           : [];
-        if (people.length >= 3) setRounds(makeRounds(people));
+        if (people.length >= 3) setRounds(makeRounds(people, knob));
       })
       .catch(() => { if (active) setLoadError(true); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [knob]);
 
   useEffect(() => () => {
     if (nextRoundTimer.current !== null) window.clearTimeout(nextRoundTimer.current);
@@ -99,7 +103,7 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
     feedbackActive.current = true;
     setReinforcement(true);
     nextRoundTimer.current = window.setTimeout(() => {
-      if (roundIndex === 2) {
+      if (roundIndex === rounds.length - 1) {
         onFinish(Math.round((nextPoints.reduce((sum, value) => sum + value, 0) / 3) * 100));
         return;
       }
@@ -131,7 +135,7 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
 
   return <section className="space-y-6 text-center" aria-live="polite">
     <div>
-      <p className="text-base font-semibold uppercase tracking-wide text-muted-foreground">Round {roundIndex + 1} of 3</p>
+      <p className="text-base font-semibold uppercase tracking-wide text-muted-foreground">Round {roundIndex + 1} of {rounds.length}</p>
       <h2 className="mt-2 text-2xl font-bold text-foreground">{reinforcement && preferences.encouragingMessages ? "Well remembered" : prompt}</h2>
       {reinforcement && <ReadAloud kind="feedback" text={`${preferences.encouragingMessages ? "Well remembered. " : ""}${shownName}`} />}
     </div>
@@ -157,7 +161,7 @@ export default function NameRecallSession({ onFinish }: { onFinish: (score: numb
         </button>)}
       </div>}
 
-      {wrongCount === 1 && !revealed && <><p className="text-lg text-muted-foreground" role="status">Hint: the name starts with {activeRound.target.name.trim().charAt(0).toUpperCase()}…</p><ReadAloud kind="feedback" text={`Hint: the name starts with ${activeRound.target.name.trim().charAt(0).toUpperCase()}.`} /></>}
+      {wrongCount >= (knob >= 3 ? 2 : 1) && !revealed && <><p className="text-lg text-muted-foreground" role="status">Hint: the name starts with {activeRound.target.name.trim().charAt(0).toUpperCase()}…</p><ReadAloud kind="feedback" text={`Hint: the name starts with ${activeRound.target.name.trim().charAt(0).toUpperCase()}.`} /></>}
       {revealed && <><p className="text-lg text-muted-foreground" role="status">Here’s the answer. Tap the highlighted choice when you’re ready.</p><ReadAloud kind="feedback" text={`Here’s the answer. ${shownName}. Tap the highlighted choice when you’re ready.`} /></>}
     </>}
   </section>;

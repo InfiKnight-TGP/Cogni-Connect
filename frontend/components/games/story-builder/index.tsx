@@ -14,6 +14,7 @@ import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 import type { AnswerInput } from "@/components/interaction/VoiceQuestion";
 import { usePreferences } from "@/components/interaction/InteractionProvider";
 import ReadAloud from "@/components/interaction/ReadAloud";
+import { readSkill } from "@/lib/interaction/events";
 
 function getRandomPair<T>(array: T[]): [T, T] {
   const firstIndex = Math.floor(Math.random() * array.length);
@@ -25,7 +26,11 @@ function getRandomPair<T>(array: T[]): [T, T] {
 }
 
 function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
-  const [sessionStories, setSessionStories] = useState<[Story, Story]>(() => getRandomPair(stories));
+  const [knob] = useState(() => readSkill("story-builder").knob);
+  const storyCount = knob === 4 ? 3 : 2;
+  const blankCount = knob === 1 ? 2 : 3;
+  const optionCount = knob === 1 ? 2 : knob === 2 ? 3 : 4;
+  const [sessionStories, setSessionStories] = useState<Story[]>(() => [...getRandomPair(stories), ...(storyCount === 3 ? [stories[2]] : [])]);
   const [currentStoryIdx, setCurrentStoryIdx] = useState(0);
   const [phase, setPhase] = useState<"read" | "recall">("read");
   const [blankIndex, setBlankIndex] = useState(0);
@@ -35,11 +40,11 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
   const { preferences } = usePreferences();
 
   const story = sessionStories[currentStoryIdx];
-  const totalBlanks = storyBuilderConfig.totalBlanks; // 6
-  const logAnswer = useAnswerLog("story-builder", "verbal-memory", `${currentStoryIdx}-${blankIndex}`, 1);
+  const totalBlanks = storyCount * blankCount;
+  const logAnswer = useAnswerLog("story-builder", "verbal-memory", `${currentStoryIdx}-${blankIndex}`, knob, true);
 
   const reset = () => {
-    setSessionStories(getRandomPair(stories));
+    setSessionStories([...getRandomPair(stories), ...(storyCount === 3 ? [stories[2]] : [])]);
     setCurrentStoryIdx(0);
     setPhase("read");
     setBlankIndex(0);
@@ -58,11 +63,11 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
   };
 
   const next = () => {
-    if (blankIndex < story.blanks.length - 1) {
+    if (blankIndex < Math.min(blankCount, story.blanks.length) - 1) {
       setBlankIndex((value) => value + 1);
       setPickedCorrect(null);
       setSelectedAnswer(null);
-    } else if (currentStoryIdx === 0) {
+    } else if (currentStoryIdx < sessionStories.length - 1) {
       // Advance to 2nd story
       setCurrentStoryIdx(1);
       setPhase("read");
@@ -80,7 +85,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
     <div className="mx-auto max-w-2xl">
       <div className="mb-4 flex items-center justify-between border-b pb-3">
         <span className="text-sm font-semibold text-primary">
-          Story {currentStoryIdx + 1} of 2
+          Story {currentStoryIdx + 1} of {sessionStories.length}
         </span>
         <span className="text-sm text-muted-foreground">
           Blanks completed: {currentStoryIdx * 3 + (phase === "recall" ? blankIndex : 0)} / {totalBlanks}
@@ -109,7 +114,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
       ) : (
         <section aria-live="polite">
           <p className="text-sm font-medium text-primary">
-            Blank {blankIndex + 1} of {story.blanks.length} (Story {currentStoryIdx + 1})
+            Blank {blankIndex + 1} of {Math.min(blankCount, story.blanks.length)} (Story {currentStoryIdx + 1})
           </p>
           <h2 className="mt-2 text-2xl font-semibold">{story.title}</h2>
           <ol className="mt-5 space-y-3">
@@ -124,9 +129,9 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
           </ol>
           <Card className="mt-6 p-5">
             <p className="mb-4 font-medium">Choose the missing word:</p>
-            <VoiceQuestion question={`${hideWord(story.sentences[story.blanks[blankIndex].sentence], story.blanks[blankIndex].answer)} Choose the missing word.`} options={story.blanks[blankIndex].options.map((option, index) => ({ id: String(index), label: option }))} onMatched={(option, input) => choose(story.blanks[blankIndex].options[Number(option.id)], input)} />
+            <VoiceQuestion question={`${hideWord(story.sentences[story.blanks[blankIndex].sentence], story.blanks[blankIndex].answer)} Choose the missing word.`} options={story.blanks[blankIndex].options.slice(0, optionCount).map((option, index) => ({ id: String(index), label: option }))} onMatched={(option, input) => choose(story.blanks[blankIndex].options[Number(option.id)], input)} />
             <div className="grid gap-3 sm:grid-cols-3">
-              {story.blanks[blankIndex].options.map((option) => {
+              {story.blanks[blankIndex].options.slice(0, optionCount).map((option) => {
                 const selected = pickedCorrect !== null && option === story.blanks[blankIndex].answer;
                 const wrong = pickedCorrect === false && option === selectedAnswer;
                 return (
@@ -164,7 +169,7 @@ function StoryBuilderSession({ onDone }: { onDone: (score: number) => void }) {
             {pickedCorrect !== null && <ReadAloud kind="feedback" text={pickedCorrect ? preferences.encouragingMessages ? "That’s right!" : `The missing word is ${story.blanks[blankIndex].answer}.` : `The missing word is ${story.blanks[blankIndex].answer}.`} />}
             {pickedCorrect !== null && (
               <Button className="mt-4 min-h-12 w-full sm:w-auto" onClick={next}>
-                {blankIndex === story.blanks.length - 1 && currentStoryIdx === 1
+                {blankIndex === Math.min(blankCount, story.blanks.length) - 1 && currentStoryIdx === sessionStories.length - 1
                   ? "Finish Game"
                   : blankIndex === story.blanks.length - 1
                   ? "Next story"

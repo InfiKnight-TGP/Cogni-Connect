@@ -1,11 +1,14 @@
 "use client";
 
 import GameShell from "../_shared/GameShell";
+import { useState } from "react";
 import { dateFromLocalKey, localDateKey } from "../_shared/date";
 import type { GameProps } from "../_shared/types";
 import PersonSelect from "@/components/quiz/personSelect";
+import { readSkill } from "@/lib/interaction/events";
 
 export default function FaceRecognition({ date = localDateKey(), onFinish }: GameProps) {
+  const [knob] = useState(() => readSkill("face-recognition").knob);
   return (
     <GameShell
       gameId="face-recognition"
@@ -22,6 +25,7 @@ export default function FaceRecognition({ date = localDateKey(), onFinish }: Gam
           setProgress={() => {}}
           standalone
           onComplete={handleFinish}
+          difficulty={knob}
         />
       )}
     </GameShell>
