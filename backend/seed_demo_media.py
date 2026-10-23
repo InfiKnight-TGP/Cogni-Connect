@@ -27,6 +27,20 @@ def seed_demo_media(base_dir, backend_root=None):
         print('Demo zoo media skipped: place Me_at_the_zoo.mp4 and its processed *_chunks folder with transcript/faces under backend/sample_data/demo_media/.')
         return False
     source_root, source_video, source_chunks = source
+    # Remove old auto-discovered zoo aliases from the demo destination. They were
+    # never user-created memories and must not reappear as separate cards.
+    canonical = 'Me_at_the_zoo.mp4'
+    for folder_name in ('content', 'video_chunks', 'frames'):
+        folder = base / folder_name
+        if not folder.exists():
+            continue
+        for item in list(folder.iterdir()):
+            lowered = item.name.lower()
+            if item.resolve() == source_chunks.resolve():
+                continue
+            if 'me-at-the-zoo' in lowered or 'me at the zoo' in lowered or ('yt​​down.com' in lowered) or ('ytdown.com' in lowered):
+                if item.name != canonical and item.name != 'Me_at_the_zoo_chunks':
+                    shutil.rmtree(item, ignore_errors=True) if item.is_dir() else item.unlink(missing_ok=True)
     # Only these files are copied. No source patient metadata or unrelated photos are copied.
     (base / 'content').mkdir(parents=True, exist_ok=True)
     (base / 'video_chunks').mkdir(parents=True, exist_ok=True)
@@ -63,6 +77,7 @@ def seed_demo_media(base_dir, backend_root=None):
     if sample_qas.exists(): shutil.copy2(sample_qas, base / 'qas.json')
     memories_path = base / 'memories.json'
     memories = json.loads(memories_path.read_text(encoding='utf-8')) if memories_path.exists() else {}
+    memories = {key: row for key, row in memories.items() if not (isinstance(row, dict) and row.get('filename') != canonical and 'zoo' in str(row.get('filename', '')).lower())}
     memory_id = next((key for key, row in memories.items() if isinstance(row, dict) and row.get('filename') == 'Me_at_the_zoo.mp4'), uuid.uuid4().hex)
     memories[memory_id] = {'filename': 'Me_at_the_zoo.mp4', 'title': 'Me at the zoo', 'date': today, 'note': 'A day at the zoo, looking at the elephants', 'status': 'ready', 'createdAt': datetime.now().timestamp()}
     memories_path.write_text(json.dumps(memories, ensure_ascii=False, indent=2), encoding='utf-8')
