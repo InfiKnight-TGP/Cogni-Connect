@@ -22,6 +22,8 @@ def reset():
             shutil.copytree(item, root / item.name, dirs_exist_ok=True)
         elif item.is_file():
             shutil.copy2(item, root / item.name)
+    from seed_demo_media import seed_demo_media
+    seed_demo_media(root, Path(__file__).parent)
     connection.execute('DELETE FROM sessions WHERE patient_id=? OR user_id IN (SELECT id FROM users WHERE is_demo=1)', (row[0],))
     connection.execute('DELETE FROM trusted_devices WHERE user_id IN (SELECT id FROM users WHERE is_demo=1)')
     connection.close()

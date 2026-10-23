@@ -417,6 +417,9 @@ def seed_shared_demo(app):
                 shutil.copytree(item, target, dirs_exist_ok=True)
             elif item.is_file() and not target.exists():
                 shutil.copy2(item, target)
+        if app.config.get('AUTH_DEMO'):
+            from seed_demo_media import seed_demo_media
+            seed_demo_media(base, Path(__file__).parent)
 
 
 @bp.post('/auth/signup')
@@ -604,6 +607,8 @@ def demo_reset():
     for item in sample.iterdir():
         if item.is_file():
             shutil.copy2(item, base / item.name)
+    from seed_demo_media import seed_demo_media
+    seed_demo_media(base, Path(__file__).parent)
     database.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE is_demo=1) OR patient_id=?', (patient['id'],))
     database.execute('DELETE FROM trusted_devices WHERE user_id IN (SELECT id FROM users WHERE is_demo=1)')
     return jsonify(ok=True)
