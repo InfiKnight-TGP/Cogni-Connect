@@ -11,6 +11,7 @@ import {
 import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import Nav from "@/components/nav";
+import { useAuth } from "@/lib/auth-context";
 
 const ReportRadar = dynamic(() => import("./RadarChart"), {
   ssr: false,
@@ -143,11 +144,12 @@ function exportCsv(report: DayReport, date: string) {
 }
 
 export default function ReportPage() {
+  const { session } = useAuth();
   return (
-    <><Nav /><CaregiverOnly>
+    <><Nav />{session?.role === "self" ? <Report /> : <CaregiverOnly>
       <div className="mx-auto max-w-3xl px-8 pt-24 lg:ml-[260px] lg:pt-8 print:hidden"><p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Caregiver portal</p><h2 className="mt-1 text-3xl font-bold">Doctor&apos;s Report</h2></div>
       <Report />
-    </CaregiverOnly>
+    </CaregiverOnly>}
     </>
   );
 }
