@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { mediaUrl, apiFetch, API_URL } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
+import { useAuth } from "@/lib/auth-context";
 import CaregiverPageLabel from "@/components/caregiver/pageLabel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
@@ -39,6 +40,8 @@ export default function PeoplePage() {
   const [loadError, setLoadError] = useState(false);
   const [version, setVersion] = useState(0); // busts the photo cache after an edit
   const [caregiver] = useCaregiver();
+  const { session } = useAuth();
+  const canEdit = caregiver || session?.role === "self";
 
   const load = useCallback(async () => {
     try {
@@ -71,7 +74,7 @@ export default function PeoplePage() {
             <p className="text-xl">{t("Sorry, we could not load the people right now.")}</p>
           ) : people === null ? (
             <p className="text-xl">{t("Loading…")}</p>
-          ) : caregiver ? (
+          ) : canEdit ? (
             <ManagePeople people={people} photoUrl={photoUrl} reload={load} />
           ) : people.length === 0 ? (
             <><p className="text-2xl">{t("No people added yet.")}</p><ReadAloud autoRead={false} text={t("No people added yet.")} /></>

@@ -1310,7 +1310,10 @@ def init_auth(app, legacy_settings):
                 return jsonify(error='Demo uploads are limited to three per day.'), 403
         if request.endpoint == 'delete_performance' and not (is_caregiver() or self_account()):
             return error(403)
-        if request.endpoint in CAREGIVER_ENDPOINTS and not is_caregiver():
+        if request.endpoint in {'add_person', 'update_person', 'delete_person'}:
+            if not (is_caregiver() or self_account()):
+                return error(403)
+        elif request.endpoint in CAREGIVER_ENDPOINTS and not is_caregiver():
             return error(403)
         if request.endpoint == 'upload_video' and not (is_caregiver() or self_account()):
             return error(403)
