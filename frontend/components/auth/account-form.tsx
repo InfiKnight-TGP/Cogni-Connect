@@ -13,24 +13,26 @@ export default function AccountForm({ kind }: { kind: Kind }) {
   const [email, setEmail] = useState(""); const [name, setName] = useState("");
   const [password, setPassword] = useState(""); const [code, setCode] = useState("");
   const [challenge, setChallenge] = useState(""); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
+  const [signupMode, setSignupMode] = useState<"self" | "caregiver">("caregiver");
   const [devWindow, setDevWindow] = useState(process.env.NEXT_PUBLIC_DEV_LOGIN === "1");
   const verification = kind === "verify" || kind === "reset";
   useEffect(() => {
     if (verification) setChallenge(sessionStorage.getItem(`cogni-${kind}-challenge`) ?? "");
   }, [kind, verification]);
   useEffect(() => { if (kind === "login") setDevWindow(process.env.NEXT_PUBLIC_DEV_LOGIN === "1" && !window.location.search.includes("full=1")); }, [kind]);
+  useEffect(() => { if (kind === "signup" && new URLSearchParams(window.location.search).get("mode") === "self") setSignupMode("self"); }, [kind]);
   if (kind === "login" && devWindow) return <DevLoginWindow onFullSignIn={() => setDevWindow(false)} />;
   const continueLogin = async () => {
     const session = await refresh();
     if (!session) throw new Error("Could not load your account. Please try again.");
-    router.replace("/caregiver");
+    router.replace(session.role === "caregiver" ? "/caregiver" : "/");
   };
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true); setNotice("");
     try {
       const path = kind === "verify" ? "/auth/otp/verify" : `/auth/${kind}`;
       const data = await apiJSON<{ challenge?: string; requiresCode?: boolean }>(path, {
-        ...jsonBody(verification ? { challenge, code, password } : { email, name, password }), authRedirect: false,
+        ...jsonBody(verification ? { challenge, code, password } : { email, name, password, ...(kind === "signup" ? { mode: signupMode } : {}) }), authRedirect: false,
       });
       if (kind === "forgot" || data.requiresCode) {
         const next = kind === "forgot" ? "reset" : "verify";
@@ -53,11 +55,11 @@ export default function AccountForm({ kind }: { kind: Kind }) {
     finally { setBusy(false); }
   };
   return <AuthFrame title={titles[kind]}>
-    {kind === "login" && process.env.NEXT_PUBLIC_DEMO === "1" && <div className="mb-5 space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4"><h2 className="text-xl font-bold">Try the demo</h2><p className="text-base">Caregiver: demo@cogniconnect.com / Demo@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("demo@cogniconnect.com"); setPassword("Demo@1234"); }}>Fill in caregiver</button><p className="text-base">Patient: patient@cogniconnect.com / Patient@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("patient@cogniconnect.com"); setPassword("Patient@1234"); }}>Fill in patient</button><p className="text-base">Demo code: 123456</p></div>}
+    {kind === "login" && process.env.NEXT_PUBLIC_DEMO === "1" && <div className="mb-5 space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4"><h2 className="text-xl font-bold">Try the demo</h2><p className="text-base">Self-care: patient@cogniconnect.com / Patient@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("patient@cogniconnect.com"); setPassword("Patient@1234"); }}>Fill in self-care</button><p className="text-base">Caregiver: demo@cogniconnect.com / Demo@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("demo@cogniconnect.com"); setPassword("Demo@1234"); }}>Fill in caregiver</button><p className="text-base">Code: 123456</p></div>}
     {verification && <p>{t("Enter the six-digit code from your email. It is valid for five minutes.")}</p>}
     {kind === "forgot" && <p>{t("If an account exists for this email, we will send a reset code.")}</p>}
     <form onSubmit={submit} className="space-y-5">
-      {kind === "signup" && <label className="block">{t("Your name")}<input required maxLength={100} autoComplete="name" className={fieldClass} value={name} onChange={e => setName(e.target.value)} /></label>}
+      {kind === "signup" && <><fieldset className="grid gap-3 sm:grid-cols-2"><legend className="sr-only">Account type</legend><button type="button" onClick={() => setSignupMode("self")} className={`min-h-14 rounded-xl border-2 p-3 text-left font-semibold ${signupMode === "self" ? "border-primary bg-primary/10" : "border-border"}`}>For myself</button><button type="button" onClick={() => setSignupMode("caregiver")} className={`min-h-14 rounded-xl border-2 p-3 text-left font-semibold ${signupMode === "caregiver" ? "border-primary bg-primary/10" : "border-border"}`}>For someone I care for</button></fieldset><label className="block">{t("Your name")}<input required maxLength={100} autoComplete="name" className={fieldClass} value={name} onChange={e => setName(e.target.value)} /></label>{signupMode === "self" && <p className="rounded-xl border border-primary/30 bg-primary/5 p-4">This creates a private self-care profile. You can invite someone you trust later, and your profile stays yours.</p>}</>}
       {!verification && <label className="block">{t("Email")}<input required type="email" maxLength={200} autoComplete="email" className={fieldClass} value={email} onChange={e => setEmail(e.target.value)} /></label>}
       {verification && <CodeInput length={6} label={t("Email code")} value={code} onChange={setCode} />}
       {kind !== "forgot" && kind !== "verify" && <PasswordField value={password} onChange={setPassword} current={kind === "login"} />}

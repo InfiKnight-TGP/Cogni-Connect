@@ -36,6 +36,12 @@ export default function PrivacyPage() {
         </section>
 
         <section className="space-y-4">
+          <h2 className="text-2xl font-bold">{t("Self-care accounts")}</h2>
+          <p>{t("A self-care account belongs to the person using CogniConnect. You can invite a trusted family member, see who has access, and remove access whenever you choose.")}</p>
+          <p>{t("If you use a patient email account, login codes are sent to the patient email or the owner's email chosen when the account was created. You can request deletion of your account and data from the server operator.")}</p>
+        </section>
+
+        <section className="space-y-4">
           <h2 className="text-2xl font-bold">{t("Use of OpenAI’s API")}</h2>
           <p>
             {t("Transcripts and video frames are sent to OpenAI’s API to support transcription and to create questions and answers about the memories.")}

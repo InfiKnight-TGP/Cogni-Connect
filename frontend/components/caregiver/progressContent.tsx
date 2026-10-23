@@ -31,6 +31,7 @@ export default function ProgressContent() {
   const [failed, setFailed] = useState(false);
   const [adaptive, setAdaptive] = useState<Record<string, AdaptiveState> | null>(null);
   const [adaptiveError, setAdaptiveError] = useState("");
+  const [showNotes, setShowNotes] = useState(false);
   const today = new Date();
 
   useEffect(() => {
@@ -75,7 +76,8 @@ export default function ProgressContent() {
       ) : (
         <>
 
-          {notes.map((n) => (
+          <label className="flex items-center gap-3 text-base"><input type="checkbox" checked={showNotes} onChange={event => setShowNotes(event.target.checked)} /> Show detailed trend notes</label>
+          {showNotes && notes.map((n) => (
             <div key={n.area} role="note" className="flex gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
               <span aria-hidden className="text-xl">ℹ️</span>
               <p>

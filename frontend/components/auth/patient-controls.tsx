@@ -5,6 +5,18 @@ import { useAuth } from "@/lib/auth-context";
 import { CodeInput, Notice, PasswordField, actionClass, secondaryClass, fieldClass } from "./fields";
 type Device = { id: string; device_label: string; last_seen: number };
 type PairCode = { code: string; expiresAt: number };
+type Member = { id: string; email: string; name?: string; role: string };
+
+export function FamilySharing() {
+  const { session } = useAuth();
+  const [members, setMembers] = useState<Member[]>([]); const [invite, setInvite] = useState<PairCode | null>(null); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false);
+  const patient = session?.activePatient;
+  const load = useCallback(async () => { if (!patient?.id) return; const result = await apiJSON<{ members: Member[] }>(`/patients/${encodeURIComponent(patient.id)}/members`); setMembers(result.members); }, [patient?.id]);
+  useEffect(() => { if (session?.role === "self" && patient?.id) void load().catch(() => setNotice("Could not load family access.")); }, [load, patient?.id, session?.role]);
+  if (session?.role !== "self" || !patient) return null;
+  const createInvite = async () => { setBusy(true); setNotice(""); try { setInvite(await apiJSON<PairCode>("/pair/invite", jsonBody({ patient_id: patient.id }))); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not create an invite."); } finally { setBusy(false); } };
+  return <section className="space-y-5 rounded-2xl border bg-card p-5 sm:p-7"><h2 className="text-2xl font-bold">Family &amp; sharing</h2><p className="text-lg">Invite someone you trust to help with your profile. You can remove their access at any time.</p><button className={actionClass} disabled={busy} onClick={() => void createInvite()}>Invite a family member</button>{invite && <div className="rounded-xl border-2 border-primary bg-primary/5 p-4"><p className="font-semibold">Share this code once. It expires in 48 hours.</p><p className="mt-2 font-mono text-3xl font-bold tracking-wider">{invite.code}</p></div>}<h3 className="text-xl font-bold">People with access</h3><ul className="space-y-3">{members.map(member => <li key={member.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"><span>{member.name || member.email} <span className="text-sm text-muted-foreground">({member.role})</span></span>{member.role !== "owner" && <button className={secondaryClass} disabled={busy} onClick={async () => { if (!window.confirm("Remove this person's access?")) return; setBusy(true); try { await apiJSON(`/patients/${encodeURIComponent(patient.id)}/members/${encodeURIComponent(member.id)}`, { method: "DELETE" }); await load(); setNotice("Access removed."); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not remove access."); } finally { setBusy(false); } }}>Remove</button>}</li>)}</ul><Notice>{notice}</Notice></section>;
+}
 
 export function PairingPanel({ patientId }: { patientId: string }) {
   const [devices, setDevices] = useState<Device[]>([]);
@@ -117,8 +129,8 @@ export function PatientsAndDevices() {
 export function AccountSettings() {
   const { session, logout } = useAuth(); const [password, setPassword] = useState(""); const [current, setCurrent] = useState("");
   const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false);
-  if (session?.role !== "caregiver") return null;
-  return <section className="space-y-5 rounded-2xl border bg-card p-5 sm:p-7"><h2 className="text-2xl font-bold">Account</h2><p className="break-all text-xl">{session.user?.email}</p>
+  if (session?.role !== "caregiver" && session?.role !== "self") return null;
+  return <section className="space-y-5 rounded-2xl border bg-card p-5 sm:p-7"><h2 className="text-2xl font-bold">{session.role === "self" ? "Your account" : "Account"}</h2><p className="break-all text-xl">{session.user?.email}</p>
     <form className="space-y-4" onSubmit={async event => {
       event.preventDefault(); setBusy(true); setNotice("");
       try { await apiJSON("/auth/password", jsonBody({ current_password: current, password })); setCurrent(""); setPassword(""); setNotice("Password changed. Other caregiver sessions have been signed out."); }

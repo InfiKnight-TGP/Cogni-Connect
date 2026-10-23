@@ -73,10 +73,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [ready, error, publicRoute, session, pathname, router]);
   const selectPatient = async (id: string) => {
     const next = await apiJSON<AuthSession>("/auth/me", { headers: { "X-Cogni-Patient": id } });
-    if (next.role !== "caregiver" || next.activePatient?.id !== id) throw new Error("Unable to select this patient.");
+    if ((next.role !== "caregiver" && next.role !== "self") || next.activePatient?.id !== id) throw new Error("Unable to select this patient.");
     document.cookie = `cogni_patient=${encodeURIComponent(id)}; Path=/; SameSite=Lax${location.protocol === "https:" ? "; Secure" : ""}`;
     // Discard all old patient requests, game state, and media before switching.
-    setSessionSnapshot(null); window.location.assign("/caregiver");
+    setSessionSnapshot(null); window.location.assign(next.role === "caregiver" ? "/caregiver" : "/");
   };
   const logout = async () => {
     await apiJSON("/auth/logout", jsonBody({})); commit(null); window.location.assign("/welcome");
