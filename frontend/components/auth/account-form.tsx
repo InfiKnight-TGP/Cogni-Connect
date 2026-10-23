@@ -14,6 +14,7 @@ export default function AccountForm({ kind }: { kind: Kind }) {
   const [password, setPassword] = useState(""); const [code, setCode] = useState("");
   const [challenge, setChallenge] = useState(""); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
   const [signupMode, setSignupMode] = useState<"self" | "caregiver">("caregiver");
+  const [loginMode, setLoginMode] = useState<"self" | "caregiver">("caregiver");
   const [devWindow, setDevWindow] = useState(process.env.NEXT_PUBLIC_DEV_LOGIN === "1");
   const verification = kind === "verify" || kind === "reset";
   useEffect(() => {
@@ -21,6 +22,7 @@ export default function AccountForm({ kind }: { kind: Kind }) {
   }, [kind, verification]);
   useEffect(() => { if (kind === "login") setDevWindow(process.env.NEXT_PUBLIC_DEV_LOGIN === "1" && !window.location.search.includes("full=1")); }, [kind]);
   useEffect(() => { if (kind === "signup" && new URLSearchParams(window.location.search).get("mode") === "self") setSignupMode("self"); }, [kind]);
+  useEffect(() => { if (kind === "login" && new URLSearchParams(window.location.search).get("mode") === "self") setLoginMode("self"); }, [kind]);
   if (kind === "login" && devWindow) return <DevLoginWindow onFullSignIn={() => setDevWindow(false)} />;
   const continueLogin = async () => {
     const session = await refresh();
@@ -55,7 +57,7 @@ export default function AccountForm({ kind }: { kind: Kind }) {
     finally { setBusy(false); }
   };
   return <AuthFrame title={titles[kind]}>
-    {kind === "login" && process.env.NEXT_PUBLIC_DEMO === "1" && <div className="mb-5 space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4"><h2 className="text-xl font-bold">Try the demo</h2><p className="text-base">Self-care: patient@cogniconnect.com / Patient@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("patient@cogniconnect.com"); setPassword("Patient@1234"); }}>Fill in self-care</button><p className="text-base">Caregiver: demo@cogniconnect.com / Demo@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("demo@cogniconnect.com"); setPassword("Demo@1234"); }}>Fill in caregiver</button><p className="text-base">Code: 123456</p></div>}
+    {kind === "login" && process.env.NEXT_PUBLIC_DEMO === "1" && <div className="mb-5 space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4"><h2 className="text-xl font-bold">Try the demo</h2>{loginMode === "self" ? <><p className="text-base">Self-care: patient@cogniconnect.com / Patient@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("patient@cogniconnect.com"); setPassword("Patient@1234"); }}>Fill in self-care</button></> : <><p className="text-base">Caregiver: demo@cogniconnect.com / Demo@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("demo@cogniconnect.com"); setPassword("Demo@1234"); }}>Fill in caregiver</button></>}<p className="text-base">Code: 123456</p></div>}
     {verification && <p>{t("Enter the six-digit code from your email. It is valid for five minutes.")}</p>}
     {kind === "forgot" && <p>{t("If an account exists for this email, we will send a reset code.")}</p>}
     <form onSubmit={submit} className="space-y-5">
@@ -68,7 +70,7 @@ export default function AccountForm({ kind }: { kind: Kind }) {
       <button className={`${actionClass} w-full`} disabled={busy || (verification && (!challenge || code.length !== 6))}>{t(busy ? "Please wait…" : kind === "forgot" ? "Send reset code" : kind === "reset" ? "Save new password" : "Continue")}</button>
     </form>
     {verification && <><button type="button" className={secondaryClass} disabled={busy || !challenge} onClick={() => void resend()}>{t("Send a new code")}</button><p className="text-lg">{t("Code expired?")} <Link className="text-primary underline" href={kind === "reset" ? "/forgot" : "/login"}>{t("Start again")}</Link></p></>}
-    {kind === "login" && <div className="flex flex-wrap gap-6 text-lg"><Link className="min-h-12 text-primary underline" href="/signup">{t("Create an account")}</Link><Link className="min-h-12 text-primary underline" href="/forgot">{t("Forgot password?")}</Link></div>}
+    {kind === "login" && <div className="flex flex-wrap gap-6 text-lg"><Link className="min-h-12 text-primary underline" href="/signup">{t("Create an account")}</Link><Link className="min-h-12 text-primary underline" href="/login?mode=self">Self-care sign in</Link><Link className="min-h-12 text-primary underline" href="/forgot">{t("Forgot password?")}</Link></div>}
     {kind === "signup" && <Link className="inline-flex min-h-12 items-center text-primary underline" href="/login">{t("Already have an account? Sign in")}</Link>}
   </AuthFrame>;
 }
