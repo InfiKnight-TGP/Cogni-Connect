@@ -2046,7 +2046,23 @@ def _build_about_summary(c):
         if parts:
             first_sent = parts[0].strip().strip('"\'').rstrip('.!?')
             if len(first_sent) > 120:
-                first_sent = first_sent[:117].rsplit(' ', 1)[0].rstrip(' ,;:') + '...'
+                major = [cl.strip() for cl in re.split(r'\s*,\s*(?:and|but)\s+|\s*;\s*', first_sent) if cl.strip()]
+                if major and 10 <= len(major[0]) <= 120:
+                    first_sent = major[0].rstrip(' ,;:')
+                else:
+                    sub = first_sent[:120]
+                    delims = list(re.finditer(r'(?:,\s*(?:and\s+)?|\s+and\s+|;\s*|:\s*)', sub))
+                    matched_clause = None
+                    for m in reversed(delims):
+                        cand = sub[:m.start()].rstrip(' ,;:')
+                        w = cand.split()
+                        if len(w) >= 3 and w[-1].lower() not in ('really', 'very', 'so', 'and', 'the', 'a', 'an', 'that'):
+                            matched_clause = cand
+                            break
+                    if matched_clause:
+                        first_sent = matched_clause
+                    else:
+                        first_sent = sub.rsplit(' ', 1)[0].rstrip(' ,;:')
             s3 = f"In the video you say: '{first_sent}'."
     return ' '.join(s for s in [s1, s2, s3] if s)
 
@@ -2143,7 +2159,7 @@ def ask_memory():
     content_words = {w for w in words if w not in ENGLISH_STOPWORDS and len(w) > 1}
 
     is_when = bool(words & {'when', 'date', 'day'})
-    is_who = bool(words & {'who', 'whom', 'with'})
+    is_who = bool(words & {'who', 'whom'}) or ('who was with' in low)
 
     about_phrases = (
         'tell me about', 'describe', 'what happened', 'what is this', 'where was i',
@@ -2185,8 +2201,25 @@ def ask_memory():
     if c and is_about:
         ans = _build_about_summary(c)
     elif c and is_when:
-        d = _friendly_memory_date(c['date'])
-        ans = f"You went to {c['title']} on {d['dateLabel'] or d['date']}."
+        try:
+            day = datetime.fromisoformat(str(c['date'])[:10]).date()
+            full_date = _format_day_full(day)
+            today = datetime.now().date()
+            diff = (today - day).days
+            if diff == 0:
+                when_str = f"today, {full_date}"
+            elif diff == 1:
+                when_str = f"yesterday, {full_date}"
+            else:
+                when_str = f"on {full_date}"
+        except Exception:
+            when_str = f"on {c.get('date', '')}"
+
+        if scope == 'all':
+            title_part = f"'{c['title']}'" if c.get('title') else "That"
+            ans = f"{title_part} was {when_str}."
+        else:
+            ans = f"That was {when_str}."
     elif c and is_who:
         if c.get('people'):
             if len(c['people']) == 1:
@@ -2196,7 +2229,8 @@ def ask_memory():
         else:
             ans = None
     elif c and is_what:
-        is_animal_q = bool(words & {'animal', 'animals', 'behind', 'creature', 'creatures'})
+        animal_words = {'animal', 'animals', 'behind', 'creature', 'creatures', 'elephant', 'elephants', 'lion', 'lions', 'tiger', 'tigers', 'bear', 'bears', 'monkey', 'monkeys', 'dog', 'dogs', 'cat', 'cats', 'bird', 'birds'}
+        is_animal_q = bool(words & animal_words)
         if is_animal_q:
             trans_items = c.get('transcript') or []
             trans_sentences = []

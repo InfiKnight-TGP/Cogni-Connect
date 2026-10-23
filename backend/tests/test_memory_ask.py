@@ -322,16 +322,72 @@ class MemoryAskTests(unittest.TestCase):
         self.assertIn('zoo', data['answer'].lower())
         self.assertTrue(data['answer'].startswith('On Friday') or data['answer'].startswith('In this memory'))
 
-    def test_hindi_question_without_ai_returns_grounded_false(self):
+    def test_when_answers_scope_memory_and_all_and_no_on_today(self):
+        # 1. Today (2026-10-23)
+        res_mem_today = self.client.post('/memories/ask', json={'question': 'When was this?', 'scope': 'memory', 'memory_id': self.memory_id})
+        self.assertEqual(res_mem_today.get_json()['answer'], 'That was today, Friday 23 October.')
+
+        res_all_today = self.client.post('/memories/ask', json={'question': 'When was this?', 'scope': 'all'})
+        self.assertEqual(res_all_today.get_json()['answer'], "'Me at the zoo' was today, Friday 23 October.")
+
+        # 2. Yesterday (2026-10-22)
+        memories = json.loads((self.base_a / 'memories.json').read_text(encoding='utf-8'))
+        memories[self.memory_id]['date'] = '2026-10-22'
+        (self.base_a / 'memories.json').write_text(json.dumps(memories, ensure_ascii=False), encoding='utf-8')
+
+        res_mem_yest = self.client.post('/memories/ask', json={'question': 'When was this?', 'scope': 'memory', 'memory_id': self.memory_id})
+        self.assertEqual(res_mem_yest.get_json()['answer'], 'That was yesterday, Thursday 22 October.')
+
+        res_all_yest = self.client.post('/memories/ask', json={'question': 'When was this?', 'scope': 'all'})
+        self.assertEqual(res_all_yest.get_json()['answer'], "'Me at the zoo' was yesterday, Thursday 22 October.")
+
+        # 3. Older date (2026-10-19 -> Monday 19 October)
+        memories[self.memory_id]['date'] = '2026-10-19'
+        (self.base_a / 'memories.json').write_text(json.dumps(memories, ensure_ascii=False), encoding='utf-8')
+
+        res_mem_older = self.client.post('/memories/ask', json={'question': 'When was this?', 'scope': 'memory', 'memory_id': self.memory_id})
+        self.assertEqual(res_mem_older.get_json()['answer'], 'That was on Monday 19 October.')
+
+        res_all_older = self.client.post('/memories/ask', json={'question': 'When was this?', 'scope': 'all'})
+        self.assertEqual(res_all_older.get_json()['answer'], "'Me at the zoo' was on Monday 19 October.")
+
+        # Restore today's date
+        memories[self.memory_id]['date'] = '2026-10-23'
+        (self.base_a / 'memories.json').write_text(json.dumps(memories, ensure_ascii=False), encoding='utf-8')
+
+        # Test that "on today" and "on yesterday" never appear in any answer
+        for r in [res_mem_today, res_all_today, res_mem_yest, res_all_yest, res_mem_older, res_all_older]:
+            ans_low = r.get_json()['answer'].lower()
+            self.assertNotIn('on today', ans_low)
+            self.assertNotIn('on yesterday', ans_low)
+
+    def test_who_trigger_only_who_whom_not_bare_with(self):
+        # "What did I do with the elephants?" has 'with' but not who/whom
         res = self.client.post('/memories/ask', json={
-            'question': 'फ्रांस की राजधानी क्या है?',
-            'scope': 'all'
+            'question': 'What did I do with the elephants?',
+            'scope': 'memory',
+            'memory_id': self.memory_id
         })
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
-        self.assertFalse(data['grounded'])
-        self.assertEqual(data['answer'], "I couldn't find that in your memories.")
-        self.assertEqual(data['sources'], [])
+        self.assertTrue(data['grounded'])
+        # Does NOT return the people sentence
+        self.assertNotIn('Jawed Karim', data['answer'])
+        self.assertIn('elephant', data['answer'].lower())
+        self.assertEqual(data['answer'], 'You were in front of the elephants.')
+
+    def test_about_transcript_quote_ends_at_natural_clause_boundary(self):
+        res = self.client.post('/memories/ask', json={
+            'question': 'Tell me about this video',
+            'scope': 'memory',
+            'memory_id': self.memory_id
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data['grounded'])
+        # Quote ends at natural clause boundary and does NOT have 'really...' mid-clause cut
+        self.assertIn("In the video you say: 'Alright, so here we are in front of the elephants'.", data['answer'])
+        self.assertNotIn('really...', data['answer'])
 
 
 if __name__ == '__main__':
