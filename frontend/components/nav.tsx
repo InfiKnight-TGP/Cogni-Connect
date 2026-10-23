@@ -19,7 +19,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import React, { useState } from "react";
 import { PinDialog } from "./caregiver";
-import { lockCaregiver, useCaregiver } from "@/lib/mode";
+import { lockCaregiver, SHOW_DEVICE_CAREGIVER_ACCESS, useCaregiver } from "@/lib/mode";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 import { useAuth } from "@/lib/auth-context";
 import { PUBLIC_ROUTES } from "@/lib/auth-session";
@@ -69,6 +69,7 @@ export default function Nav() {
   const links = caregiver ? CAREGIVER_LINKS : PATIENT_LINKS;
   const isActive = (href: string) => pathname === href;
 
+  const showDeviceCaregiver = session?.role === "patient_device" && SHOW_DEVICE_CAREGIVER_ACCESS;
   const modeButton = caregiver
     ? {
         label: t(session?.role === "caregiver" ? "Sign out" : "Exit caregiver"),
@@ -78,8 +79,10 @@ export default function Nav() {
           void (session?.role === "caregiver" ? logout() : lockCaregiver()).catch(() => setNotice("Could not sign out. Please try again."));
         },
       }
-    : { label: t("Caregiver"), short: t("Caregiver"), icon: Lock, onClick: () => setPinOpen(true) };
-  const ModeIcon = modeButton.icon;
+    : showDeviceCaregiver
+      ? { label: t("Caregiver"), short: t("Caregiver"), icon: Lock, onClick: () => setPinOpen(true) }
+      : null;
+  const ModeIcon = modeButton?.icon;
   const switcher = session?.role === "caregiver" && session.patients.length > 1 ? <label className="block text-sm font-semibold">Patient<select aria-label="Active patient" className="mt-1 min-h-12 w-full rounded-xl border bg-background px-2 text-lg" value={session.activePatient?.id ?? ""} disabled={switching} onChange={event => {
     setSwitching(true); setNotice(""); void selectPatient(event.target.value).catch(error => { setNotice(error.message); setSwitching(false); });
   }}>{session.patients.map(patient => <option key={patient.id} value={patient.id}>{patient.name}</option>)}</select></label> : null;
@@ -128,10 +131,10 @@ export default function Nav() {
         <div className="flex flex-col gap-2 border-t border-border pt-4">
           {!caregiver && <Link href="/settings" aria-current={isActive("/settings") ? "page" : undefined} className={itemClass(isActive("/settings"))}><Settings className="h-8 w-8 shrink-0 text-muted-foreground" /><span>{t("Settings")}</span></Link>}
           {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={itemClass(isActive("/caregiver/settings"))}><Settings className="h-8 w-8 shrink-0 text-muted-foreground" /><span>{t("Settings")}</span></Link>}
-          <button type="button" className={itemClass(false)} onClick={modeButton.onClick}>
-            <ModeIcon className="h-8 w-8 shrink-0 text-muted-foreground" />
+          {modeButton && <button type="button" className={itemClass(false)} onClick={modeButton.onClick}>
+            {ModeIcon && <ModeIcon className="h-8 w-8 shrink-0 text-muted-foreground" />}
             <span className="min-w-0 break-words">{modeButton.label}</span>
-          </button>
+          </button>}
         </div>
       </aside>
 
@@ -159,14 +162,14 @@ export default function Nav() {
         })}
         {!caregiver && <Link href="/settings" aria-current={isActive("/settings") ? "page" : undefined} className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${isActive("/settings") ? "border-primary text-primary" : "border-transparent text-foreground"}`}><Settings className="h-7 w-7" /><span className="whitespace-nowrap">{t("Settings")}</span></Link>}
         {caregiver && <Link href="/caregiver/settings" aria-current={isActive("/caregiver/settings") ? "page" : undefined} className={`flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 px-1 text-base font-semibold ${isActive("/caregiver/settings") ? "border-primary text-primary" : "border-transparent text-foreground"}`}><Settings className="h-7 w-7" /><span className="whitespace-nowrap">{t("Settings")}</span></Link>}
-        <button
+        {modeButton && <button
           type="button"
           onClick={modeButton.onClick}
           className="flex min-h-16 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 border-t-4 border-transparent px-1 text-base font-semibold text-muted-foreground"
         >
-          <ModeIcon className="h-7 w-7" />
+          {ModeIcon && <ModeIcon className="h-7 w-7" />}
           <span className="whitespace-nowrap">{modeButton.short}</span>
-        </button>
+        </button>}
       </nav>
 
       <PinDialog open={pinOpen} onOpenChange={setPinOpen} onUnlocked={() => router.push("/caregiver")} />

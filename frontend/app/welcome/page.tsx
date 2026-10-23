@@ -12,10 +12,10 @@ const safeNext = (value: string | null) => value && value.startsWith("/") && !va
 
 export default function Welcome() {
   const { session } = useAuth(); const { t } = useTranslate(); const router = useRouter();
-  const [tab, setTab] = useState<Tab>("signin"); const [expired, setExpired] = useState(false); const [resetDone, setResetDone] = useState(false); const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [tab, setTab] = useState<Tab>("signin"); const [expired, setExpired] = useState(false); const [resetDone, setResetDone] = useState(false); const [unsetDone, setUnsetDone] = useState(false); const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   useEffect(() => {
     const query = new URLSearchParams(window.location.search); const requested = query.get("tab");
-    setTab(requested === "signup" ? "signup" : "signin"); setExpired(query.get("expired") === "patient"); setResetDone(query.get("reset") === "done");
+    setTab(requested === "signup" ? "signup" : "signin"); setExpired(query.get("expired") === "patient"); setResetDone(query.get("reset") === "done"); setUnsetDone(query.get("unset") === "done");
     if (session) router.replace(safeNext(query.get("next")) ?? (session.role === "caregiver" ? "/caregiver" : "/"));
   }, [router, session]);
   const selectTab = (next: Tab) => { setTab(next); const query = new URLSearchParams(window.location.search); query.set("tab", next); router.replace(`/welcome?${query.toString()}`, { scroll: false }); };
@@ -24,6 +24,7 @@ export default function Welcome() {
     <p>{t("A little support for everyday memories.")}</p>
     {expired && <p role="status" className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4">{t("Please ask your caregiver for a new code")}</p>}
     {resetDone && <p role="status" className="rounded-xl border border-primary/40 bg-primary/10 p-4">{t("Your password was changed. Please sign in again.")}</p>}
+    {unsetDone && <p role="status" className="rounded-xl border border-primary/40 bg-primary/10 p-4">{t("This device has been unset.")}</p>}
     <div role="tablist" aria-label={t("Account access")} className="grid grid-cols-2 rounded-xl border-2 border-border p-1">
       {(["signin", "signup"] as const).map((value, index) => <button key={value} ref={element => { tabRefs.current[index] = element; }} role="tab" aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => selectTab(value)} onKeyDown={event => onTabKey(event, index)} className={`min-h-14 rounded-lg px-4 text-xl font-bold focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40 ${tab === value ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`}>{t(value === "signin" ? "Sign in" : "Sign up")}</button>)}
     </div>

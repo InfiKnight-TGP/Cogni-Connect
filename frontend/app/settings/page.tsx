@@ -9,7 +9,7 @@ import { useInteraction, usePreferences, useTranslate, type LanguageCode } from 
 import { LANGUAGES } from "@/components/siteLinks";
 import type { Preferences } from "@/lib/interaction/preferences";
 import ReadAloud from "@/components/interaction/ReadAloud";
-import { AccountSettings, FamilySharing } from "@/components/auth/patient-controls";
+import { AccountSettings, DeviceUnset, FamilySharing } from "@/components/auth/patient-controls";
 import { useAuth } from "@/lib/auth-context";
 
 function ToggleRow({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (next: boolean) => void; disabled?: boolean }) {
@@ -55,7 +55,7 @@ export default function PatientSettingsPage() {
     <Nav />
     <main className="mx-auto max-w-6xl px-4 pb-20 pt-24 lg:pt-8">
       <h1 className="mb-8 text-4xl font-extrabold tracking-tight">{t("Settings")}</h1>
-      {session?.role === "self" ? <div className="space-y-6"><AccountSettings /><FamilySharing /></div> : caregiverReady && caregiver ? <div className="rounded-2xl border border-border bg-card p-6 text-lg"><p>{t("Patient preferences are available in patient mode.")}</p><Link className="mt-4 inline-flex min-h-12 items-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground" href="/caregiver/settings">{t("Open caregiver settings")}</Link></div> : !caregiverReady ? <p className="text-lg">{t("Loading…")}</p> : <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
+      {session?.role === "self" ? <div className="space-y-6"><AccountSettings /><FamilySharing /></div> : caregiverReady && caregiver ? <div className="rounded-2xl border border-border bg-card p-6 text-lg"><p>{t("Patient preferences are available in patient mode.")}</p><Link className="mt-4 inline-flex min-h-12 items-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground" href="/caregiver/settings">{t("Open caregiver settings")}</Link></div> : !caregiverReady ? <p className="text-lg">{t("Loading…")}</p> : <div className="space-y-6"><div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
           <h2 className="mb-5 text-2xl font-bold">{t("Preferences")}</h2>
           <ReadAloud autoRead={false} text={`${t("Activity experience")}. ${t("Sound effects")}. ${t("Animations")}. ${t("Encouraging messages")}. ${t("Accessibility")}. ${t("Read questions aloud")}. ${t("Answer by speaking")}. ${t("Listen automatically")}. ${t("Speech speed")}. ${t("Text size")}. ${t("Appearance")}. ${t("Theme")}. ${t("Language")}. ${t("Help")}. ${t("About")}. ${t("Terms")}. ${t("Privacy")}. ${t("Need help? Ask your caregiver.")}`} />
@@ -100,7 +100,7 @@ export default function PatientSettingsPage() {
           </nav>
           <p className="mt-5 border-t border-border pt-4 text-lg">{t("Need help? Ask your caregiver.")}</p>
         </aside>
-      </div>}
+      </div>{session?.role === "patient_device" && <DeviceUnset />}</div>}
     </main>
   </>;
 }

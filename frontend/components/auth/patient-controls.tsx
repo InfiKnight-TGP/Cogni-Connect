@@ -1,11 +1,49 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiJSON, jsonBody } from "@/lib/api";
+import { apiJSON, ApiError, jsonBody } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { CodeInput, Notice, PasswordField, actionClass, secondaryClass, fieldClass } from "./fields";
 type Device = { id: string; device_label: string; last_seen: number };
 type PairCode = { code: string; expiresAt: number };
 type Member = { id: string; email: string; name?: string; role: string };
+
+export function DeviceUnset() {
+  const { session } = useAuth();
+  const [open, setOpen] = useState(false); const [pin, setPin] = useState(""); const [showPin, setShowPin] = useState(false);
+  const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
+  if (session?.role !== "patient_device" || !session.activePatient) return null;
+  const patientName = session.activePatient.name;
+  const patientLogin = !!session.user;
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setBusy(true); setNotice("");
+    try {
+      await apiJSON("/device/unpair", jsonBody({ pin }));
+      window.location.assign("/welcome?unset=done");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) setNotice("Ask your caregiver to set a PIN first.");
+      else if (error instanceof ApiError && error.status === 429) setNotice("Too many attempts. Please wait before trying again.");
+      else if (error instanceof ApiError && error.status === 403) setNotice(error.message || "That PIN is not right.");
+      else setNotice(error instanceof Error ? error.message : "Could not unset this device.");
+    } finally { setBusy(false); }
+  };
+  return <section className="mt-10 border-t border-border pt-6 text-muted-foreground">
+    <h2 className="text-lg font-semibold">For caregivers</h2>
+    <button type="button" className="mt-3 min-h-12 rounded-xl border-2 border-border px-5 py-2 text-base font-semibold" onClick={() => { setOpen(true); setNotice(""); setPin(""); }}>
+      {patientLogin ? "Sign out" : "Unset this device"}
+    </button>
+    {open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setOpen(false); }}>
+      <form role="dialog" aria-modal="true" aria-labelledby="device-unset-title" onSubmit={submit} className="w-full max-w-lg space-y-5 rounded-2xl border bg-card p-6 text-foreground shadow-xl">
+        <h3 id="device-unset-title" className="text-2xl font-bold">{patientLogin ? "Sign out" : "Unset this device"}</h3>
+        <p className="text-lg">This disconnects the device from {patientName}&apos;s profile. A new pairing code is needed to use it again.</p>
+        <label className="block text-lg font-medium">4-digit PIN
+          <span className="mt-2 flex gap-2"><input required inputMode="numeric" autoComplete="off" pattern="[0-9]{4}" maxLength={4} type={showPin ? "text" : "password"} className={fieldClass} value={pin} onChange={event => setPin(event.target.value.replace(/\D/g, ""))} /><button type="button" className={secondaryClass} onClick={() => setShowPin(value => !value)}>{showPin ? "Hide" : "Show"}</button></span>
+        </label>
+        {notice && <p role="alert" className="text-lg">{notice}</p>}
+        <div className="flex flex-wrap gap-3"><button type="button" className={secondaryClass} onClick={() => setOpen(false)}>Cancel</button><button type="submit" className={actionClass} disabled={busy || pin.length !== 4}>{busy ? "Checking…" : "Confirm"}</button></div>
+      </form>
+    </div>}
+  </section>;
+}
 
 export function FamilySharing() {
   const { session } = useAuth();
@@ -23,6 +61,7 @@ export function PairingPanel({ patientId }: { patientId: string }) {
   const [pair, setPair] = useState<PairCode | null>(null);
   const [kind, setKind] = useState<"device" | "caregiver">("device");
   const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false);
+  const [pinPrompt, setPinPrompt] = useState(false); const [newPin, setNewPin] = useState("");
   const [connected, setConnected] = useState(false); const [expired, setExpired] = useState(false);
   const previous = useRef<string[]>([]);
   const load = useCallback(async () => {
@@ -48,17 +87,26 @@ export function PairingPanel({ patientId }: { patientId: string }) {
       previous.current = (await load()).map(device => device.id);
       const next = await apiJSON<PairCode>(nextKind === "device" ? "/pair/create" : "/pair/invite", jsonBody({ patient_id: patientId }));
       setKind(nextKind); setPair(next); setConnected(false); setExpired(false);
-    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not create a code."); }
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409 && nextKind === "device") setPinPrompt(true);
+      else setNotice(error instanceof Error ? error.message : "Could not create a code.");
+    }
     finally { setBusy(false); }
   };
   return <section className="space-y-5">
+    {pinPrompt && <form className="space-y-4 rounded-xl border-2 border-amber-500/50 bg-amber-500/10 p-4" onSubmit={async event => {
+      event.preventDefault(); setBusy(true); setNotice("");
+      try { await apiJSON(`/patients/${encodeURIComponent(patientId)}/pin`, jsonBody({ current_pin: "", new_pin: newPin })); setPinPrompt(false); setNewPin(""); await create("device"); }
+      catch (error) { setNotice(error instanceof Error ? error.message : "Could not save the PIN."); }
+      finally { setBusy(false); }
+    }}><h3 className="text-xl font-bold">Set a PIN before pairing</h3><p>Choose a 4-digit PIN. It is needed to unset the device.</p><input required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} className={fieldClass} value={newPin} onChange={event => setNewPin(event.target.value.replace(/\D/g, ""))} aria-label="New four-digit PIN" /><button className={actionClass} disabled={busy || newPin.length !== 4}>Save PIN and create code</button></form>}
     <div className="flex flex-wrap gap-3"><button disabled={busy} className={actionClass} onClick={() => void create("device")}>New pairing code</button><button disabled={busy} className={secondaryClass} onClick={() => void create("caregiver")}>Invite another caregiver</button></div>
     {pair && <div className="space-y-4 rounded-2xl border-2 border-primary bg-primary/5 p-5 text-center">
       <h3 className="text-xl font-bold">{kind === "device" ? "Patient device code" : "Caregiver invite code"}</h3>
       <p className="break-all font-mono text-4xl font-bold tracking-wider sm:text-5xl">{pair.code}</p>
       <p>{kind === "device" ? "Open /pair on the patient's device and enter this code. Valid for 24 hours, once." : "Share this with a trusted caregiver. After signing in, they can join from Patients & Devices. Valid for 48 hours, once."}</p>
       <button className={secondaryClass} onClick={async () => { try { await navigator.clipboard.writeText(pair.code); setNotice("Code copied."); } catch { setNotice("Select the code above to copy it."); } }}>Copy code</button>
-      {kind === "device" && <p role="status">{expired ? "This code has expired. Create a new code." : connected ? "Device connected!" : "Waiting for the device to connect…"}</p>}
+      {kind === "device" && <p role="status">{expired ? "This code has expired. Create a new code." : connected ? "Device connected. To unset this device later: Settings, then For caregivers, then Unset this device, using the PIN." : "Waiting for the device to connect…"}</p>}
     </div>}
     <h3 className="text-xl font-bold">Paired devices</h3>
     {devices.length === 0 && <p>No devices connected yet.</p>}
@@ -106,7 +154,7 @@ export function PatientsAndDevices() {
       try { await apiJSON(`/patients/${encodeURIComponent(patient.id)}/pin`, jsonBody({ current_pin: current, new_pin: pin })); setCurrent(""); setPin(""); setNotice("PIN saved."); await refresh(); }
       catch (error) { setNotice(error instanceof Error ? error.message : "Could not save PIN."); }
       finally { setBusy(false); }
-    }}><h3 className="text-xl font-bold">Set or change caregiver PIN</h3><p>Leave the current PIN empty when setting one for the first time. Changing it ends caregiver mode on paired devices.</p>
+    }}><h3 className="text-xl font-bold">Set or change caregiver PIN</h3><p>Set a PIN before pairing a new device. Existing devices keep working if no PIN is set. Leave the current PIN empty when setting one for the first time. Changing it ends caregiver mode on paired devices.</p>
       <label className="block">Current PIN<input className={fieldClass} type="password" inputMode="numeric" autoComplete="off" maxLength={4} value={current} onChange={e => setCurrent(e.target.value.replace(/\D/g, ""))} /></label>
       <label className="block">New four-digit PIN<input required className={fieldClass} type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" maxLength={4} value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ""))} /></label>
       <button className={secondaryClass} disabled={busy || pin.length !== 4}>Save PIN</button>
