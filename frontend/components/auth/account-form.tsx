@@ -14,8 +14,9 @@ export default function AccountForm({ kind, embedded = false }: { kind: Kind; em
   const [password, setPassword] = useState(""); const [code, setCode] = useState("");
   const [rememberDevice, setRememberDevice] = useState(true);
   const [challenge, setChallenge] = useState(""); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
-  const [signupMode, setSignupMode] = useState<"self" | "caregiver">(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mode") === "self" ? "self" : "caregiver");
-  const [loginMode, setLoginMode] = useState<"self" | "caregiver">(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mode") === "self" ? "self" : "caregiver");
+  // Keep the first render identical on the server and client; URL modes are applied after hydration.
+  const [signupMode, setSignupMode] = useState<"self" | "caregiver">("caregiver");
+  const [loginMode, setLoginMode] = useState<"self" | "caregiver">("caregiver");
   const [devWindow, setDevWindow] = useState(process.env.NEXT_PUBLIC_DEV_LOGIN === "1");
   const verification = kind === "verify" || kind === "reset";
   useEffect(() => {
