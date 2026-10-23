@@ -25,10 +25,16 @@ export async function apiFetch(input: string, options: RequestInit & { authRedir
 }
 export async function apiJSON<T = Record<string, unknown>>(path: string, options: RequestInit & { authRedirect?: boolean } = {}): Promise<T> {
   const response = await apiFetch(`${API_URL}${path}`, options);
-  const data = await response.json();
+  let data: Record<string, unknown> = {};
+  try {
+    const parsed = await response.json();
+    if (parsed && typeof parsed === "object") data = parsed as Record<string, unknown>;
+  } catch {
+    data = { error: "The server returned an unexpected response. Please restart the backend and try again." };
+  }
   if (!response.ok) throw new ApiError(response.status === 429
     ? "Too many attempts. Please wait a few minutes before trying again."
-    : data.error || "Unable to complete this request. Please try again.", response.status);
+    : typeof data.error === "string" ? data.error : "Unable to complete this request. Please try again.", response.status);
   return data as T;
 }
 export function jsonBody(data: unknown): RequestInit {
