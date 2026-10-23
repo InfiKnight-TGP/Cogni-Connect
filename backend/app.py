@@ -1956,6 +1956,22 @@ def generate_questions():
 
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+ENGLISH_STOPWORDS = {
+    'a', 'about', 'am', 'an', 'and', 'are', 'as', 'at', 'be', 'because', 'been',
+    'before', 'being', 'between', 'both', 'but', 'by', 'can', 'could', 'did',
+    'do', 'does', 'doing', 'down', 'during', 'each', 'few', 'for', 'from',
+    'further', 'had', 'has', 'have', 'having', 'he', 'her', 'here', 'hers',
+    'herself', 'him', 'himself', 'his', 'how', 'i', 'if', 'in', 'into', 'is',
+    'it', 'its', 'itself', 'just', 'me', 'memory', 'memories', 'more', 'most',
+    'my', 'myself', 'no', 'nor', 'not', 'now', 'of', 'off', 'on', 'once',
+    'only', 'or', 'other', 'our', 'ours', 'ourselves', 'out', 'over', 'own',
+    'same', 'she', 'should', 'so', 'some', 'such', 'tell', 'than', 'that',
+    'the', 'their', 'theirs', 'them', 'themselves', 'then', 'there', 'these',
+    'they', 'this', 'those', 'through', 'to', 'too', 'under', 'until', 'up',
+    'very', 'video', 'videos', 'was', 'we', 'were', 'what', 'when', 'where',
+    'which', 'while', 'who', 'whom', 'why', 'will', 'with', 'would', 'you',
+    'your', 'yours', 'yourself', 'yourselves',
+}
 
 def _format_day_full(day):
     return f"{WEEKDAYS[day.weekday()]} {day.day} {MONTHS[day.month - 1]}"
@@ -2028,10 +2044,9 @@ def _build_about_summary(c):
         full_tr = ' '.join(str(t).strip() for t in transcript if str(t).strip())
         parts = [p.strip() for p in re.split(r'(?<=[.!?])\s+', full_tr) if len(p.strip()) > 3]
         if parts:
-            first_sent = parts[0].strip().strip('"\'')
+            first_sent = parts[0].strip().strip('"\'').rstrip('.!?')
             if len(first_sent) > 120:
-                first_sent = first_sent[:117].rsplit(' ', 1)[0] + '...'
-            first_sent = first_sent.rstrip('.!?')
+                first_sent = first_sent[:117].rsplit(' ', 1)[0].rstrip(' ,;:') + '...'
             s3 = f"In the video you say: '{first_sent}'."
     return ' '.join(s for s in [s1, s2, s3] if s)
 
@@ -2125,12 +2140,13 @@ def ask_memory():
 
     low = q.lower()
     words = set(re.findall(r'[a-z0-9]+', low))
+    content_words = {w for w in words if w not in ENGLISH_STOPWORDS and len(w) > 1}
 
     is_when = bool(words & {'when', 'date', 'day'})
     is_who = bool(words & {'who', 'whom', 'with'})
 
     about_phrases = (
-        'tell me about', 'describe', 'what happened', 'what is this',
+        'tell me about', 'describe', 'what happened', 'what is this', 'where was i',
         'summarise', 'summarize', 'remember', 'about this video',
         'about the video', 'about this memory', 'about the memory',
     )
@@ -2179,11 +2195,25 @@ def ask_memory():
         else:
             ans = c['note'] or None
     elif c and is_what:
-        text = ' '.join([c['note'], *c['transcript']])
-        ss = [x.strip() for x in re.split(r'(?<=[.!?])\s+', text) if any(t in x.lower() for t in words if len(t) > 2)]
-        if not ss and ('animal' in words or 'behind' in words):
-            ss = [x.strip() for x in re.split(r'(?<=[.!?])\s+', text) if re.search(r'elephant|animal|lion|dog|cat|bird', x, re.I)]
-        ans = ss[0] if ss else None
+        raw_items = ([c['note']] if c.get('note') else []) + (c.get('transcript') or [])
+        candidates = []
+        for item in raw_items:
+            candidates.extend(x.strip() for x in re.split(r'(?<=[.!?])\s+', str(item)) if x.strip())
+        best_cand = None
+        best_count = 0
+        if content_words:
+            for cand in candidates:
+                cand_words = set(re.findall(r'[a-z0-9]+', cand.lower()))
+                cnt = len(content_words & cand_words)
+                if cnt > best_count:
+                    best_count = cnt
+                    best_cand = cand
+        if best_count > 0:
+            ans = best_cand
+        elif not ans and ('animal' in words or 'behind' in words):
+            animal_matches = [x.strip() for x in candidates if re.search(r'\b(elephant|elephants|animal|animals|lion|lions|dog|dogs|cat|cats|bird|birds)\b', x, re.I)]
+            if animal_matches:
+                ans = animal_matches[0]
 
     if ans:
         sources = [{

@@ -228,6 +228,67 @@ class MemoryAskTests(unittest.TestCase):
         # Verify exact round trip
         self.assertEqual(decoded, res.get_json())
 
+    def test_capital_of_france_gives_grounded_false_both_scopes(self):
+        # Scope all
+        res_all = self.client.post('/memories/ask', json={
+            'question': 'What is the capital of France?',
+            'scope': 'all'
+        })
+        self.assertEqual(res_all.status_code, 200)
+        data_all = res_all.get_json()
+        self.assertFalse(data_all['grounded'])
+        self.assertEqual(data_all['answer'], "I couldn't find that in your memories.")
+        self.assertEqual(data_all['sources'], [])
+
+        # Scope memory
+        res_mem = self.client.post('/memories/ask', json={
+            'question': 'What is the capital of France?',
+            'scope': 'memory',
+            'memory_id': self.memory_id
+        })
+        self.assertEqual(res_mem.status_code, 200)
+        data_mem = res_mem.get_json()
+        self.assertFalse(data_mem['grounded'])
+        self.assertEqual(data_mem['answer'], "I couldn't find that in this memory.")
+        self.assertEqual(data_mem['sources'], [])
+
+    def test_what_animal_was_behind_him_still_answers_about_elephants(self):
+        res = self.client.post('/memories/ask', json={
+            'question': 'What animal was behind him?',
+            'scope': 'memory',
+            'memory_id': self.memory_id
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data['grounded'])
+        self.assertIn('elephant', data['answer'].lower())
+        self.assertEqual(len(data['sources']), 1)
+
+    def test_where_was_i_goes_to_about_or_grounded_false_never_random_sentence(self):
+        res = self.client.post('/memories/ask', json={
+            'question': 'Where was I?',
+            'scope': 'memory',
+            'memory_id': self.memory_id
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data['grounded'])
+        # Must describe the place/event from ABOUT, not a random transcript fragment like "and that's cool"
+        self.assertIn('zoo', data['answer'].lower())
+        self.assertTrue(data['answer'].startswith('On Friday') or data['answer'].startswith('In this memory'))
+
+    def test_hindi_question_without_ai_returns_grounded_false(self):
+        res = self.client.post('/memories/ask', json={
+            'question': 'फ्रांस की राजधानी क्या है?',
+            'scope': 'all'
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertFalse(data['grounded'])
+        self.assertEqual(data['answer'], "I couldn't find that in your memories.")
+        self.assertEqual(data['sources'], [])
+
 
 if __name__ == '__main__':
     unittest.main()
+
