@@ -10,14 +10,14 @@ const MONTHS: Record<string, string[]> = {
   as: ["জানুৱাৰী", "ফেব্ৰুৱাৰী", "মাৰ্চ", "এপ্ৰিল", "মে", "জুন", "জুলাই", "আগষ্ট", "ছেপ্টেম্বৰ", "অক্টোবৰ", "নৱেম্বৰ", "ডিচেম্বৰ"],
 };
 
-export function formatFriendlyDate(dateStr?: string | null, lang: string = "en"): string {
+export function formatFriendlyDate(dateStr?: string | null, lang: string = "en", baseDate?: Date): string {
   if (!dateStr) return "";
   const clean = String(dateStr).slice(0, 10);
   const parts = clean.split("-").map(Number);
   if (parts.length !== 3 || parts.some(isNaN)) return clean;
   const [year, month, day] = parts;
   const targetDate = new Date(year, month - 1, day);
-  const now = new Date();
+  const now = baseDate ?? new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const diffDays = Math.round((today.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
 
@@ -41,7 +41,8 @@ export type DateGroup<T> = {
 
 export function groupMemoriesByDate<T extends { date?: string | null }>(
   memories: T[],
-  lang: string = "en"
+  lang: string = "en",
+  baseDate?: Date
 ): DateGroup<T>[] {
   const todayLabel = lang === "hi" ? "आज" : lang === "as" ? "আজি" : "Today";
   const thisWeekLabel = lang === "hi" ? "इस सप्ताह" : lang === "as" ? "এই সপ্তাহত" : "This week";
@@ -51,7 +52,7 @@ export function groupMemoriesByDate<T extends { date?: string | null }>(
   const thisWeekItems: T[] = [];
   const earlierItems: T[] = [];
 
-  const now = new Date();
+  const now = baseDate ?? new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   for (const memory of memories) {

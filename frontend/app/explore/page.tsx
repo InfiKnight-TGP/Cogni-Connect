@@ -5,9 +5,9 @@ import ReadAloud from "@/components/interaction/ReadAloud";
 import DictationButton from "@/components/interaction/DictationButton";
 import { usePreferences, useTranslate } from "@/components/interaction/InteractionProvider";
 import { API_URL, apiFetch } from "@/lib/api";
-import { Calendar, ChevronLeft, ChevronRight, Loader2, Play, Search, Trash2, X } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, Loader2, Play, Search, Trash2, Upload, X } from "lucide-react";
 import { formatFriendlyDate, groupMemoriesByDate } from "@/lib/date-format";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Memory = {
   id: string;
@@ -16,6 +16,8 @@ type Memory = {
   dateLabel?: string;
   note?: string;
   thumbnailUrl: string;
+  people?: string[];
+  transcript?: string[];
   status: "ready" | "processing" | "failed";
 };
 
@@ -141,6 +143,9 @@ export default function ExplorePage() {
   const [playerAnswer, setPlayerAnswer] = useState<AnswerData | null>(null);
   const [playerAsking, setPlayerAsking] = useState(false);
   const [playerHistory, setPlayerHistory] = useState<{ q: string; a: string }[]>([]);
+
+  const [filterPerson, setFilterPerson] = useState<string>("all");
+  const [filterDate, setFilterDate] = useState<string>("all");
 
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
@@ -349,7 +354,44 @@ export default function ExplorePage() {
     }
   };
 
-  const grouped = groupMemoriesByDate(memories, language);
+  const allPeople = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of memories) {
+      if (Array.isArray(m.people)) {
+        for (const p of m.people) {
+          if (p) set.add(p);
+        }
+      }
+    }
+    return Array.from(set).sort();
+  }, [memories]);
+
+  const filteredMemories = useMemo(() => {
+    return memories.filter((memory) => {
+      if (filterPerson !== "all") {
+        if (!memory.people || !memory.people.includes(filterPerson)) {
+          return false;
+        }
+      }
+      if (filterDate !== "all") {
+        if (!memory.date) return filterDate === "earlier";
+        const parts = String(memory.date).slice(0, 10).split("-").map(Number);
+        if (parts.length !== 3 || parts.some(isNaN)) return filterDate === "earlier";
+        const targetDate = new Date(parts[0], parts[1] - 1, parts[2]);
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const diffDays = Math.round((today.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (filterDate === "today" && diffDays !== 0) return false;
+        if (filterDate === "this_week" && (diffDays <= 0 || diffDays > 7)) return false;
+        if (filterDate === "earlier" && diffDays <= 7) return false;
+      }
+      return true;
+    });
+  }, [memories, filterPerson, filterDate]);
+
+  const grouped = useMemo(() => {
+    return groupMemoriesByDate(filteredMemories, language);
+  }, [filteredMemories, language]);
 
   const galleryChips = [
     "Tell me about my day",
@@ -369,15 +411,24 @@ export default function ExplorePage() {
     <>
       <Nav />
       <main className="mx-auto max-w-6xl px-5 pb-20 pt-24 lg:ml-[260px] lg:pt-10">
-        <header className="mb-8">
-          <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            {t("My Memories")}
-          </p>
-          <h1 className="mt-2 text-4xl font-bold">{t("My Memories")}</h1>
-          <ReadAloud text={t("My Memories")} autoRead={false} />
-          <p className="mt-3 text-xl text-muted-foreground">
-            {t("Look back at moments that matter.")}
-          </p>
+        <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("My Memories")}
+            </p>
+            <h1 className="mt-2 text-4xl font-bold">{t("My Memories")}</h1>
+            <ReadAloud text={t("My Memories")} autoRead={false} />
+            <p className="mt-3 text-xl text-muted-foreground">
+              {t("Look back at moments that matter.")}
+            </p>
+          </div>
+          <a
+            href="/upload"
+            className="inline-flex min-h-12 items-center gap-2 rounded-xl border-2 border-border bg-card px-5 text-base font-semibold shadow-sm transition hover:border-primary"
+          >
+            <Upload className="h-5 w-5" />
+            {t("Add a video")}
+          </a>
         </header>
 
         {error && (
@@ -385,7 +436,7 @@ export default function ExplorePage() {
             className="mb-8 rounded-xl border border-amber-500/40 bg-amber-500/10 p-5 text-lg"
             role="alert"
           >
-            <p>{error}</p>
+            <p>{t(error)}</p>
             <button
               type="button"
               onClick={() => void load()}
@@ -490,6 +541,60 @@ export default function ExplorePage() {
           )}
         </section>
 
+        {/* Filter bar by date and person */}
+        {memories.length > 0 && (
+          <div className="mb-8 flex flex-wrap items-center gap-4 rounded-2xl border-2 border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <label htmlFor="filter-person" className="text-sm font-semibold text-muted-foreground">
+                {t("Filter by person")}:
+              </label>
+              <select
+                id="filter-person"
+                value={filterPerson}
+                onChange={(e) => setFilterPerson(e.target.value)}
+                className="h-10 rounded-xl border-2 border-border bg-background px-3 text-sm font-medium outline-none focus:border-primary"
+              >
+                <option value="all">{t("All people")}</option>
+                {allPeople.map((person) => (
+                  <option key={person} value={person}>
+                    {person}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label htmlFor="filter-date" className="text-sm font-semibold text-muted-foreground">
+                {t("Filter by date")}:
+              </label>
+              <select
+                id="filter-date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="h-10 rounded-xl border-2 border-border bg-background px-3 text-sm font-medium outline-none focus:border-primary"
+              >
+                <option value="all">{t("All dates")}</option>
+                <option value="today">{t("Today")}</option>
+                <option value="this_week">{t("This week")}</option>
+                <option value="earlier">{t("Earlier")}</option>
+              </select>
+            </div>
+
+            {(filterPerson !== "all" || filterDate !== "all") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterPerson("all");
+                  setFilterDate("all");
+                }}
+                className="text-sm font-semibold text-muted-foreground hover:text-foreground"
+              >
+                {t("Clear")}
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Gallery Memories List */}
         {loading && memories.length === 0 ? (
           <p className="text-xl" role="status">
@@ -502,6 +607,13 @@ export default function ExplorePage() {
             <p className="mt-2 text-lg text-muted-foreground">
               {t("Your memories will appear here when they are ready.")}
             </p>
+            <a
+              href="/upload"
+              className="mt-5 inline-flex min-h-12 items-center gap-2 rounded-xl bg-primary px-6 text-base font-semibold text-primary-foreground shadow-sm transition hover:opacity-90"
+            >
+              <Upload className="h-5 w-5" />
+              {t("Add your first video")}
+            </a>
           </section>
         ) : (
           <div className="space-y-12">
@@ -559,6 +671,18 @@ export default function ExplorePage() {
                             <p className="line-clamp-2 text-base text-muted-foreground">
                               {memory.note}
                             </p>
+                          )}
+                          {memory.people && memory.people.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {memory.people.map((person) => (
+                                <span
+                                  key={person}
+                                  className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-foreground"
+                                >
+                                  {person}
+                                </span>
+                              ))}
+                            </div>
                           )}
                           <ReadAloud
                             text={`${memory.title}. ${memory.note ?? ""}`}
@@ -654,6 +778,37 @@ export default function ExplorePage() {
               )}
               {open.note && (
                 <p className="mt-2 text-lg text-foreground/90">{open.note}</p>
+              )}
+              {open.people && open.people.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-muted-foreground">
+                    {t("In this video:")}
+                  </span>
+                  {open.people.map((person) => (
+                    <span
+                      key={person}
+                      className="inline-flex items-center rounded-full border border-border bg-muted px-3 py-1 text-sm font-medium"
+                    >
+                      {person}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {open.transcript && open.transcript.length > 0 && (
+                <div className="mt-4 rounded-2xl border border-border bg-muted/30 p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+                      {t("Transcript")}
+                    </h4>
+                    <ReadAloud
+                      text={open.transcript.join(" ")}
+                      autoRead={false}
+                    />
+                  </div>
+                  <p className="max-h-36 overflow-y-auto text-base leading-relaxed text-foreground/90">
+                    {open.transcript.join(" ")}
+                  </p>
+                </div>
               )}
             </div>
 

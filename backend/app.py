@@ -718,13 +718,45 @@ def list_memories():
         elif status == 'failed': status = 'failed'
         else: status = 'ready'
         d_info = _friendly_memory_date(journal.get('date') or row.get('date'))
+        stem = filename.rsplit('.', 1)[0]
+        chunks_root = os.path.abspath(VIDEO_CHUNKS_ROOT)
+        folder = os.path.join(chunks_root, stem + '_chunks')
+        if not os.path.isdir(folder):
+            cand = os.path.join(chunks_root, stem.replace(' ', '_') + '_chunks')
+            if os.path.isdir(cand): folder = cand
+            else:
+                cand = os.path.join(chunks_root, stem.replace('_', ' ') + '_chunks')
+                if os.path.isdir(cand): folder = cand
+        p_names = list(row.get('people', []))
+        if not p_names and os.path.isdir(folder):
+            all_people = _load_people()
+            for face_file in os.listdir(folder):
+                if face_file.endswith('_faces.json'):
+                    try:
+                        with open(os.path.join(folder, face_file), encoding='utf-8') as f:
+                            face = json.load(f)
+                        ids = {n for values in face.values() for n in values} if isinstance(face, dict) else set()
+                        for n in ids:
+                            dn = display_name(n, all_people)
+                            if dn and dn not in p_names:
+                                p_names.append(dn)
+                    except Exception:
+                        pass
+        tr = list(row.get('transcript', []))
+        if not tr and os.path.isdir(folder):
+            try:
+                with open(os.path.join(folder, 'full_transcript.json'), encoding='utf-8') as f:
+                    raw = json.load(f)
+                    tr = [str(v) for v in raw.values()] if isinstance(raw, dict) else [str(v) for v in raw]
+            except Exception:
+                pass
         rows.append({
             'id': memory_id, 'title': row.get('title') or filename.rsplit('.', 1)[0],
             'date': journal.get('date') or row.get('date'),
             'dateLabel': d_info.get('dateLabel', ''),
             'note': journal.get('entry') or row.get('note', ''),
             'durationSeconds': row.get('durationSeconds'), 'thumbnailUrl': f'/memories/{memory_id}/thumbnail',
-            'people': row.get('people', []), 'status': status,
+            'people': p_names, 'transcript': tr, 'status': status,
         })
     rows.sort(key=lambda item: item.get('date') or '', reverse=True)
     start = 0

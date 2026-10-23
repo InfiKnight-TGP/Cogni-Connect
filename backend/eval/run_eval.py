@@ -813,7 +813,8 @@ def evaluate_tests():
         "lib/interaction/adaptive.check.mjs",
         "lib/interaction/locales.check.mjs",
         "lib/interaction/yesterday-quiz.check.mjs",
-        "lib/interaction/matching.check.mjs"
+        "lib/interaction/matching.check.mjs",
+        "lib/explore.check.mjs"
     ]
     fe_results = []
     for script in frontend_checks:

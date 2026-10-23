@@ -1,4 +1,4 @@
-﻿import assert from 'node:assert/strict';
+import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { translate } from './locale.ts';
 const en = JSON.parse(await readFile(new URL('./locales/en.json', import.meta.url), 'utf8'));
@@ -123,6 +123,31 @@ required.push(
 for (const phrase of required) {
   assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing UI phrase: ${phrase}`);
   assert.equal(typeof as.ui[phrase], 'string', `Assamese missing UI phrase: ${phrase}`);
+}
+// Scan frontend/app/explore/page.tsx for visible UI phrases
+const exploreFile = await readFile(new URL('../../app/explore/page.tsx', import.meta.url), 'utf8');
+const explorePhrases = new Set([
+  ...[...exploreFile.matchAll(/\bt\(\s*["']([^"']+)["']\s*\)/g)].map(m => m[1]),
+  'Tell me about my day', 'Where did I go?', 'Who did I meet?', 'What was I doing?',
+  'Tell me about this video', 'Where was I?', 'Who was in it?', 'When was this?',
+  'This memory', 'All my memories', 'About this memory', 'About this memory:',
+  'Try: Tell me about this video', 'This week', 'Earlier', 'Clear history', 'Ask',
+  'Today', 'Yesterday', 'All dates', 'All people', 'Filter by person', 'Filter by date',
+  'Please sign in again.', 'Memories are not available right now.',
+  'Please try again in a moment.', 'Please try again in a moment. The server is restarting.',
+  'Question must be up to 300 characters.', 'Unable to ask question. Please try again.',
+  'Question cannot be empty.', 'Look back at moments that matter.',
+  'Transcript', 'In this video:', 'Add a video', 'Add your first video',
+  'Your memories will appear here when they are ready.', 'Loading memories…',
+  'Show more', 'Close', 'Previous memory', 'Next memory', 'Processing…',
+  'Processing', 'Could not process this video', 'Clear', 'Try again',
+  'Recent questions', 'Recent in this video', 'Ask about your memories',
+  'Ask about this memory', 'Ask anything about your saved moments.',
+  'Ask about your memories...', 'Ask about this memory...'
+]);
+for (const phrase of explorePhrases) {
+  assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing explore phrase: ${phrase}`);
+  assert.equal(typeof as.ui[phrase], 'string', `Assamese missing explore phrase: ${phrase}`);
 }
 assert.equal(translate(en, 'Not translated yet'), 'Not translated yet', 'English fallback');
 assert.equal(translate(hi, 'Start Game'), hi.ui['Start Game'], 'Hindi locale selection');

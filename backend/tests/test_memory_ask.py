@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import tempfile
@@ -73,13 +74,24 @@ class MemoryAskTests(unittest.TestCase):
 
 
 
+        # Dynamic dates to avoid midnight rollover flakiness
+        self.today = datetime.now().date()
+        self.today_str = self.today.isoformat()
+        self.today_full = app._format_day_full(self.today)
+        self.yesterday = self.today - timedelta(days=1)
+        self.yesterday_str = self.yesterday.isoformat()
+        self.yesterday_full = app._format_day_full(self.yesterday)
+        self.older = self.today - timedelta(days=5)
+        self.older_str = self.older.isoformat()
+        self.older_full = app._format_day_full(self.older)
+
         # Set up patient A with demo zoo memory
         self.memory_id = 'zoo-memory-123'
         memories = {
             self.memory_id: {
                 'filename': 'Me_at_the_zoo.mp4',
                 'title': 'Me at the zoo',
-                'date': '2026-10-23',
+                'date': self.today_str,
                 'note': 'A day at the zoo, looking at the elephants',
                 'status': 'ready',
             }
@@ -132,8 +144,8 @@ class MemoryAskTests(unittest.TestCase):
         source = data['sources'][0]
         self.assertEqual(source['memory_id'], self.memory_id)
         self.assertEqual(source['title'], 'Me at the zoo')
-        self.assertEqual(source['date'], '2026-10-23')
-        self.assertTrue(source['dateLabel'] in ('today', 'Friday 23 October'))
+        self.assertEqual(source['date'], self.today_str)
+        self.assertTrue(source['dateLabel'] in ('today', self.today_full))
 
     def test_tell_me_about_scope_memory(self):
         res = self.client.post('/memories/ask', json={
@@ -296,7 +308,7 @@ class MemoryAskTests(unittest.TestCase):
                 self.assertTrue(data['grounded'], f"Expected grounded:True for {q} in scope {scope}")
                 self.assertIn('zoo', data['answer'].lower())
                 self.assertTrue(
-                    data['answer'].startswith('On Friday') or data['answer'].startswith('In this memory'),
+                    data['answer'].startswith(f'On {self.today_full}') or data['answer'].startswith('In this memory'),
                     f"Expected ABOUT summary start, got: {data['answer']}"
                 )
                 self.assertNotIn(data['answer'], raw_transcript_sentences)
@@ -320,39 +332,39 @@ class MemoryAskTests(unittest.TestCase):
         self.assertTrue(data['grounded'])
         # Must describe the place/event from ABOUT, not a random transcript fragment like "and that's cool"
         self.assertIn('zoo', data['answer'].lower())
-        self.assertTrue(data['answer'].startswith('On Friday') or data['answer'].startswith('In this memory'))
+        self.assertTrue(data['answer'].startswith(f'On {self.today_full}') or data['answer'].startswith('In this memory'))
 
     def test_when_answers_scope_memory_and_all_and_no_on_today(self):
-        # 1. Today (2026-10-23)
+        # 1. Today
         res_mem_today = self.client.post('/memories/ask', json={'question': 'When was this?', 'scope': 'memory', 'memory_id': self.memory_id})
-        self.assertEqual(res_mem_today.get_json()['answer'], 'That was today, Friday 23 October.')
+        self.assertEqual(res_mem_today.get_json()['answer'], f'That was today, {self.today_full}.')
 
         res_all_today = self.client.post('/memories/ask', json={'question': 'When was this?', 'scope': 'all'})
-        self.assertEqual(res_all_today.get_json()['answer'], "'Me at the zoo' was today, Friday 23 October.")
+        self.assertEqual(res_all_today.get_json()['answer'], f"'Me at the zoo' was today, {self.today_full}.")
 
-        # 2. Yesterday (2026-10-22)
+        # 2. Yesterday
         memories = json.loads((self.base_a / 'memories.json').read_text(encoding='utf-8'))
-        memories[self.memory_id]['date'] = '2026-10-22'
+        memories[self.memory_id]['date'] = self.yesterday_str
         (self.base_a / 'memories.json').write_text(json.dumps(memories, ensure_ascii=False), encoding='utf-8')
 
         res_mem_yest = self.client.post('/memories/ask', json={'question': 'When was this?', 'scope': 'memory', 'memory_id': self.memory_id})
-        self.assertEqual(res_mem_yest.get_json()['answer'], 'That was yesterday, Thursday 22 October.')
+        self.assertEqual(res_mem_yest.get_json()['answer'], f'That was yesterday, {self.yesterday_full}.')
 
         res_all_yest = self.client.post('/memories/ask', json={'question': 'When was this?', 'scope': 'all'})
-        self.assertEqual(res_all_yest.get_json()['answer'], "'Me at the zoo' was yesterday, Thursday 22 October.")
+        self.assertEqual(res_all_yest.get_json()['answer'], f"'Me at the zoo' was yesterday, {self.yesterday_full}.")
 
-        # 3. Older date (2026-10-19 -> Monday 19 October)
-        memories[self.memory_id]['date'] = '2026-10-19'
+        # 3. Older date
+        memories[self.memory_id]['date'] = self.older_str
         (self.base_a / 'memories.json').write_text(json.dumps(memories, ensure_ascii=False), encoding='utf-8')
 
         res_mem_older = self.client.post('/memories/ask', json={'question': 'When was this?', 'scope': 'memory', 'memory_id': self.memory_id})
-        self.assertEqual(res_mem_older.get_json()['answer'], 'That was on Monday 19 October.')
+        self.assertEqual(res_mem_older.get_json()['answer'], f'That was on {self.older_full}.')
 
         res_all_older = self.client.post('/memories/ask', json={'question': 'When was this?', 'scope': 'all'})
-        self.assertEqual(res_all_older.get_json()['answer'], "'Me at the zoo' was on Monday 19 October.")
+        self.assertEqual(res_all_older.get_json()['answer'], f"'Me at the zoo' was on {self.older_full}.")
 
         # Restore today's date
-        memories[self.memory_id]['date'] = '2026-10-23'
+        memories[self.memory_id]['date'] = self.today_str
         (self.base_a / 'memories.json').write_text(json.dumps(memories, ensure_ascii=False), encoding='utf-8')
 
         # Test that "on today" and "on yesterday" never appear in any answer
@@ -388,6 +400,17 @@ class MemoryAskTests(unittest.TestCase):
         # Quote ends at natural clause boundary and does NOT have 'really...' mid-clause cut
         self.assertIn("In the video you say: 'Alright, so here we are in front of the elephants'.", data['answer'])
         self.assertNotIn('really...', data['answer'])
+
+    def test_hindi_question_without_ai_returns_grounded_false(self):
+        res = self.client.post('/memories/ask', json={
+            'question': 'फ्रांस की राजधानी क्या है?',
+            'scope': 'all'
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertFalse(data['grounded'])
+        self.assertEqual(data['answer'], "I couldn't find that in your memories.")
+        self.assertEqual(data['sources'], [])
 
 
 if __name__ == '__main__':
