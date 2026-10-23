@@ -286,18 +286,123 @@ class MemoryAskTests(unittest.TestCase):
         self.assertNotEqual(data['answer'], 'A day at the zoo, looking at the elephants')
         self.assertEqual(len(data['sources']), 1)
 
-    def test_where_did_i_go_who_did_i_meet_what_was_i_doing_scopes_memory_and_all(self):
+    def test_where_questions_all_answer_with_zoo_sentence(self):
         questions = [
-            'Where did I go?',
-            'Who did I meet?',
-            'What was I doing?',
+            'where did we go ??',
+            'where did I go',
+            'where are we',
+            'where were we',
+            'what place is this',
         ]
+        for q in questions:
+            for scope in ['memory', 'all']:
+                payload = {'question': q, 'scope': scope}
+                if scope == 'memory':
+                    payload['memory_id'] = self.memory_id
+                res = self.client.post('/memories/ask', json=payload)
+                self.assertEqual(res.status_code, 200)
+                data = res.get_json()
+                self.assertTrue(data['grounded'], f"Expected grounded:True for {q} in scope {scope}")
+                self.assertEqual(data['answer'], 'You were at the zoo, looking at the elephants.')
+                self.assertEqual(len(data['sources']), 1)
+                self.assertEqual(data['sources'][0]['memory_id'], self.memory_id)
+
+    def test_normalization_variants_behave_identically(self):
+        variants = [
+            'WHERE DID WE GO ??',
+            'where   did we go?!',
+            'where did we go ...',
+        ]
+        for q in variants:
+            res = self.client.post('/memories/ask', json={
+                'question': q,
+                'scope': 'memory',
+                'memory_id': self.memory_id
+            })
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertTrue(data['grounded'])
+            self.assertEqual(data['answer'], 'You were at the zoo, looking at the elephants.')
+
+    def test_place_sentence_derived_from_three_different_notes_and_titles(self):
+        cases = [
+            ({'note': 'Lunch at the temple with family', 'title': 'Temple trip'}, 'You were having lunch at the temple with family.'),
+            ({'note': 'Walk in the garden', 'title': 'Garden trip'}, 'You were on a walk in the garden.'),
+            ({'note': '', 'title': 'Birthday party'}, 'You were at the birthday party.'),
+        ]
+        for ctx, expected in cases:
+            ans = app._build_place_sentence(ctx)
+            self.assertEqual(ans, expected)
+            self.assertFalse(ans.startswith('On '))
+            self.assertNotIn('said:', ans)
+
+    def test_picture_questions_without_ai_return_pictures_message_only_when_no_text_rule(self):
+        # 1. "What was I doing?" is an about-question -> returns ABOUT summary
+        res_doing = self.client.post('/memories/ask', json={
+            'question': 'What was I doing?',
+            'scope': 'memory',
+            'memory_id': self.memory_id
+        })
+        self.assertEqual(res_doing.status_code, 200)
+        data_doing = res_doing.get_json()
+        self.assertTrue(data_doing['grounded'])
+        self.assertIn('zoo', data_doing['answer'].lower())
+        self.assertIn('Jawed Karim is in this video.', data_doing['answer'])
+
+        # 2. "What is he holding?" has no text answer -> picture message
+        res_holding = self.client.post('/memories/ask', json={
+            'question': 'What is he holding?',
+            'scope': 'memory',
+            'memory_id': self.memory_id
+        })
+        self.assertEqual(res_holding.status_code, 200)
+        data_holding = res_holding.get_json()
+        self.assertFalse(data_holding['grounded'])
+        self.assertEqual(data_holding['answer'], "I can't look at the pictures right now.")
+        self.assertIn('summary', data_holding)
+        self.assertIn('zoo', data_holding['summary'].lower())
+
+        # 3. "what colour is his jacket" has no text answer -> picture message
+        res_jacket = self.client.post('/memories/ask', json={
+            'question': 'what colour is his jacket',
+            'scope': 'memory',
+            'memory_id': self.memory_id
+        })
+        self.assertEqual(res_jacket.status_code, 200)
+        data_jacket = res_jacket.get_json()
+        self.assertFalse(data_jacket['grounded'])
+        self.assertEqual(data_jacket['answer'], "I can't look at the pictures right now.")
+
+        # 4. In scope 'all' without memories
+        res_all_holding = self.client_c.post('/memories/ask', json={
+            'question': 'What is he holding?',
+            'scope': 'all'
+        })
+        self.assertEqual(res_all_holding.status_code, 200)
+        data_all_holding = res_all_holding.get_json()
+        self.assertFalse(data_all_holding['grounded'])
+        self.assertEqual(data_all_holding['answer'], "I can't look at the pictures right now.")
+        self.assertEqual(data_all_holding['sources'], [])
+
+    def test_health_endpoint_returns_commit_hash(self):
+        res = self.client.get('/health')
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data['status'], 'ok')
+        self.assertIn('commit', data)
+        self.assertTrue(len(data['commit']) >= 4)
+
+    def test_where_did_i_go_who_did_i_meet_what_was_i_doing_scopes_memory_and_all(self):
         raw_transcript_sentences = [
             'Alright, so here we are in front of the elephants, and the cool thing about these guys is that they have really really really long trunks.',
             'That is cool.',
         ]
-        # Against patient with zoo memory (returns ABOUT summary, never a raw transcript fragment alone)
-        for q in questions:
+        # Where did I go -> place sentence
+        res_where = self.client.post('/memories/ask', json={'question': 'Where did I go?', 'scope': 'memory', 'memory_id': self.memory_id})
+        self.assertEqual(res_where.get_json()['answer'], 'You were at the zoo, looking at the elephants.')
+
+        # Who did I meet and What was I doing -> ABOUT summary
+        for q in ['Who did I meet?', 'What was I doing?']:
             for scope in ['memory', 'all']:
                 payload = {'question': q, 'scope': scope}
                 if scope == 'memory':
@@ -313,15 +418,15 @@ class MemoryAskTests(unittest.TestCase):
                 )
                 self.assertNotIn(data['answer'], raw_transcript_sentences)
 
-        # Against patient C (no memories) -> returns grounded: false, never a raw transcript fragment
-        for q in questions:
+        # Against patient C (no memories) -> returns grounded: false
+        for q in ['Where did I go?', 'Who did I meet?', 'What was I doing?']:
             res_c = self.client_c.post('/memories/ask', json={'question': q, 'scope': 'all'})
             self.assertEqual(res_c.status_code, 200)
             data_c = res_c.get_json()
             self.assertFalse(data_c['grounded'])
             self.assertNotIn(data_c['answer'], raw_transcript_sentences)
 
-    def test_where_was_i_goes_to_about_or_grounded_false_never_random_sentence(self):
+    def test_where_was_i_goes_to_place_sentence_never_random_sentence(self):
         res = self.client.post('/memories/ask', json={
             'question': 'Where was I?',
             'scope': 'memory',
@@ -330,9 +435,7 @@ class MemoryAskTests(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
         self.assertTrue(data['grounded'])
-        # Must describe the place/event from ABOUT, not a random transcript fragment like "and that's cool"
-        self.assertIn('zoo', data['answer'].lower())
-        self.assertTrue(data['answer'].startswith(f'On {self.today_full}') or data['answer'].startswith('In this memory'))
+        self.assertEqual(data['answer'], 'You were at the zoo, looking at the elephants.')
 
     def test_when_answers_scope_memory_and_all_and_no_on_today(self):
         # 1. Today

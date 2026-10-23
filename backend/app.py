@@ -47,6 +47,18 @@ client = OpenAI(
 )
 AI_AVAILABLE = bool(os.getenv('OPENAI_API_KEY') and os.getenv('OPENAI_API_KEY') not in ('not_configured', 'your_openai_api_key_here'))
 
+def _git_commit_hash():
+    try:
+        import subprocess
+        out = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=os.path.dirname(__file__), text=True)
+        return out.strip()
+    except Exception:
+        return 'unknown'
+
+GIT_COMMIT_HASH = _git_commit_hash()
+print(f"CogniConnect backend starting (commit {GIT_COMMIT_HASH})")
+print(f"memory AI fallback: {'enabled' if AI_AVAILABLE else 'disabled'}")
+
 MAX_TRANSCRIPTION_BYTES = 25 * 1024 * 1024
 
 QAS_PATH = scoped('qas.json')  
@@ -2151,6 +2163,105 @@ def _ask_context(memory_id=None):
         })
     return out
 
+def _normalize_question(q):
+    low = q.lower()
+    # Collapse repeated punctuation
+    low = re.sub(r'([?!.,;:])\1+', r'\1', low)
+    # Collapse mixed punctuation like ?! or !? to ?
+    low = re.sub(r'(\?|\!)+', r'?', low)
+    # Strip trailing punctuation and whitespace
+    low = low.strip('?!.,;: \t\r\n')
+    # Collapse whitespace
+    low = re.sub(r'\s+', ' ', low)
+    # Map pronouns: we/us/me -> i, our/ours/mine -> my
+    pronoun_map = {
+        'we': 'i',
+        'us': 'i',
+        'me': 'i',
+        'our': 'my',
+        'ours': 'my',
+        'mine': 'my',
+    }
+    def _rep(m):
+        return pronoun_map.get(m.group(0), m.group(0))
+    norm = re.sub(r'\b(we|us|me|our|ours|mine)\b', _rep, low)
+    return norm
+
+def _build_place_sentence(c):
+    note = (c.get('note') or '').strip().rstrip('.')
+    title = (c.get('title') or '').strip()
+    activity = None
+    if note:
+        low = note.lower()
+        if low.startswith('a day at '):
+            activity = 'you were at ' + note[9:].strip()
+        elif low.startswith('day at '):
+            activity = 'you were at ' + note[7:].strip()
+        elif low.startswith('a visit to '):
+            activity = 'you were visiting ' + note[11:].strip()
+        elif low.startswith('visit to '):
+            activity = 'you were visiting ' + note[9:].strip()
+        elif low.startswith(('you were ', 'you visited ', 'you went to ', 'you ')):
+            activity = note
+        elif low.startswith(('at ', 'looking at ', 'visiting ')):
+            activity = 'you were ' + note
+        elif low.startswith(('lunch ', 'dinner ', 'breakfast ', 'tea ', 'coffee ', 'picnic ')):
+            activity = 'you were having ' + note[0].lower() + note[1:]
+        elif low.startswith(('having lunch ', 'having dinner ', 'having breakfast ', 'having tea ', 'having a picnic ')):
+            activity = 'you were ' + note[0].lower() + note[1:]
+        elif low.startswith(('walk in ', 'walk at ', 'walk around ', 'walk through ', 'walk by ')):
+            activity = 'you were on a ' + note[0].lower() + note[1:]
+        elif low.startswith(('a walk in ', 'a walk at ', 'a walk around ', 'a walk through ')):
+            activity = 'you were on ' + note[0].lower() + note[1:]
+        elif low.startswith(('trip to ', 'a trip to ')):
+            activity = 'you were on a ' + (note[8:].strip() if low.startswith('a trip to ') else note[5:].strip())
+        elif low.startswith(('in ', 'on ')):
+            activity = 'you were ' + note
+        elif ' at ' in low or ' in ' in low:
+            activity = 'you were ' + note[0].lower() + note[1:]
+        elif title and title.lower() not in low:
+            activity = f"you were at {title}, {note[0].lower() + note[1:]}"
+        else:
+            activity = f"you were at {note}"
+    elif title:
+        low_title = title.lower()
+        if low_title.startswith('me at '):
+            place = title[3:].strip()
+            activity = f"you were {place}"
+        elif low_title.startswith(('at ', 'in ', 'on ')):
+            activity = f"you were {title}"
+        elif low_title.startswith(('a ', 'an ', 'the ')):
+            activity = f"you were at {title}"
+        elif low_title.endswith(('party', 'celebration', 'wedding', 'event', 'concert', 'gathering', 'festival')):
+            activity = f"you were at the {low_title}"
+        else:
+            activity = f"you were at {title}"
+
+    if activity:
+        act = activity.strip().rstrip('.!?,;')
+        return act[0].upper() + act[1:] + '.'
+    return None
+
+def _unanswered_response(scope, c, lang, is_picture=False):
+    if is_picture and not AI_AVAILABLE:
+        ans_text = "I can't look at the pictures right now."
+    elif scope == 'memory' and c:
+        ans_text = "I couldn't find that in this memory."
+    else:
+        ans_text = "I couldn't find that in your memories."
+
+    res = {
+        'answer': ans_text,
+        'language': lang,
+        'sources': [],
+        'grounded': False,
+    }
+    if scope == 'memory' and c:
+        res['summary'] = _build_about_summary(c)
+    return jsonify(**res), 200
+
+PICTURE_TRIGGERS = {'wearing', 'wear', 'colour', 'color', 'jacket', 'shirt', 'hair', 'holding', 'doing'}
+
 @api.route('/memories/ask', methods=['POST'])
 def ask_memory():
     payload = request.get_json(silent=True) or {}
@@ -2186,26 +2297,31 @@ def ask_memory():
     if lang not in ('en', 'hi', 'as'):
         lang = 'en'
 
-    low = q.lower()
-    words = set(re.findall(r'[a-z0-9]+', low))
+    norm = _normalize_question(q)
+    low = norm
+    words = set(re.findall(r'[a-z0-9]+', norm))
     content_words = {w for w in words if w not in ENGLISH_STOPWORDS and len(w) > 1}
 
     is_when = bool(words & {'when', 'date', 'day'})
-    is_who = bool(words & {'who', 'whom'}) or ('who was with' in low)
+    is_who = bool(words & {'who', 'whom'}) or ('who was with' in norm)
+
+    is_where = bool(re.search(r'\bwhere\s+(?:did|do|were|was|are|is|am)(?:\s+(?:i|we|us|this|that|you|it))?\b', norm)) or \
+               bool(re.search(r'\b(?:what|which)\s+(?:place|location)\b', norm)) or \
+               any(p in norm for p in ('what place', 'which place', 'what location', 'where did i go', 'where was i', 'where am i', 'where are i', 'where were i'))
 
     about_phrases = (
-        'tell me about', 'describe', 'what happened', 'what is this', 'where was i',
-        'where did i go', 'what was i doing', 'who did i meet',
+        'tell me about', 'tell us about', 'tell i about', 'describe', 'what happened',
+        'what is this', 'what was i doing', 'who did i meet',
         'summarise', 'summarize', 'remember', 'about this video',
         'about the video', 'about this memory', 'about the memory',
     )
-    is_about = any(p in low for p in about_phrases) or bool(words & {'describe', 'summarise', 'summarize', 'remember'})
+    is_about = (any(p in norm for p in about_phrases) or bool(words & {'describe', 'summarise', 'summarize', 'remember'})) and not is_where
 
-    if not is_when and not is_who:
-        if any(c.get('title') and len(c['title']) >= 3 and c['title'].lower() in low for c in contexts):
+    if not is_when and not is_who and not is_where:
+        if any(c.get('title') and len(c['title']) >= 3 and c['title'].lower() in norm for c in contexts):
             is_about = True
 
-    is_what = bool(words & {'where', 'what', 'which', 'animal', 'see', 'saw'}) and not is_about
+    is_what = bool(words & {'where', 'what', 'which', 'animal', 'see', 'saw'}) and not is_about and not is_where
 
     if scope == 'all':
         scored = []
@@ -2214,7 +2330,7 @@ def ask_memory():
             title_l = c['title'].lower()
             note_l = c['note'].lower()
             trans_l = ' '.join(c['transcript']).lower()
-            if title_l in low:
+            if title_l in norm:
                 sc += 50
             for t in words:
                 if len(t) > 1:
@@ -2230,7 +2346,10 @@ def ask_memory():
     c = contexts[0] if contexts else None
     ans = None
 
-    if c and is_about:
+    if c and is_where:
+        place_ans = _build_place_sentence(c)
+        ans = place_ans if place_ans else _build_about_summary(c)
+    elif c and is_about:
         ans = _build_about_summary(c)
     elif c and is_when:
         try:
@@ -2316,22 +2435,14 @@ def ask_memory():
         } for item in contexts[:3]]
         return jsonify(answer=ans, language=lang, sources=sources, grounded=True), 200
 
-    if scope == 'memory' and c:
-        summary = _build_about_summary(c)
-        return jsonify(
-            answer="I couldn't find that in this memory.",
-            summary=summary,
-            language=lang,
-            sources=[],
-            grounded=False
-        ), 200
+    is_picture_q = not (is_about or is_when or is_who or is_where) and (
+        bool(words & PICTURE_TRIGGERS) or 'how many' in norm or 'look like' in norm or 'looks like' in norm
+    )
+    return _unanswered_response(scope, c, lang, is_picture=is_picture_q)
 
-    return jsonify(
-        answer="I couldn't find that in your memories.",
-        language=lang,
-        sources=[],
-        grounded=False
-    ), 200
+@api.route('/health', methods=['GET'])
+def health():
+    return jsonify(status='ok', commit=GIT_COMMIT_HASH), 200
 
 from auth import init_auth
 
