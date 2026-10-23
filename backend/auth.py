@@ -113,9 +113,13 @@ def is_demo_session(session=None):
     session = session or g.get('auth_session')
     if not session:
         return False
-    if session.get('user_id') and database.fetchone('SELECT is_demo FROM users WHERE id=?', (session['user_id'],)):
+    user = database.fetchone('SELECT is_demo FROM users WHERE id=?', (session['user_id'],)) if session.get('user_id') else None
+    if user and bool(user['is_demo']):
         return True
-    return bool(session.get('patient_id') and database.fetchone('SELECT is_demo FROM patients WHERE id=?', (session['patient_id'],)))
+    # A real caregiver may be a member of a demo patient during local testing;
+    # demo restrictions apply to demo accounts and patient-device sessions only.
+    patient = database.fetchone('SELECT is_demo FROM patients WHERE id=?', (session['patient_id'],)) if session.get('patient_id') else None
+    return bool(session.get('kind') == 'patient_device' and patient and patient['is_demo'])
 
 
 def dev_request_allowed():
