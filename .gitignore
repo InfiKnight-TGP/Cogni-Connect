@@ -54,3 +54,6 @@ platform-data/
 /backend/auth.db
 /backend/auth.db-*
 /backend/crosswords.json
+
+docs/games_export.txt
+docs/auth_export.txt
