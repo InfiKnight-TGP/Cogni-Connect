@@ -1,3 +1,5 @@
+"use client";
+
 import Nav from "@/components/nav";
 import { CaregiverOnly } from "@/components/caregiver";
 import SettingsContent from "@/components/caregiver/settingsContent";
