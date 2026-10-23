@@ -7,13 +7,10 @@ export const fieldClass = "mt-2 min-h-14 w-full rounded-xl border-2 border-input
 export const actionClass = "inline-flex min-h-14 items-center justify-center rounded-xl bg-primary px-6 py-3 text-xl font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40 disabled:opacity-50";
 export const secondaryClass = "inline-flex min-h-12 items-center justify-center rounded-xl border-2 border-border px-5 py-2 text-lg font-semibold focus-visible:ring-4 focus-visible:ring-primary/40 disabled:opacity-50";
 
-export function AuthFrame({ title, children }: { title: string; children: React.ReactNode }) {
+export function AuthFrame({ title, children, embedded = false }: { title: string; children: React.ReactNode; embedded?: boolean }) {
   const { t } = useTranslate();
-  return <main className="mx-auto min-h-[70vh] max-w-xl space-y-7 px-5 py-10 sm:py-16">
-    <Link href="/welcome" className="inline-flex min-h-12 items-center text-2xl font-bold text-primary">CogniConnect</Link>
-    <h1 className="text-4xl font-bold leading-tight">{t(title)}</h1>
-    <div className="space-y-6 text-xl">{children}</div>
-  </main>;
+  const content = <><Link href="/welcome" className="inline-flex min-h-12 items-center text-2xl font-bold text-primary">CogniConnect</Link><h1 className="text-4xl font-bold leading-tight">{t(title)}</h1><div className="space-y-6 text-xl">{children}</div></>;
+  return embedded ? <div className="space-y-7">{content}</div> : <main className="mx-auto min-h-[70vh] max-w-xl space-y-7 px-5 py-10 sm:py-16">{content}</main>;
 }
 export function PasswordField({ label = "Password", value, onChange, current = false }: {
   label?: string; value: string; onChange: (value: string) => void; current?: boolean;

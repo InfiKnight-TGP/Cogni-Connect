@@ -8,10 +8,11 @@ import { useTranslate } from "@/components/interaction/InteractionProvider";
 import { AuthFrame, PasswordField, CodeInput, Notice, actionClass, fieldClass, secondaryClass } from "./fields";
 type Kind = "login" | "signup" | "verify" | "forgot" | "reset";
 const titles: Record<Kind, string> = { login: "Caregiver sign in", signup: "Create your caregiver account", verify: "Check your email", forgot: "Reset your password", reset: "Choose a new password" };
-export default function AccountForm({ kind }: { kind: Kind }) {
+export default function AccountForm({ kind, embedded = false }: { kind: Kind; embedded?: boolean }) {
   const { t } = useTranslate(); const router = useRouter(); const { refresh } = useAuth();
   const [email, setEmail] = useState(""); const [name, setName] = useState("");
   const [password, setPassword] = useState(""); const [code, setCode] = useState("");
+  const [rememberDevice, setRememberDevice] = useState(true);
   const [challenge, setChallenge] = useState(""); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
   const [signupMode, setSignupMode] = useState<"self" | "caregiver">(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mode") === "self" ? "self" : "caregiver");
   const [loginMode, setLoginMode] = useState<"self" | "caregiver">(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mode") === "self" ? "self" : "caregiver");
@@ -27,7 +28,9 @@ export default function AccountForm({ kind }: { kind: Kind }) {
   const continueLogin = async () => {
     const session = await refresh();
     if (!session) throw new Error("Could not load your account. Please try again.");
-    router.replace(session.role === "caregiver" ? "/caregiver" : "/");
+    const requested = new URLSearchParams(window.location.search).get("next") ?? "";
+    const safeNext = requested.startsWith("/") && !requested.startsWith("//") && !/[\\]/.test(requested) && !/^https?:/i.test(requested) ? requested : (session.role === "caregiver" ? "/caregiver" : "/");
+    router.replace(safeNext);
   };
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true); setNotice("");
@@ -57,16 +60,17 @@ export default function AccountForm({ kind }: { kind: Kind }) {
     finally { setBusy(false); }
   };
   const title = kind === "login" && loginMode === "self" ? "Self-care sign in" : titles[kind];
-  return <AuthFrame title={title}>
-    {kind === "login" && process.env.NEXT_PUBLIC_DEMO === "1" && <div className="mb-5 space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4"><h2 className="text-xl font-bold">Try the demo</h2>{loginMode === "self" && <><p className="text-base">Self-care: patient@cogniconnect.com / Patient@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("patient@cogniconnect.com"); setPassword("Patient@1234"); }}>Fill in self-care</button></>}{(loginMode === "self" || loginMode === "caregiver") && <><p className="text-base">Caregiver: demo@cogniconnect.com / Demo@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("demo@cogniconnect.com"); setPassword("Demo@1234"); }}>Fill in caregiver</button></>}<p className="text-base">Code: 123456</p></div>}
+  return <AuthFrame title={title} embedded={embedded}>
+    {kind === "login" && process.env.NEXT_PUBLIC_DEMO === "1" && <div className="mb-5 space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4"><h2 className="text-xl font-bold">Try the demo</h2>{(embedded || loginMode === "self") && <><p className="text-base">Self-care: patient@cogniconnect.com / Patient@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("patient@cogniconnect.com"); setPassword("Patient@1234"); }}>Fill in self-care</button></>}{(embedded || loginMode === "self" || loginMode === "caregiver") && <><p className="text-base">Caregiver: demo@cogniconnect.com / Demo@1234</p><button type="button" className={secondaryClass} onClick={() => { setEmail("demo@cogniconnect.com"); setPassword("Demo@1234"); }}>Fill in caregiver</button></>}<p className="text-base">Code: 123456</p></div>}
     {kind === "signup" && signupMode === "self" && process.env.NEXT_PUBLIC_DEMO === "1" && <div className="mb-5 space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4"><h2 className="text-xl font-bold">Try the demo</h2><p className="text-base">Self-care: patient@cogniconnect.com / Patient@1234</p><button type="button" className={secondaryClass} onClick={() => router.push("/login?mode=self")}>Open self-care demo sign-in</button><p className="text-base">Code: 123456</p></div>}
-    {verification && <p>{t("Enter the six-digit code from your email. It is valid for five minutes.")}</p>}
+    {verification && <><p>{t("Enter the six-digit code from your email. It is valid for five minutes.")}</p>{kind === "verify" && process.env.NEXT_PUBLIC_DEMO === "1" && <button type="button" className={secondaryClass} onClick={() => setCode("123456")}>{t("Use demo code")}</button>}</>}
     {kind === "forgot" && <p>{t("If an account exists for this email, we will send a reset code.")}</p>}
     <form onSubmit={submit} className="space-y-5">
       {kind === "signup" && <><fieldset className="grid gap-3 sm:grid-cols-2"><legend className="sr-only">Account type</legend><button type="button" onClick={() => setSignupMode("self")} className={`min-h-14 rounded-xl border-2 p-3 text-left font-semibold ${signupMode === "self" ? "border-primary bg-primary/10" : "border-border"}`}>For myself</button><button type="button" onClick={() => setSignupMode("caregiver")} className={`min-h-14 rounded-xl border-2 p-3 text-left font-semibold ${signupMode === "caregiver" ? "border-primary bg-primary/10" : "border-border"}`}>For someone I care for</button></fieldset><label className="block">{t("Your name")}<input required maxLength={100} autoComplete="name" className={fieldClass} value={name} onChange={e => setName(e.target.value)} /></label>{signupMode === "self" && <p className="rounded-xl border border-primary/30 bg-primary/5 p-4">This creates a private self-care profile. You can invite someone you trust later, and your profile stays yours.</p>}</>}
       {!verification && <label className="block">{t("Email")}<input required type="email" maxLength={200} autoComplete="email" className={fieldClass} value={email} onChange={e => setEmail(e.target.value)} /></label>}
       {verification && <CodeInput length={6} label={t("Email code")} value={code} onChange={setCode} />}
       {kind !== "forgot" && kind !== "verify" && <PasswordField value={password} onChange={setPassword} current={kind === "login"} />}
+      {kind === "login" && <label className="flex min-h-12 items-center gap-3 text-lg"><input type="checkbox" className="h-5 w-5" checked={rememberDevice} onChange={event => setRememberDevice(event.target.checked)} />{t("Remember this device")}</label>}
       {(kind === "signup" || kind === "reset") && <p className="text-lg">{t("Use at least eight characters.")}</p>}
       <Notice>{t(notice)}</Notice>
       <button className={`${actionClass} w-full`} disabled={busy || (verification && (!challenge || code.length !== 6))}>{t(busy ? "Please wait…" : kind === "forgot" ? "Send reset code" : kind === "reset" ? "Save new password" : "Continue")}</button>
