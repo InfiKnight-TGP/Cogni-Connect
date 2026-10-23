@@ -600,7 +600,14 @@
     "All in the right order. Well done!": "সকলো সঠিক ক্ৰমত আছে। বৰ ভাল!",
     "Watch carefully. Remember the circles in order.": "ভালদৰে চাওক। বৃত্তবোৰৰ ক্ৰম মনত ৰাখক।",
     "Round complete!": "এই পৰ্যায় শেষ হ’ল!",
-    "I didn’t hear anything. Try again or type your answer.": "একো শুনা নগ’ল। আকৌ চেষ্টা কৰক বা উত্তৰটো টাইপ কৰক।"
+    "I didn’t hear anything. Try again or type your answer.": "একো শুনা নগ’ল। আকৌ চেষ্টা কৰক বা উত্তৰটো টাইপ কৰক।",
+    "Playing here counts toward your progress.": "ইয়াত খেলিলে আপোনাৰ অগ্ৰগতিৰ হিচাপত যোগ হয়।",
+    "{count} games ready": "{count}টা খেল সাজু",
+    "In today’s plan": "আজিৰ পৰিকল্পনাত",
+    "Played today": "আজি খেলিছে",
+    "Back to all games": "সকলো খেললৈ উভতি জাওক",
+    "Change day": "দিন সলনি কৰক",
+    "Game day": "খেলৰ দিন"
   },
   "reviewStatus": "Machine translation — needs native review",
   "Mole Path": "ম'ল পথ (পথটো মনত ৰাখক)",
@@ -750,5 +757,12 @@
     "Walk": "Walk",
     "Lunch": "Lunch",
     "Rest": "Rest",
-    "Call family": "Call family"
+    "Call family": "Call family",
+  "Playing here counts toward your progress.": "ইয়াত খেলিলে আপোনাৰ অগ্ৰগতিৰ হিচাপত যোগ হয়।",
+  "{count} games ready": "{count}টা খেল সাজু",
+  "In today\u2019s plan": "In today?s plan",
+  "Played today": "আজি খেলিছে",
+  "Back to all games": "সকলো খেললৈ উভতি জাওক",
+  "Change day": "দিন সলনি কৰক",
+  "Game day": "খেলৰ দিন"
 }

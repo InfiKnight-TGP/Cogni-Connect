@@ -601,7 +601,14 @@
     "All in the right order. Well done!": "सब सही क्रम में हैं। शाबाश!",
     "Watch carefully. Remember the circles in order.": "ध्यान से देखें। गोलों का क्रम याद रखें।",
     "Round complete!": "दौर पूरा हुआ!",
-    "I didn’t hear anything. Try again or type your answer.": "कुछ सुनाई नहीं दिया। फिर कोशिश करें या जवाब टाइप करें।"
+    "I didn’t hear anything. Try again or type your answer.": "कुछ सुनाई नहीं दिया। फिर कोशिश करें या जवाब टाइप करें।",
+    "Playing here counts toward your progress.": "यहाँ खेलना आपकी प्रगति में जुड़ता है।",
+    "{count} games ready": "{count} खेल तैयार हैं",
+    "In today’s plan": "आज की योजना में",
+    "Played today": "आज खेला गया",
+    "Back to all games": "सभी खेलों पर वापस जाएँ",
+    "Change day": "दिन बदलें",
+    "Game day": "खेल का दिन"
   },
   "reviewStatus": "Machine translation — needs native review",
   "Mole Path": "मोल पथ (रास्ता याद रखें)",
@@ -751,5 +758,12 @@
     "Walk": "Walk",
     "Lunch": "Lunch",
     "Rest": "Rest",
-    "Call family": "Call family"
+    "Call family": "Call family",
+  "Playing here counts toward your progress.": "यहाँ खेलना आपकी प्रगति में जुड़ता है।",
+  "{count} games ready": "{count} खेल तैयार हैं",
+  "In today\u2019s plan": "In today?s plan",
+  "Played today": "आज खेला गया",
+  "Back to all games": "सभी खेलों पर वापस जाएँ",
+  "Change day": "दिन बदलें",
+  "Game day": "खेल का दिन"
 }
