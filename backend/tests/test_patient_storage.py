@@ -218,6 +218,18 @@ class PatientStorageTests(unittest.TestCase):
         self.assertEqual(self.client.get('/memories/not-a-real-id/video').status_code, 404)
         self.assertEqual(self.device.delete(f"/memories/{memory['id']}").status_code, 403)
 
+    def test_memories_rebuild_from_journal_and_chunks_without_metadata(self):
+        memories = self.base_a / 'memories.json'
+        if memories.exists(): memories.unlink()
+        (self.base_a / 'content' / 'legacy.mp4').unlink()
+        chunks = self.base_a / 'video_chunks' / 'legacy_chunks'
+        chunks.mkdir(parents=True, exist_ok=True)
+        (chunks / 'chunk_0000_0010.mp4').write_bytes(b'chunk')
+        response = self.client.get('/memories')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item['title'] for item in response.json['memories']], ['legacy'])
+        self.assertTrue(memories.exists())
+
     def test_video_chunk_copy_stays_in_patient_directory(self):
         from process_video import copy_chunks_to_video_chunks
 

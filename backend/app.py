@@ -85,13 +85,51 @@ def _memory_data():
     if not isinstance(data, dict):
         data = {}
     changed = False
-    # Migrate existing uploads without exposing their names as public IDs.
+    journal_rows = {}
+    try:
+        with open(JOURNALS_PATH, 'r', encoding='utf-8') as stream:
+            journal_rows = json.load(stream)
+    except (OSError, ValueError, TypeError):
+        journal_rows = {}
+    if not isinstance(journal_rows, dict):
+        journal_rows = {}
+    candidates = set()
     for filename in os.listdir(UPLOAD_FOLDER) if os.path.isdir(UPLOAD_FOLDER) else []:
-        if not allowed_file(filename):
+        if allowed_file(filename): candidates.add(filename)
+    for filename in journal_rows:
+        if isinstance(filename, str) and allowed_file(filename): candidates.add(filename)
+    chunks_root = os.path.abspath(VIDEO_CHUNKS_ROOT)
+    if os.path.isdir(chunks_root):
+        for folder in os.listdir(chunks_root):
+            if folder.endswith('_chunks') and os.path.isdir(os.path.join(chunks_root, folder)):
+                stem = folder[:-7]
+                journal_match = next((name for name in journal_rows if isinstance(name, str) and name.rsplit('.', 1)[0] == stem), None)
+                candidates.add(journal_match or (stem + '.mp4'))
+    existing_by_filename = {row.get('filename'): (memory_id, row) for memory_id, row in data.items() if isinstance(row, dict) and row.get('filename')}
+    for filename in sorted(candidates):
+        if filename in existing_by_filename:
             continue
-        if not any(isinstance(row, dict) and row.get('filename') == filename for row in data.values()):
-            data[uuid.uuid4().hex] = {'filename': filename, 'createdAt': os.path.getmtime(os.path.join(UPLOAD_FOLDER, filename))}
-            changed = True
+        content_path = os.path.join(os.path.abspath(UPLOAD_FOLDER), filename)
+        chunk_folder = os.path.join(chunks_root, os.path.splitext(filename)[0] + '_chunks')
+        if not os.path.isfile(content_path) and not os.path.isdir(chunk_folder):
+            continue
+        journal = journal_rows.get(filename, {}) if isinstance(journal_rows.get(filename, {}), dict) else {}
+        data[uuid.uuid4().hex] = {'filename': filename, 'createdAt': os.path.getmtime(content_path) if os.path.isfile(content_path) else datetime.now().timestamp(),
+                                  'title': journal.get('title') or os.path.splitext(filename)[0], 'date': journal.get('date'), 'note': journal.get('entry', '')}
+        changed = True
+    for memory_id, row in list(data.items()):
+        filename = row.get('filename') if isinstance(row, dict) else None
+        if not filename:
+            continue
+        if not os.path.isfile(os.path.join(os.path.abspath(UPLOAD_FOLDER), filename)) and not os.path.isdir(os.path.join(chunks_root, os.path.splitext(filename)[0] + '_chunks')):
+            data.pop(memory_id, None); changed = True
+    seen_filenames = set()
+    for memory_id, row in list(data.items()):
+        filename = row.get('filename') if isinstance(row, dict) else None
+        if filename in seen_filenames:
+            data.pop(memory_id, None); changed = True
+        elif filename:
+            seen_filenames.add(filename)
     if changed or not os.path.exists(MEMORIES_PATH):
         with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
             json.dump(data, stream, ensure_ascii=False, indent=2)
@@ -654,14 +692,19 @@ def list_memories():
     except (TypeError, ValueError):
         return jsonify(error='Invalid limit'), 400
     cursor = request.args.get('cursor')
-    memories = _memory_data()
+    try:
+        memories = _memory_data()
+    except Exception:
+        api.logger.exception('Could not build memory gallery for the active patient')
+        return jsonify(error='Memories are not available right now'), 500
     rows = []
     for memory_id, row in memories.items():
         filename = row.get('filename')
         if not isinstance(filename, str) or not allowed_file(filename):
             continue
         path = os.path.join(os.path.abspath(UPLOAD_FOLDER), filename)
-        if not os.path.isfile(path):
+        chunk_folder = os.path.join(os.path.abspath(VIDEO_CHUNKS_ROOT), os.path.splitext(filename)[0] + '_chunks')
+        if not os.path.isfile(path) and not os.path.isdir(chunk_folder):
             continue
         journal = {}
         try:
