@@ -13,8 +13,8 @@ export default function AccountForm({ kind }: { kind: Kind }) {
   const [email, setEmail] = useState(""); const [name, setName] = useState("");
   const [password, setPassword] = useState(""); const [code, setCode] = useState("");
   const [challenge, setChallenge] = useState(""); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
-  const [signupMode, setSignupMode] = useState<"self" | "caregiver">("caregiver");
-  const [loginMode, setLoginMode] = useState<"self" | "caregiver">("caregiver");
+  const [signupMode, setSignupMode] = useState<"self" | "caregiver">(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mode") === "self" ? "self" : "caregiver");
+  const [loginMode, setLoginMode] = useState<"self" | "caregiver">(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mode") === "self" ? "self" : "caregiver");
   const [devWindow, setDevWindow] = useState(process.env.NEXT_PUBLIC_DEV_LOGIN === "1");
   const verification = kind === "verify" || kind === "reset";
   useEffect(() => {
