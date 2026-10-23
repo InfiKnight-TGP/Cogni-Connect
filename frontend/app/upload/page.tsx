@@ -10,8 +10,12 @@ import { DatePickerWithPresets } from "@/components/quiz/datePicker";
 import { apiFetch, API_URL } from "@/lib/api";
 import { CaregiverOnly } from "@/components/caregiver";
 import CaregiverPageLabel from "@/components/caregiver/pageLabel";
+import { useAuth } from "@/lib/auth-context";
 
 interface UploadedVideo {
+  id?: string;
+  title?: string;
+  note?: string;
   filename: string;
   size: number;
   uploaded: number;
@@ -73,10 +77,10 @@ function UploadVideos() {
 
   const fetchVideos = async () => {
     try {
-      const response = await apiFetch(`${API_URL}/videos`);
+      const response = await apiFetch(`${API_URL}/memories`);
       if (response.ok) {
         const data = await response.json();
-        setVideos(data);
+        setVideos((data.memories ?? []).map((item: UploadedVideo) => ({ ...item, filename: item.title, uploaded: Date.now() / 1000, journal: item.note })));
       }
     } catch (error) {
       console.error("Error fetching videos:", error);
@@ -157,6 +161,13 @@ function UploadVideos() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleDelete = async (id?: string) => {
+    if (!id || !window.confirm("Delete this memory?")) return;
+    const response = await apiFetch(`${API_URL}/memories/${id}`, { method: "DELETE" });
+    if (response.ok) setVideos(current => current.filter(video => video.id !== id));
+    else setUploadError("Could not delete this memory.");
   };
 
   const formatFileSize = (bytes: number) => {
@@ -332,7 +343,7 @@ function UploadVideos() {
                       key={index}
                       className="rounded-lg border border-border p-4 transition-colors hover:bg-accent"
                     >
-                      <div className="flex items-start justify-between">
+                      <div className="flex items-start justify-between gap-4">
                         <div className="flex items-start gap-3">
                           <Video className="mt-1 h-5 w-5 text-primary" />
                           <div className="flex-1">
@@ -364,6 +375,7 @@ function UploadVideos() {
                             )}
                           </div>
                         </div>
+                        {video.id && <Button type="button" variant="outline" className="min-h-12" onClick={() => void handleDelete(video.id)}>Delete</Button>}
                       </div>
                     </div>
                   ))}
@@ -378,12 +390,12 @@ function UploadVideos() {
 }
 
 export default function UploadPage() {
+  const { session } = useAuth();
+  const self = session?.role === "self";
   return (
     <>
       <Nav />
-      <CaregiverOnly>
-        <UploadVideos />
-      </CaregiverOnly>
+      {self ? <UploadVideos /> : <CaregiverOnly><UploadVideos /></CaregiverOnly>}
     </>
   );
 }

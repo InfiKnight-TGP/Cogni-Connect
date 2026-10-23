@@ -216,6 +216,7 @@ class PatientStorageTests(unittest.TestCase):
         for path in ('/video_chunks/../patient-b/video_chunks/b.mp4', '/video_chunks/%2e%2e/patient-b/video_chunks/b.mp4', '/frames/..%2Fpatient-b%2Fframes%2Fb.jpg'):
             self.assertEqual(self.client.get(path).status_code, 404)
         self.assertEqual(self.client.get('/memories/not-a-real-id/video').status_code, 404)
+        self.assertEqual(self.device.delete(f"/memories/{memory['id']}").status_code, 403)
 
     def test_video_chunk_copy_stays_in_patient_directory(self):
         from process_video import copy_chunks_to_video_chunks

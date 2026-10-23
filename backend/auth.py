@@ -1051,7 +1051,7 @@ def reset_adaptive():
 
 
 CAREGIVER_ENDPOINTS = {
-    'upload_video', 'get_processing_status', 'add_person', 'update_person', 'delete_person',
+    'get_processing_status', 'add_person', 'update_person', 'delete_person',
     'delete_performance', 'get_reports_days', 'get_report_for_day', 'save_settings',
 }
 DEMO_BLOCKED_ENDPOINTS = {'pair_invite', 'unpair', 'create_patient_login', 'remove_patient_login', 'reset_patient_login_password', 'patient_pin', 'legacy_change_pin'}
@@ -1304,6 +1304,8 @@ def init_auth(app, legacy_settings):
             if request.endpoint == 'upload_video' and not limits().hit(('demo-upload', session['id']), 3, 86400):
                 return jsonify(error='Demo uploads are limited to three per day.'), 403
         if request.endpoint in CAREGIVER_ENDPOINTS and not is_caregiver():
+            return error(403)
+        if request.endpoint == 'upload_video' and not (is_caregiver() or self_account()):
             return error(403)
         if request.endpoint == 'save_performance' and ((session['kind'] != 'patient_device' and not self_account()) or is_elevated()):
             return error(403)

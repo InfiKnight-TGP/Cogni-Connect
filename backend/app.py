@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory, Response
+from flask import Flask, request, jsonify, send_from_directory, Response, g
 from flask_cors import CORS
 import json
 from openai import OpenAI
@@ -727,6 +727,71 @@ def memory_thumbnail(memory_id):
     if os.path.exists(target):
         return send_from_directory(thumb_root, memory_id + '.png', mimetype='image/png')
     return Response(NEUTRAL_THUMBNAIL, mimetype='image/png')
+
+
+def _memory_edit_allowed():
+    import auth
+    session = g.get('auth_session')
+    return bool(session and session.get('kind') == 'caregiver' and (session.get('user_id') and (auth.is_caregiver() or auth.self_account())))
+
+
+@api.route('/memories/<memory_id>', methods=['PATCH', 'PUT'])
+def update_memory(memory_id):
+    if not _memory_edit_allowed():
+        return jsonify(error='Only a caregiver or self account can edit memories.'), 403
+    row = _memory_for_id(memory_id)
+    if not row:
+        return jsonify(error='Memory not found'), 404
+    payload = request.get_json(silent=True) or {}
+    if set(payload) - {'title', 'note', 'date'}:
+        return jsonify(error='Only title, note, and date can be changed.'), 400
+    if 'title' in payload and (not isinstance(payload['title'], str) or len(payload['title'].strip()) > 120):
+        return jsonify(error='Title is invalid.'), 400
+    if 'note' in payload and (not isinstance(payload['note'], str) or len(payload['note']) > 4000):
+        return jsonify(error='Note is invalid.'), 400
+    memories = _memory_data(); memory_id_row = memories[memory_id]
+    old_filename = memory_id_row['filename']
+    journals = {}
+    try:
+        with open(JOURNALS_PATH, 'r', encoding='utf-8') as stream: journals = json.load(stream)
+    except (OSError, ValueError, TypeError): pass
+    journal = dict(journals.get(old_filename, {}))
+    if 'title' in payload: memory_id_row['title'] = payload['title'].strip()
+    if 'note' in payload: journal['entry'] = payload['note']; memory_id_row['note'] = payload['note']
+    if 'date' in payload: journal['date'] = payload['date']; memory_id_row['date'] = payload['date']
+    if journal: journals[old_filename] = journal
+    with open(JOURNALS_PATH, 'w', encoding='utf-8') as stream: json.dump(journals, stream, ensure_ascii=False, indent=2)
+    with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream: json.dump(memories, stream, ensure_ascii=False, indent=2)
+    invalidate_crossword_cache(journal.get('date'))
+    return jsonify(id=memory_id, title=memory_id_row.get('title') or old_filename.rsplit('.', 1)[0], note=journal.get('entry', ''), date=journal.get('date'))
+
+
+@api.route('/memories/<memory_id>', methods=['DELETE'])
+def delete_memory(memory_id):
+    if not _memory_edit_allowed():
+        return jsonify(error='Only a caregiver or self account can delete memories.'), 403
+    row = _memory_for_id(memory_id)
+    if not row:
+        return jsonify(error='Memory not found'), 404
+    filename = row['filename']; base = os.path.abspath(patient_path('')); memories = _memory_data(); memories.pop(memory_id, None)
+    for path in (os.path.join(base, 'content', filename), os.path.join(base, 'memory_thumbnails', memory_id + '.png')):
+        if os.path.isfile(path): os.remove(path)
+    chunk_folder = _chunks_folder(filename)
+    for folder in ('video_chunks', 'frames'):
+        path = os.path.join(base, folder, chunk_folder)
+        if os.path.isdir(path): shutil.rmtree(path, ignore_errors=True)
+    journals = {}
+    try:
+        with open(JOURNALS_PATH, 'r', encoding='utf-8') as stream: journals = json.load(stream)
+    except (OSError, ValueError, TypeError): pass
+    date_value = journals.pop(filename, {}).get('date') if isinstance(journals.get(filename, {}), dict) else None
+    with open(JOURNALS_PATH, 'w', encoding='utf-8') as stream: json.dump(journals, stream, ensure_ascii=False, indent=2)
+    qas_path = os.path.join(base, 'qas.json')
+    if os.path.exists(qas_path):
+        with open(qas_path, 'w', encoding='utf-8') as stream: json.dump([], stream)
+    with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream: json.dump(memories, stream, ensure_ascii=False, indent=2)
+    invalidate_crossword_cache(date_value)
+    return jsonify(ok=True)
 
 
 @api.route('/journals', methods=['GET'])
