@@ -1960,15 +1960,15 @@ ENGLISH_STOPWORDS = {
     'a', 'about', 'am', 'an', 'and', 'are', 'as', 'at', 'be', 'because', 'been',
     'before', 'being', 'between', 'both', 'but', 'by', 'can', 'could', 'did',
     'do', 'does', 'doing', 'down', 'during', 'each', 'few', 'for', 'from',
-    'further', 'had', 'has', 'have', 'having', 'he', 'her', 'here', 'hers',
+    'further', 'go', 'goes', 'going', 'gone', 'had', 'has', 'have', 'having', 'he', 'her', 'here', 'hers',
     'herself', 'him', 'himself', 'his', 'how', 'i', 'if', 'in', 'into', 'is',
-    'it', 'its', 'itself', 'just', 'me', 'memory', 'memories', 'more', 'most',
+    'it', 'its', 'itself', 'just', 'me', 'meet', 'meeting', 'meets', 'memory', 'memories', 'met', 'more', 'most',
     'my', 'myself', 'no', 'nor', 'not', 'now', 'of', 'off', 'on', 'once',
     'only', 'or', 'other', 'our', 'ours', 'ourselves', 'out', 'over', 'own',
     'same', 'she', 'should', 'so', 'some', 'such', 'tell', 'than', 'that',
     'the', 'their', 'theirs', 'them', 'themselves', 'then', 'there', 'these',
     'they', 'this', 'those', 'through', 'to', 'too', 'under', 'until', 'up',
-    'very', 'video', 'videos', 'was', 'we', 'were', 'what', 'when', 'where',
+    'very', 'video', 'videos', 'was', 'we', 'went', 'were', 'what', 'when', 'where',
     'which', 'while', 'who', 'whom', 'why', 'will', 'with', 'would', 'you',
     'your', 'yours', 'yourself', 'yourselves',
 }
@@ -2147,6 +2147,7 @@ def ask_memory():
 
     about_phrases = (
         'tell me about', 'describe', 'what happened', 'what is this', 'where was i',
+        'where did i go', 'what was i doing', 'who did i meet',
         'summarise', 'summarize', 'remember', 'about this video',
         'about the video', 'about this memory', 'about the memory',
     )
@@ -2187,33 +2188,58 @@ def ask_memory():
         d = _friendly_memory_date(c['date'])
         ans = f"You went to {c['title']} on {d['dateLabel'] or d['date']}."
     elif c and is_who:
-        if c['people']:
+        if c.get('people'):
             if len(c['people']) == 1:
                 ans = f"{c['people'][0]} was in this video."
             else:
                 ans = f"{', '.join(c['people'][:-1])} and {c['people'][-1]} were in this video."
         else:
-            ans = c['note'] or None
+            ans = None
     elif c and is_what:
-        raw_items = ([c['note']] if c.get('note') else []) + (c.get('transcript') or [])
-        candidates = []
-        for item in raw_items:
-            candidates.extend(x.strip() for x in re.split(r'(?<=[.!?])\s+', str(item)) if x.strip())
-        best_cand = None
-        best_count = 0
-        if content_words:
-            for cand in candidates:
-                cand_words = set(re.findall(r'[a-z0-9]+', cand.lower()))
-                cnt = len(content_words & cand_words)
-                if cnt > best_count:
-                    best_count = cnt
-                    best_cand = cand
-        if best_count > 0:
-            ans = best_cand
-        elif not ans and ('animal' in words or 'behind' in words):
-            animal_matches = [x.strip() for x in candidates if re.search(r'\b(elephant|elephants|animal|animals|lion|lions|dog|dogs|cat|cats|bird|birds)\b', x, re.I)]
-            if animal_matches:
-                ans = animal_matches[0]
+        is_animal_q = bool(words & {'animal', 'animals', 'behind', 'creature', 'creatures'})
+        if is_animal_q:
+            trans_items = c.get('transcript') or []
+            trans_sentences = []
+            for item in trans_items:
+                trans_sentences.extend(x.strip() for x in re.split(r'(?<=[.!?])\s+', str(item)) if x.strip())
+            animal_pat = r'\b(elephant|elephants|animal|animals|creature|creatures|lion|lions|dog|dogs|cat|cats|bird|birds|monkey|monkeys|bear|bears|tiger|tigers)\b'
+            trans_match = [s for s in trans_sentences if re.search(animal_pat, s, re.I)]
+            if trans_match:
+                cand = trans_match[0]
+                m_loc = re.search(r'(in front of|looking at|near|behind|beside)\s+(the\s+)?[a-z]+', cand, re.I)
+                if m_loc:
+                    ans = f"You were {m_loc.group(0).lower()}."
+                else:
+                    clauses = re.split(r',\s*and\s+', cand)
+                    target_cl = next((cl.strip() for cl in clauses if re.search(animal_pat, cl, re.I)), cand)
+                    target_cl = re.sub(r'^(alright,?\s*so\s*|so\s*|well,?\s*)', '', target_cl, flags=re.I)
+                    target_cl = re.sub(r'^(here\s+)?we\s+are\s+', 'You were ', target_cl, flags=re.I)
+                    target_cl = re.sub(r'^i\s+am\s+', 'You were ', target_cl, flags=re.I)
+                    target_cl = target_cl.rstrip('.!?,;') + '.'
+                    ans = target_cl[0].upper() + target_cl[1:]
+            elif c.get('note') and re.search(animal_pat, c['note'], re.I):
+                m_note = re.search(r'(looking at|visiting|near|with)\s+(the\s+)?[a-z]+', c['note'], re.I)
+                if m_note:
+                    ans = f"You were {m_note.group(0).lower()}."
+                else:
+                    m_word = re.search(animal_pat, c['note'], re.I)
+                    ans = f"You were seeing the {m_word.group(0).lower()}."
+        if not ans:
+            raw_items = ([c['note']] if c.get('note') else []) + (c.get('transcript') or [])
+            candidates = []
+            for item in raw_items:
+                candidates.extend(x.strip() for x in re.split(r'(?<=[.!?])\s+', str(item)) if x.strip())
+            best_cand = None
+            best_count = 0
+            if content_words:
+                for cand in candidates:
+                    cand_words = set(re.findall(r'[a-z0-9]+', cand.lower()))
+                    cnt = len(content_words & cand_words)
+                    if cnt > best_count:
+                        best_count = cnt
+                        best_cand = cand
+            if best_count > 0:
+                ans = best_cand
 
     if ans:
         sources = [{

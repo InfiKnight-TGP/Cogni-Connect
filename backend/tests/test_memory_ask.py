@@ -45,23 +45,31 @@ class MemoryAskTests(unittest.TestCase):
         self.patient_a = 'patient-a'
         self.base_a = self.root / 'data' / self.patient_a
         self.base_b = self.root / 'data' / 'patient-b'
+        self.base_c = self.root / 'data' / 'patient-c'
         initialize_patient(self.base_a, 'A')
         initialize_patient(self.base_b, 'B')
+        initialize_patient(self.base_c, 'C')
 
         with app.api.app_context():
             connection = auth.db()
             connection.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES ('owner-a','a@example.com','A','unused',0,0,0,0)")
             connection.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES ('owner-b','b@example.com','B','unused',0,0,1,0)")
+            connection.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo) VALUES ('owner-c','c@example.com','C','unused',0,0,2,0)")
             connection.execute("INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?, 'A', NULL, 'owner-a', 0, 0)", (self.patient_a,))
             connection.execute("INSERT INTO patient_members VALUES (?,'owner-a','owner')", (self.patient_a,))
             connection.execute("INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES ('patient-b','B',NULL,'owner-b',1,0)")
             connection.execute("INSERT INTO patient_members VALUES ('patient-b','owner-b','owner')")
+            connection.execute("INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES ('patient-c','C',NULL,'owner-c',2,0)")
+            connection.execute("INSERT INTO patient_members VALUES ('patient-c','owner-c','owner')")
             token_a, _ = auth.new_session('caregiver', user_id='owner-a')
             token_b, _ = auth.new_session('caregiver', user_id='owner-b')
+            token_c, _ = auth.new_session('caregiver', user_id='owner-c')
 
         self.client.set_cookie('cogni_session', token_a)
         self.client_b = app.api.test_client()
         self.client_b.set_cookie('cogni_session', token_b)
+        self.client_c = app.api.test_client()
+        self.client_c.set_cookie('cogni_session', token_c)
 
 
 
@@ -83,7 +91,7 @@ class MemoryAskTests(unittest.TestCase):
         chunks_dir.mkdir(parents=True, exist_ok=True)
         (chunks_dir / 'chunk_0000_0010.mp4').write_bytes(b'chunk')
         (chunks_dir / 'full_transcript.json').write_text(
-            json.dumps(['The cool thing about these guys is that they have really really really long trunks. That is cool.']),
+            json.dumps(['Alright, so here we are in front of the elephants, and the cool thing about these guys is that they have really really really long trunks. That is cool.']),
             encoding='utf-8'
         )
         (chunks_dir / 'chunk_0000_0010_faces.json').write_text(
@@ -262,7 +270,44 @@ class MemoryAskTests(unittest.TestCase):
         data = res.get_json()
         self.assertTrue(data['grounded'])
         self.assertIn('elephant', data['answer'].lower())
+        self.assertEqual(data['answer'], 'You were in front of the elephants.')
+        self.assertNotEqual(data['answer'], 'A day at the zoo, looking at the elephants')
         self.assertEqual(len(data['sources']), 1)
+
+    def test_where_did_i_go_who_did_i_meet_what_was_i_doing_scopes_memory_and_all(self):
+        questions = [
+            'Where did I go?',
+            'Who did I meet?',
+            'What was I doing?',
+        ]
+        raw_transcript_sentences = [
+            'Alright, so here we are in front of the elephants, and the cool thing about these guys is that they have really really really long trunks.',
+            'That is cool.',
+        ]
+        # Against patient with zoo memory (returns ABOUT summary, never a raw transcript fragment alone)
+        for q in questions:
+            for scope in ['memory', 'all']:
+                payload = {'question': q, 'scope': scope}
+                if scope == 'memory':
+                    payload['memory_id'] = self.memory_id
+                res = self.client.post('/memories/ask', json=payload)
+                self.assertEqual(res.status_code, 200)
+                data = res.get_json()
+                self.assertTrue(data['grounded'], f"Expected grounded:True for {q} in scope {scope}")
+                self.assertIn('zoo', data['answer'].lower())
+                self.assertTrue(
+                    data['answer'].startswith('On Friday') or data['answer'].startswith('In this memory'),
+                    f"Expected ABOUT summary start, got: {data['answer']}"
+                )
+                self.assertNotIn(data['answer'], raw_transcript_sentences)
+
+        # Against patient C (no memories) -> returns grounded: false, never a raw transcript fragment
+        for q in questions:
+            res_c = self.client_c.post('/memories/ask', json={'question': q, 'scope': 'all'})
+            self.assertEqual(res_c.status_code, 200)
+            data_c = res_c.get_json()
+            self.assertFalse(data_c['grounded'])
+            self.assertNotIn(data_c['answer'], raw_transcript_sentences)
 
     def test_where_was_i_goes_to_about_or_grounded_false_never_random_sentence(self):
         res = self.client.post('/memories/ask', json={
