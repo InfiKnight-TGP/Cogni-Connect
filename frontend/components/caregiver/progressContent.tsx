@@ -26,7 +26,7 @@ type AdaptiveState = { knob: number; mode?: "auto" | "fixed"; reason?: string; l
 const difficultyName = (knob: number) => knob === 1 ? "Easier" : knob === 2 ? "Normal" : "Harder";
 const TREND_TEXT = { up: "↑ Better", down: "↓ Lower", steady: "→ Steady" };
 
-export default function ProgressContent() {
+export default function ProgressContent({ audience = "caregiver" }: { audience?: "caregiver" | "self" }) {
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [adaptive, setAdaptive] = useState<Record<string, AdaptiveState> | null>(null);

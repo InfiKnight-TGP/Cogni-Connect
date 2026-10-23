@@ -9,6 +9,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 import ReadAloud from "@/components/interaction/ReadAloud";
 import { useAuth } from "@/lib/auth-context";
+import ProgressSummary from "@/components/caregiver/progressSummary";
+import ProgressContent from "@/components/caregiver/progressContent";
+import ActivityLog from "@/components/caregiver/activityLog";
 
 interface ScoreEntry {
   date: string;
@@ -41,6 +44,7 @@ export default function MyProgressPage() {
   const [daysCount, setDaysCount] = useState(0);
   const [totalStars, setTotalStars] = useState(0);
   const [bestGame, setBestGame] = useState<{ name: string; stars: number } | null>(null);
+  const [tab, setTab] = useState<"summary" | "trends" | "log" | "report">("summary");
 
   const loadProgress = useCallback(async () => {
     try {
@@ -221,6 +225,18 @@ export default function MyProgressPage() {
                 {t("Go to Today’s Activities →")}
               </Link>
             </div>
+
+            <section className="space-y-5" aria-label={t("Progress and reports")}>
+              <div role="tablist" className="flex flex-wrap gap-2 border-b pb-2">
+                {([["summary", "Summary"], ["trends", "Trends"], ["log", "Activity Log"], ["report", "Share with doctor"]] as const).map(([key, label]) => (
+                  <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`min-h-12 rounded-lg px-4 text-lg font-semibold ${tab === key ? "bg-primary text-primary-foreground" : "border bg-card"}`}>{t(label)}</button>
+                ))}
+              </div>
+              {tab === "summary" && <ProgressSummary audience="self" />}
+              {tab === "trends" && <ProgressContent audience="self" />}
+              {tab === "log" && <ActivityLog audience="self" />}
+              {tab === "report" && <Link href="/report" className="inline-flex min-h-14 items-center rounded-xl bg-primary px-6 text-lg font-semibold text-primary-foreground">{t("Open printable report")}</Link>}
+            </section>
           </div>
         )}
       </main>

@@ -48,7 +48,7 @@ function activityRows(performance: Performance): Activity[] {
   return rows;
 }
 
-export default function ActivityLog() {
+export default function ActivityLog({ audience = "caregiver" }: { audience?: "caregiver" | "self" }) {
   const [performance, setPerformance] = useState<Performance | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [notice, setNotice] = useState("");
