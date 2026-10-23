@@ -368,6 +368,8 @@ def seed_dev_accounts(app):
             database.execute('INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,?,?,?,1)', (patient_id, 'Demo patient', generate_password_hash('1234', method='scrypt'), users['caregiver@demo.local'], now()))
             database.execute('INSERT INTO patient_members VALUES (?,?,?)', (patient_id, users['caregiver@demo.local'], 'owner'))
             patient = database.fetchone('SELECT * FROM patients WHERE id=?', (patient_id,))
+        elif not patient['pin_hash']:
+            database.execute('UPDATE patients SET pin_hash=? WHERE id=?', (generate_password_hash('1234', method='scrypt'), patient['id']))
         database.execute('INSERT INTO patient_members (patient_id,user_id,role) VALUES (?,?,?) ON CONFLICT(patient_id,user_id) DO NOTHING', (patient['id'], users['owner@demo.local'], 'owner'))
 
 
@@ -393,6 +395,8 @@ def seed_shared_demo(app):
             pid = uuid.uuid4().hex
             database.execute("INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,?,?,?,1)", (pid, 'Demo Patient', generate_password_hash(demo_value('DEMO_PIN', '1234'), method='scrypt'), caregiver['id'], now()))
             patient = database.fetchone('SELECT * FROM patients WHERE id=?', (pid,))
+        elif not patient['pin_hash']:
+            database.execute('UPDATE patients SET pin_hash=? WHERE id=?', (generate_password_hash(demo_value('DEMO_PIN', '1234'), method='scrypt'), patient['id']))
         database.execute('INSERT INTO patient_members (patient_id,user_id,role) VALUES (?,?,?) ON CONFLICT(patient_id,user_id) DO NOTHING', (patient['id'], caregiver['id'], 'owner'))
         if not patient_user:
             uid = uuid.uuid4().hex
@@ -757,10 +761,72 @@ def lock():
     return jsonify(ok=True)
 
 
+def _device_unpair_counter(scope, key, window):
+    row = database.fetchone('SELECT * FROM device_unpair_attempts WHERE scope=? AND key=?', (scope, key))
+    stamp = now()
+    if not row or stamp >= row['window_start'] + window:
+        database.execute('INSERT INTO device_unpair_attempts(scope,key,window_start,attempts) VALUES (?,?,?,0) '
+                         'ON CONFLICT(scope,key) DO UPDATE SET window_start=excluded.window_start,attempts=0',
+                         (scope, key, stamp))
+        return 0, stamp + window
+    return row['attempts'], row['window_start'] + window
+
+
+def _device_unpair_response(message, status, retry_after=None):
+    response = jsonify(error=message)
+    response.status_code = status
+    if retry_after is not None:
+        response.headers['Retry-After'] = str(max(1, int(retry_after)))
+    return response
+
+
+@bp.post('/device/unpair')
+@login_required
+def device_unpair():
+    session = g.get('auth_session')
+    if not session or session['kind'] != 'patient_device':
+        return error(403)
+    with database.transaction():
+        patient = database.fetchone('SELECT * FROM patients WHERE id=?', (session['patient_id'],))
+        pin = text_field(payload(), 'pin')
+        # Always perform a password-hash check, including when no PIN exists,
+        # so the response timing does not reveal whether a PIN is configured.
+        pin_hash = patient['pin_hash'] if patient and patient['pin_hash'] else current_app.extensions['auth_dummy_hash']
+        pin_format_ok = bool(re.fullmatch(r'[0-9]{4}', pin))
+        pin_valid = check_password_hash(pin_hash, pin if pin_format_ok else '0000') and pin_format_ok
+        demo_valid = bool(patient and patient['is_demo'] and demo_enabled() and
+                          hmac.compare_digest(pin, demo_value('DEMO_PIN', '1234')))
+        session_attempts, session_until = _device_unpair_counter('session', session['id'], 900)
+        patient_attempts, patient_until = _device_unpair_counter('patient', session['patient_id'], 3600)
+        if session_attempts >= 5 or patient_attempts >= 10:
+            retry = max(session_until, patient_until) - now()
+            return _device_unpair_response('Too many PIN attempts. Please wait before trying again.', 429, retry)
+        if not patient or not patient['pin_hash']:
+            return _device_unpair_response('A PIN has not been set', 409)
+        if not (pin_valid or demo_valid):
+            database.execute('UPDATE device_unpair_attempts SET attempts=attempts+1 WHERE scope=? AND key=?', ('session', session['id']))
+            database.execute('UPDATE device_unpair_attempts SET attempts=attempts+1 WHERE scope=? AND key=?', ('patient', session['patient_id']))
+            remaining = max(0, min(5 - session_attempts - 1, 10 - patient_attempts - 1))
+            return _device_unpair_response(f'That PIN is not right. Attempts remaining: {remaining}.', 403)
+        database.execute('DELETE FROM sessions WHERE id=?', (session['id'],))
+        database.execute('DELETE FROM device_unpair_attempts WHERE scope=? AND key=?', ('session', session['id']))
+        if session.get('user_id'):
+            database.execute('DELETE FROM trusted_devices WHERE user_id=?', (session['user_id'],))
+    response = jsonify(ok=True)
+    cookie(response, COOKIES['patient_device'], '', 0)
+    cookie(response, 'cogni_patient', '', 0)
+    if session.get('user_id'):
+        cookie(response, 'cogni_trusted', '', 0)
+    return response
+
+
 def create_pair(kind):
     patient_id = payload().get('patient_id')
     if not authorized_patient(patient_id) or (self_account() and not owner_of(patient_id)):
         return error(403)
+    patient = database.fetchone('SELECT pin_hash FROM patients WHERE id=?', (patient_id,))
+    if kind == 'device' and (not patient or not patient['pin_hash']):
+        return _device_unpair_response('A PIN has not been set', 409)
     if limited('pair-create', maximum=20, seconds=600):
         return error(429)
     code = ''.join(secrets.choice(ALPHABET) for _ in range(8))

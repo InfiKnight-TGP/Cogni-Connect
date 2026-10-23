@@ -89,6 +89,13 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         attempts INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (scope, key)
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS device_unpair_attempts (
+        scope TEXT NOT NULL,
+        key TEXT NOT NULL,
+        window_start INTEGER NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (scope, key)
+    )""")
     user_columns = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
     # Older installations used a CHECK constraint that omitted self accounts.
     # Rebuild only that table, preserving all rows and keeping existing users as caregivers.

@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS pairing_attempts (
   PRIMARY KEY (scope, key)
 );
 
+CREATE TABLE IF NOT EXISTS device_unpair_attempts (
+  scope TEXT NOT NULL,
+  key TEXT NOT NULL,
+  window_start INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (scope, key)
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   token_hash TEXT UNIQUE NOT NULL,
