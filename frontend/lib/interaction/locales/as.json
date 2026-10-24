@@ -48,6 +48,12 @@
     "Please call me": [
       "অনুগ্ৰহ কৰি মোক ফোন কৰক",
       "muk phon korok"
+    ],
+    "Biscuit": [
+      "বিস্কুট",
+      "biscuit",
+      "biskut",
+      "চাহ বিস্কুট"
     ]
   },
   "ui": {
@@ -784,7 +790,20 @@
     "Think about what rings on a bicycle handlebar.": "ভাবকচোন চাইকেলৰ হেণ্ডেলত কি বাজে।",
     "Think about the warm glow burning on a candle.": "ভাবকচোন মমবাতিৰ ওপৰত কি জ্বলে।",
     "Think about the bowl of warm dal served with rice.": "ভাবকচোন ভাতৰ সৈতে বাটিত কি খোৱা হয়।",
-    "Think about what twinkles beside the moon at night.": "ভাবকচোন ৰাতি জোনৰ কাষত কি তিৰবিৰায়।"
+    "Think about what twinkles beside the moon at night.": "ভাবকচোন ৰাতি জোনৰ কাষত কি তিৰবিৰায়।",
+    "Mango": "আম",
+    "Tooth": "দাঁত",
+    "Cloth dress": "সাজ-পোছাক",
+    "Stamp": "ডাক টিকট",
+    "Package": "পাৰ্চেল",
+    "Diary": "ডায়েৰী",
+    "Hammer": "হাতুৰী",
+    "Folder": "ফোল্ডাৰ",
+    "Camera": "কেমেৰা",
+    "Hat": "টুপী",
+    "Think about the sweet yellow mango growing on a tree.": "ভাবকচোন গছত কি মিঠা হালধীয়া আম লাগে।",
+    "Think about what you clean gently with a toothbrush.": "ভাবকচোন টুথব্ৰাছেৰে আপুনি কি পৰিষ্কাৰ কৰে।",
+    "Think about what a tailor cuts to stitch clothes.": "ভাবকচোন কাপোৰ চিলাবলৈ দৰ্জীয়ে কি কাটে।"
   },
   "reviewStatus": "Machine translation — needs native review",
   "Mole Path": "ম'ল পথ (পথটো মনত ৰাখক)",

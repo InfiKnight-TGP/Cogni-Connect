@@ -49,6 +49,13 @@
     "Please call me": [
       "मुझे फ़ोन करें",
       "फोन कीजिए"
+    ],
+    "Biscuit": [
+      "बिस्कुट",
+      "biscuit",
+      "biskut",
+      "chai biscuit",
+      "चाय बिस्कुट"
     ]
   },
   "ui": {
@@ -785,7 +792,20 @@
     "Think about what rings on a bicycle handlebar.": "सोचिए कि साइकिल के हैंडल पर क्या बजता है।",
     "Think about the warm glow burning on a candle.": "सोचिए कि मोमबत्ती के ऊपर कौन सी गरम लौ जलती है।",
     "Think about the bowl of warm dal served with rice.": "सोचिए कि चावल के साथ कटोरी में क्या परोसा जाता है।",
-    "Think about what twinkles beside the moon at night.": "सोचिए कि रात में चाँद के पास क्या चमकता है।"
+    "Think about what twinkles beside the moon at night.": "सोचिए कि रात में चाँद के पास क्या चमकता है।",
+    "Mango": "आम",
+    "Tooth": "दाँत",
+    "Cloth dress": "पोशाक",
+    "Stamp": "डाक टिकट",
+    "Package": "पार्सल",
+    "Diary": "डायरी",
+    "Hammer": "हथौड़ा",
+    "Folder": "फ़ोल्डर",
+    "Camera": "कैमरा",
+    "Hat": "टोपी",
+    "Think about the sweet yellow mango growing on a tree.": "सोचिए कि पेड़ पर कौन सा मीठा पीला आम लगता है।",
+    "Think about what you clean gently with a toothbrush.": "सोचिए कि टूथब्रश से आप क्या साफ़ करते हैं।",
+    "Think about what a tailor cuts to stitch clothes.": "सोचिए कि दर्ज़ी कपड़े सिलने के लिए क्या काटता है।"
   },
   "reviewStatus": "Machine translation — needs native review",
   "Mole Path": "मोल पथ (रास्ता याद रखें)",

@@ -79,8 +79,19 @@ export default function WordAssociation({
   const promptText = t("What goes with {item}?", { item: t(currentRound.cue.word) });
   const voiceOptions = currentRound.options.map((opt) => ({
     id: opt.id,
-    label: t(opt.word),
-    synonyms: opt.synonyms,
+    label: opt.word,
+    synonyms: [
+      ...(opt.synonyms ?? []),
+      ...(opt.id === currentRound.targetId
+        ? [
+            `${currentRound.cue.word} ${opt.word}`,
+            "chai biscuit",
+            "tea biscuit",
+            "चाय बिस्कुट",
+            "চাহ বিস্কুট",
+          ]
+        : []),
+    ],
   }));
 
   const targetOption = currentRound.options.find((o) => o.id === currentRound.targetId);
