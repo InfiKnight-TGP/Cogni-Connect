@@ -1,6 +1,6 @@
 from tests.auth_support import setup_auth
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import app
 
@@ -10,7 +10,7 @@ class AccuracyAvailabilityTests(unittest.TestCase):
         setup_auth(self, "patient_device")
 
     def test_missing_key_never_fabricates_a_score(self):
-        with patch.object(app.client, 'api_key', 'not_configured'):
+        with patch.object(app, 'client', MagicMock(api_key='not_configured')):
             result = self.auth_client.get('/accuracy?given=tea&real=tea')
         self.assertEqual(result.status_code, 503)
         self.assertIn('not been scored', result.get_json()['error'])
