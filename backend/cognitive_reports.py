@@ -59,7 +59,7 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
         "description": "Connect related words and concepts together.",
         "primary_domain": "Memory",
         "secondary_domains": [],
-        "playable": False,
+        "playable": True,
         "domain_weights": {"Memory": 1.0},
     },
     "odd-one-out": {

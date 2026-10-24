@@ -90,7 +90,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     area: "Memory",
     levels: [1],
     component: WordAssociation,
-    comingSoon: true,
+    comingSoon: false,
     emoji: "🔗",
     description: "Connect related words and concepts together.",
     trains: "Semantic memory: link related things",
