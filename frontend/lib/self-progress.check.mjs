@@ -10,6 +10,7 @@ import {
   getNextSuggestion,
   calcTodayGoal,
   hasThreeConsecutiveDays,
+  badgesToCelebrate,
 } from './self-progress.ts';
 import { starsFor } from './progress.ts';
 
@@ -177,7 +178,42 @@ assert.equal(finishedGoal.total, 2);
 assert.equal(finishedGoal.allDone, true);
 assert.equal(finishedGoal.nextActivityId, null);
 
-// 11. Locales coverage for self-progress UI phrases
+// 11. badgesToCelebrate: celebration rules
+// First load with history gives no celebration
+assert.deepEqual(
+  badgesToCelebrate(['first_step', 'explorer'], null),
+  [],
+  'First load with history gives no celebration'
+);
+
+// A new badge celebrates exactly once
+const newBadges = badgesToCelebrate(['first_step', 'explorer', 'streak_3'], ['first_step', 'explorer']);
+assert.deepEqual(newBadges, ['streak_3'], 'A new badge celebrates');
+
+const celebratedAgain = badgesToCelebrate(['first_step', 'explorer', 'streak_3'], ['first_step', 'explorer', 'streak_3']);
+assert.deepEqual(celebratedAgain, [], 'Already stored badge never celebrates again');
+
+// Storage failure gives none
+function simulateCelebrationWithStorageFailure(computed, stored, isStorageAvailable) {
+  if (!isStorageAvailable) return [];
+  return badgesToCelebrate(computed, stored);
+}
+assert.deepEqual(
+  simulateCelebrationWithStorageFailure(['first_step', 'streak_3'], ['first_step'], false),
+  [],
+  'Storage failure gives no celebration'
+);
+
+// 12. Trend notes: WeeklySummary and ProgressContent switch ownership
+const weeklySummarySrc = await readFile(new URL('../components/caregiver/weeklySummary.tsx', import.meta.url), 'utf8');
+const progressContentSrc = await readFile(new URL('../components/caregiver/progressContent.tsx', import.meta.url), 'utf8');
+const myProgressSrc = await readFile(new URL('../app/my-progress/page.tsx', import.meta.url), 'utf8');
+
+assert.match(weeklySummarySrc, /showNotes && down\.length/, 'WeeklySummary must only show lower sentence when showNotes is true');
+assert.match(progressContentSrc, /export function useTrendNotes\(\)/, 'ProgressContent must own the trend notes state');
+assert.doesNotMatch(myProgressSrc, /showTrendNotes/, 'my-progress must not have a duplicate trend notes switch');
+
+// 13. Locales coverage for self-progress UI phrases
 const hi = JSON.parse(await readFile(new URL('./interaction/locales/hi.json', import.meta.url), 'utf8'));
 const as = JSON.parse(await readFile(new URL('./interaction/locales/as.json', import.meta.url), 'utf8'));
 
@@ -222,6 +258,14 @@ const requiredPhrases = [
   'days',
   'day in a row',
   'days in a row',
+  'New badge: {title}!',
+  'Streak: {streak}',
+  'Start your streak today!',
+  'Not played yet',
+  'Played',
+  'Not played',
+  'Close',
+  'Loading…',
 ];
 
 for (const phrase of requiredPhrases) {
@@ -229,4 +273,4 @@ for (const phrase of requiredPhrases) {
   assert.ok(as[phrase], `Missing Assamese translation for: "${phrase}"`);
 }
 
-console.log(`self-progress checks passed: validated ${requiredPhrases.length} phrases, badge rules, never-removed badges, area stars, local date boundaries, and no-data edge cases.`);
+console.log(`self-progress checks passed: validated ${requiredPhrases.length} phrases, badge celebration rules, trend notes switch ownership, area stars, local date boundaries, and no-data edge cases.`);

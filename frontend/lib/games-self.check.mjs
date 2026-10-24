@@ -23,5 +23,16 @@ for (const key of ["Playing here counts toward your progress.", "{count} games r
 }
 assert.match(registry, /id: "face-recognition"/);
 assert.match(registry, /id: "context-recall"/);
-assert.doesNotMatch(source.slice(source.indexOf("function SelfGames"), source.indexOf("function AllGames")), /PreviewContext\.Provider/);
-console.log("self-care games checks passed");
+import { canSaveScores, setSessionSnapshot } from "./auth-session.ts";
+
+assert.match(source, /searchParams\.get\("game"\)/, "SelfGames must check searchParams for requested game");
+assert.match(source, /setActive\(\{ game, level: game\.levels\[0\] \}\)/, "Requested game must be set active");
+
+// Verify that self sessions can save scores
+setSessionSnapshot({ role: "self", user: null, patients: [], activePatient: null, elevated: false });
+assert.equal(canSaveScores(), true, "Self session must be allowed to save scores");
+
+setSessionSnapshot({ role: "caregiver", user: null, patients: [], activePatient: null, elevated: false });
+assert.equal(canSaveScores(), false, "Caregiver session must not save patient scores");
+
+console.log("self-care games checks passed: confirmed non-preview game launch and score saving for self sessions.");

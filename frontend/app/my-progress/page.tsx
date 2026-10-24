@@ -5,7 +5,7 @@ import { GAME_REGISTRY, getGameById, type GameRegistryEntry } from "@/components
 import { apiFetch, API_URL } from "@/lib/api";
 import { addDays, format, startOfWeek } from "date-fns";
 import Link from "next/link";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslate, usePreferences } from "@/components/interaction/InteractionProvider";
 import ReadAloud from "@/components/interaction/ReadAloud";
 import { useAuth } from "@/lib/auth-context";
@@ -30,6 +30,7 @@ import {
   getGreeting,
   getNextSuggestion,
   mergeBadges,
+  badgesToCelebrate,
   plural,
   SKILL_FRIENDLY_NAMES,
   type Badge,
@@ -82,6 +83,7 @@ const BADGE_ICONS: Record<Badge["id"], string> = {
 };
 
 export default function MyProgressPage() {
+  const { t } = useTranslate();
   const { session, ready } = useAuth();
 
   if (!ready) {
@@ -89,7 +91,7 @@ export default function MyProgressPage() {
       <>
         <Nav />
         <main className="mx-auto max-w-screen-lg px-4 pb-16 pt-28 lg:pt-8">
-          <p className="text-2xl font-medium">Loading…</p>
+          <p className="text-2xl font-medium">{t("Loading…")}</p>
         </main>
       </>
     );
@@ -109,7 +111,7 @@ export default function MyProgressPage() {
 function SelfProgressView() {
   const { t } = useTranslate();
   const { session } = useAuth();
-  const { effectiveAnimations } = usePreferences();
+  const { effectiveAnimations, reducedMotion } = usePreferences();
 
   const [loading, setLoading] = useState(true);
   const [allScores, setAllScores] = useState<RawScoreRecord[]>([]);
@@ -118,13 +120,47 @@ function SelfProgressView() {
   const [planIds, setPlanIds] = useState<string[] | null>(null);
   const [completedTodayIds, setCompletedTodayIds] = useState<string[]>([]);
   const [storedEarnedBadgeIds, setStoredEarnedBadgeIds] = useState<string[]>([]);
-  const [showCelebration, setShowCelebration] = useState(false);
-  const [showTrendNotes, setShowTrendNotes] = useState(false);
+  const [celebrationMessage, setCelebrationMessage] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<"summary" | "trends" | "difficulty" | "log" | "report">("summary");
 
+  const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
   const todayStr = useMemo(() => dayKey(new Date()), []);
   const patientKey = session?.activePatient?.id || session?.user?.id || "self";
   const badgeStorageKey = `cogni_celebrated_badges_${patientKey}`;
+  const goalStorageKey = `cogni_celebrated_goal_${patientKey}`;
+
+  const closeCelebration = useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    setCelebrationMessage(null);
+  }, []);
+
+  // Timer & Escape listener effect keyed only on celebrationMessage and closeCelebration
+  useEffect(() => {
+    if (!celebrationMessage) return;
+
+    hideTimerRef.current = setTimeout(() => {
+      setCelebrationMessage(null);
+      hideTimerRef.current = null;
+    }, 3000);
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        closeCelebration();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [celebrationMessage, closeCelebration]);
 
   const loadData = useCallback(async () => {
     try {
@@ -221,28 +257,78 @@ function SelfProgressView() {
     [rawBadges, storedEarnedBadgeIds]
   );
 
-  // Badge celebration effect
+  // Today goal
+  const goal: TodayGoalInfo = useMemo(
+    () => calcTodayGoal(planIds, completedTodayIds),
+    [completedTodayIds, planIds]
+  );
+
+  const nextGameHref = useMemo(() => {
+    if (!goal.nextActivityId) return "/today";
+    if (goal.nextActivityId === "daily_recall") return "/today";
+    return `/games?game=${goal.nextActivityId}`;
+  }, [goal.nextActivityId]);
+
+  // Celebration effect: badges and daily goal
   useEffect(() => {
     if (loading) return;
-    try {
-      const newlyEarned = badges.filter(
-        (b) => b.earned && !storedEarnedBadgeIds.includes(b.id)
-      );
-      if (newlyEarned.length > 0) {
-        const updated = Array.from(new Set([...storedEarnedBadgeIds, ...newlyEarned.map((b) => b.id)]));
-        localStorage.setItem(badgeStorageKey, JSON.stringify(updated));
-        setStoredEarnedBadgeIds(updated);
 
-        if (effectiveAnimations) {
-          setShowCelebration(true);
-          const timer = setTimeout(() => setShowCelebration(false), 3000);
-          return () => clearTimeout(timer);
-        }
+    let storageAvailable = true;
+    let storedBadgeIds: string[] | null = null;
+    let celebratedGoalDate: string | null = null;
+
+    try {
+      const raw = localStorage.getItem(badgeStorageKey);
+      if (raw !== null) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) storedBadgeIds = parsed;
       }
+      celebratedGoalDate = localStorage.getItem(goalStorageKey);
     } catch {
-      // Storage unavailable: do not celebrate
+      storageAvailable = false;
     }
-  }, [badges, badgeStorageKey, effectiveAnimations, loading, storedEarnedBadgeIds]);
+
+    // If localStorage is unavailable, never celebrate.
+    if (!storageAvailable) return;
+
+    const earnedBadgeIds = badges.filter((b) => b.earned).map((b) => b.id);
+
+    // 1. When storedBadgeIds is null (key was never written), seed silently (existing history never celebrates)
+    if (storedBadgeIds === null) {
+      try {
+        localStorage.setItem(badgeStorageKey, JSON.stringify(earnedBadgeIds));
+        setStoredEarnedBadgeIds(earnedBadgeIds);
+      } catch {
+        // ignore
+      }
+    } else {
+      const toCelebrate = badgesToCelebrate(earnedBadgeIds, storedBadgeIds);
+      if (toCelebrate.length > 0) {
+        // Persist the new ids BEFORE showing the popup
+        const updated = Array.from(new Set([...storedBadgeIds, ...toCelebrate]));
+        try {
+          localStorage.setItem(badgeStorageKey, JSON.stringify(updated));
+          setStoredEarnedBadgeIds(updated);
+        } catch {
+          // ignore
+        }
+        const badgeObj = badges.find((b) => b.id === toCelebrate[0]);
+        const title = badgeObj ? t(badgeObj.title) : "";
+        setCelebrationMessage(t("New badge: {title}!", { title }));
+        return;
+      }
+    }
+
+    // 2. Finishing the day's goal: "All done today, well done!" shown at most once per day (store date per patient)
+    if (goal.allDone && celebratedGoalDate !== todayStr) {
+      try {
+        localStorage.setItem(goalStorageKey, todayStr);
+      } catch {
+        // ignore
+      }
+      setCelebrationMessage(t("All done today, well done!"));
+    }
+  }, [badges, badgeStorageKey, goal.allDone, goalStorageKey, loading, t, todayStr]);
 
   // Week's best activity
   const bestGame = useMemo(() => {
@@ -276,18 +362,6 @@ function SelfProgressView() {
     [weekPlayedAreas]
   );
 
-  // Today goal
-  const goal: TodayGoalInfo = useMemo(
-    () => calcTodayGoal(planIds, completedTodayIds),
-    [completedTodayIds, planIds]
-  );
-
-  const nextGameHref = useMemo(() => {
-    if (!goal.nextActivityId) return "/today";
-    if (goal.nextActivityId === "daily_recall") return "/today";
-    return `/games?game=${goal.nextActivityId}`;
-  }, [goal.nextActivityId]);
-
   const totalPlayedEver = playedDates.size;
   const userName = session?.user?.name || session?.activePatient?.name || "";
   const greeting = getGreeting(userName);
@@ -296,21 +370,48 @@ function SelfProgressView() {
     <>
       <Nav />
       <main className="mx-auto max-w-screen-lg space-y-8 px-4 pb-20 pt-28 lg:pt-8">
-        {/* Celebration overlay */}
-        {showCelebration && effectiveAnimations && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/20 backdrop-blur-[1px]"
-          >
-            <div className="flex flex-col items-center gap-3 rounded-3xl border-2 border-amber-400 bg-card p-6 shadow-2xl text-center">
-              <span className="text-6xl" aria-hidden>🎉</span>
-              <h3 className="text-2xl font-bold text-foreground">{t("All done today, well done!")}</h3>
-              <p className="text-lg text-muted-foreground">
-                {t("Earned from your completed daily activities.")}
-              </p>
+        {/* Celebration popup / banner */}
+        {celebrationMessage && (
+          effectiveAnimations && !reducedMotion ? (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={celebrationMessage}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/40 backdrop-blur-sm"
+            >
+              <div className="relative flex flex-col items-center gap-4 rounded-3xl border-2 border-amber-400 bg-card p-8 shadow-2xl text-center max-w-md w-full">
+                <span className="text-6xl animate-bounce" aria-hidden>🎉</span>
+                <h3 className="text-2xl font-bold text-foreground">{celebrationMessage}</h3>
+                <p className="text-base text-muted-foreground">
+                  {t("Earned from your completed daily activities.")}
+                </p>
+                <button
+                  type="button"
+                  onClick={closeCelebration}
+                  className="mt-2 min-h-12 rounded-xl bg-primary px-6 py-2 text-base font-bold text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary shadow-sm"
+                  aria-label={t("Close")}
+                >
+                  {t("Close")}
+                </button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex items-center justify-between gap-4 rounded-2xl border-2 border-primary/30 bg-primary/10 p-4 text-foreground shadow-sm"
+            >
+              <span className="text-lg font-bold">{celebrationMessage}</span>
+              <button
+                type="button"
+                onClick={closeCelebration}
+                className="min-h-10 rounded-lg border border-border bg-card px-4 py-1 text-sm font-bold hover:bg-muted"
+                aria-label={t("Close")}
+              >
+                {t("Close")}
+              </button>
+            </div>
+          )
         )}
 
         {/* 1. Header */}
@@ -327,10 +428,12 @@ function SelfProgressView() {
             <div className="flex items-center gap-3">
               <div
                 className="flex items-center gap-2 rounded-2xl border-2 border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xl font-bold text-amber-700 dark:text-amber-300"
-                aria-label={`Streak: ${plural(streak, t("day in a row"), t("days in a row"))}`}
+                aria-label={t("Streak: {streak}", {
+                  streak: streak > 0 ? plural(streak, t("day in a row"), t("days in a row")) : t("Start your streak today!"),
+                })}
               >
                 <span className="text-2xl" aria-hidden>🔥</span>
-                <span>{plural(streak, t("day in a row"), t("days in a row"))}</span>
+                <span>{streak > 0 ? plural(streak, t("day in a row"), t("days in a row")) : t("Start your streak today!")}</span>
               </div>
               <Link
                 href="/settings"
@@ -677,16 +780,6 @@ function SelfProgressView() {
                 <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-5 text-lg font-medium text-foreground">
                   {t("Scores describe activity only. They are not a clinical measure.")}
                 </div>
-
-                <label className="flex items-center gap-3 cursor-pointer text-lg font-semibold text-foreground">
-                  <input
-                    type="checkbox"
-                    checked={showTrendNotes}
-                    onChange={(e) => setShowTrendNotes(e.target.checked)}
-                    className="h-5 w-5 rounded border-input text-primary focus:ring-primary"
-                  />
-                  <span>{t("Show detailed trend notes")}</span>
-                </label>
 
                 <section className="space-y-5" aria-label={t("Progress and reports")}>
                   <div role="tablist" className="flex flex-wrap gap-2 border-b pb-2">

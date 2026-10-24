@@ -3,9 +3,11 @@
 import { COGNITIVE_AREAS } from "@/lib/areas";
 import { daysPlayedThisWeek, lastFourWeeks, patientStatsFromEntries, trend, weeklyAverages, type Entry } from "@/lib/progress";
 
+import { useTrendNotes } from "./progressContent";
+
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-function summarySentences(entries: Entry[], now: Date) {
+export function summarySentences(entries: Entry[], now: Date, showNotes = false) {
   const weeks = lastFourWeeks(now);
   const averages = weeklyAverages(entries, weeks, (entry) => entry.area);
   const present = COGNITIVE_AREAS.filter((area) => entries.some((entry) => entry.area === area.name && entry.day >= weeks[3].start && entry.day <= weeks[3].end));
@@ -14,14 +16,16 @@ function summarySentences(entries: Entry[], now: Date) {
   const up = changed.filter((item) => item.direction === "up").map((item) => item.area.name);
   const down = changed.filter((item) => item.direction === "down").map((item) => item.area.name);
   if (up.length) sentences.push(`${up.join(" and ")} ${up.length === 1 ? "was" : "were"} higher than the earlier weeks.`);
-  if (down.length) sentences.push(`${down.join(" and ")} ${down.length === 1 ? "was" : "were"} lower than the earlier weeks.`);
+  if (showNotes && down.length) sentences.push(`${down.join(" and ")} ${down.length === 1 ? "was" : "were"} lower than the earlier weeks.`);
   if (present.length && !changed.length) sentences.push("Scores were steady across the areas played.");
   const missing = COGNITIVE_AREAS.filter((area) => !present.some((played) => played.name === area.name)).map((area) => area.name);
   if (missing.length && sentences.length < 4) sentences.push(`${missing.join(" and ")} ${missing.length === 1 ? "was" : "were"} not played this week.`);
   return sentences.slice(0, 4);
 }
 
-export default function WeeklySummary({ entries, now = new Date() }: { entries: Entry[]; now?: Date }) {
+export default function WeeklySummary({ entries, now = new Date(), showNotes: propShowNotes }: { entries: Entry[]; now?: Date; showNotes?: boolean }) {
+  const [contextShowNotes] = useTrendNotes();
+  const showNotes = propShowNotes ?? contextShowNotes;
   const played = daysPlayedThisWeek(entries, now);
   const stats = patientStatsFromEntries(entries, now);
   return <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
@@ -35,6 +39,6 @@ export default function WeeklySummary({ entries, now = new Date() }: { entries: 
         {name}<span aria-hidden>{played[index] ? "✓" : "–"}</span>
       </li>)}
     </ol>
-    <div className="mt-4 space-y-1.5 text-sm leading-relaxed">{summarySentences(entries, now).map((sentence, index) => <p key={index}>{sentence}</p>)}</div>
+    <div className="mt-4 space-y-1.5 text-sm leading-relaxed">{summarySentences(entries, now, showNotes).map((sentence, index) => <p key={index}>{sentence}</p>)}</div>
   </section>;
 }

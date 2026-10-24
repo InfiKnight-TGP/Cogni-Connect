@@ -903,7 +903,15 @@
   "day": "দিন",
   "days": "দিন",
   "day in a row": "দিন ধৰি একেৰাহে",
-  "days in a row": "দিন ধৰি একেৰাহে"
+  "days in a row": "দিন ধৰি একেৰাহে",
+  "New badge: {title}!": "নতুন বেজ: {title}!",
+  "Streak: {streak}": "ধাৰাবাহিকতা: {streak}",
+  "Start your streak today!": "আজি আপোনাৰ ধাৰাবাহিকতা আৰম্ভ কৰক!",
+  "Not played yet": "এতিয়ালৈকে খেলা নাই",
+  "Played": "খেলা হ'ল",
+  "Not played": "খেলা নাই",
+  "Close": "বন্ধ কৰক",
+  "Loading…": "লোড হৈ আছে…"
 }
 
 

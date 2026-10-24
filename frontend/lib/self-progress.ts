@@ -281,6 +281,21 @@ export function mergeBadges(
 }
 
 /**
+ * Helper to determine which newly earned badges should trigger a celebration.
+ * - When storedIds is null (the key was never written in localStorage), returns []
+ *   so existing history is seeded silently and never celebrates.
+ * - When storedIds is an array, returns only earned badge IDs that are not present in storedIds.
+ */
+export function badgesToCelebrate(
+  computedEarnedIds: string[],
+  storedIds: string[] | null
+): string[] {
+  if (storedIds === null) return [];
+  const storedSet = new Set(storedIds);
+  return computedEarnedIds.filter((id) => !storedSet.has(id));
+}
+
+/**
  * Suggest one game:
  * The first non-comingSoon game from an area not played this week.
  * If all areas were played, picks the first non-comingSoon game.

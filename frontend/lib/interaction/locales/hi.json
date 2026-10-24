@@ -904,7 +904,15 @@
   "day": "दिन",
   "days": "दिन",
   "day in a row": "दिन से लगातार",
-  "days in a row": "दिनों से लगातार"
+  "days in a row": "दिनों से लगातार",
+  "New badge: {title}!": "नया बैज: {title}!",
+  "Streak: {streak}": "सिलसिला: {streak}",
+  "Start your streak today!": "आज ही अपना सिलसिला शुरू करें!",
+  "Not played yet": "अभी तक नहीं खेला",
+  "Played": "खेला गया",
+  "Not played": "नहीं खेला गया",
+  "Close": "बंद करें",
+  "Loading…": "लोड हो रहा है…"
 }
 
 

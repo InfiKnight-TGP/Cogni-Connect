@@ -26,12 +26,30 @@ type AdaptiveState = { knob: number; mode?: "auto" | "fixed"; reason?: string; l
 const difficultyName = (knob: number) => knob === 1 ? "Easier" : knob === 2 ? "Normal" : "Harder";
 const TREND_TEXT = { up: "↑ Better", down: "↓ Lower", steady: "→ Steady" };
 
+let globalShowNotes = false;
+const trendNotesListeners = new Set<(val: boolean) => void>();
+
+export function useTrendNotes() {
+  const [showNotes, setShowNotes] = useState(globalShowNotes);
+  const set = (val: boolean) => {
+    globalShowNotes = val;
+    trendNotesListeners.forEach((fn) => fn(val));
+  };
+  useEffect(() => {
+    trendNotesListeners.add(setShowNotes);
+    return () => {
+      trendNotesListeners.delete(setShowNotes);
+    };
+  }, []);
+  return [showNotes, set] as const;
+}
+
 export default function ProgressContent({ audience = "caregiver" }: { audience?: "caregiver" | "self" }) {
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [adaptive, setAdaptive] = useState<Record<string, AdaptiveState> | null>(null);
   const [adaptiveError, setAdaptiveError] = useState("");
-  const [showNotes, setShowNotes] = useState(false);
+  const [showNotes, setShowNotes] = useTrendNotes();
   const today = new Date();
 
   useEffect(() => {
