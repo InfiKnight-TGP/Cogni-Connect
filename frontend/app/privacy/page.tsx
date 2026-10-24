@@ -42,6 +42,15 @@ export default function PrivacyPage() {
         </section>
 
         <section className="space-y-4">
+          <h2 className="text-2xl font-bold">{t("Uploaded videos and memories")}</h2>
+          <p>
+            {t(
+              "Uploaded videos are processed to create transcripts (using Google speech recognition) and questions (using OpenAI). Audio and video frames may be sent to those services for processing. All videos, transcripts, face recognition records, and quiz questions are stored in private patient folders on this server, and can be deleted at any time by a caregiver or self-care user."
+            )}
+          </p>
+        </section>
+
+        <section className="space-y-4">
           <h2 className="text-2xl font-bold">{t("Use of OpenAI’s API")}</h2>
           <p>
             {t("Transcripts and video frames are sent to OpenAI’s API to support transcription and to create questions and answers about the memories.")}

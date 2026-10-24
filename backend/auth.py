@@ -1308,18 +1308,19 @@ def init_auth(app, legacy_settings):
             if request.endpoint in DEMO_AI_ENDPOINTS:
                 if not limits().hit(('demo-ai', session['id']), 60, 3600):
                     return jsonify(error='Demo AI limit reached. Please try again later.'), 429
-            if request.endpoint == 'upload_video' and request.content_length and request.content_length > 20 * 1024 * 1024:
+            if request.endpoint in {'upload_video', 'create_memory'} and request.content_length and request.content_length > 20 * 1024 * 1024:
                 return jsonify(error='Demo uploads are limited to 20 MB.'), 403
-            if request.endpoint == 'upload_video' and not limits().hit(('demo-upload', session['id']), 3, 86400):
+            if request.endpoint in {'upload_video', 'create_memory'} and not limits().hit(('demo-upload', session['id']), 3, 86400):
                 return jsonify(error='Demo uploads are limited to three per day.'), 403
         if request.endpoint == 'delete_performance' and not (is_caregiver() or self_account()):
             return error(403)
-        if request.endpoint in {'add_person', 'update_person', 'delete_person', 'rescan_people', 'rescan_status'}:
+        if request.endpoint in {'add_person', 'update_person', 'delete_person', 'rescan_people', 'rescan_status',
+                                'create_memory', 'update_memory', 'delete_memory'}:
             if session['kind'] == 'patient_device' or not (is_caregiver() or self_account()):
                 return error(403)
         elif request.endpoint in CAREGIVER_ENDPOINTS and not is_caregiver():
             return error(403)
-        if request.endpoint == 'upload_video' and not (is_caregiver() or self_account()):
+        if request.endpoint in {'upload_video', 'create_memory'} and not (is_caregiver() or self_account()):
             return error(403)
         if request.endpoint == 'save_performance' and ((session['kind'] != 'patient_device' and not self_account()) or is_elevated()):
             return error(403)

@@ -39,6 +39,359 @@ api.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 
 # Track processing status
 processing_status = {}  
+_active_patient_jobs = set()
+_patient_job_lock = threading.Lock()
+PATIENT_STORAGE_LIMIT_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB per patient
+MIN_FREE_DISK_BYTES = 100 * 1024 * 1024  # 100 MB free space
+
+
+def _chunks_folder(video_filename):
+    """process_video names the chunk folder after the uploaded file."""
+    return os.path.splitext(video_filename)[0] + '_chunks'
+
+
+def _get_upload_limits(is_demo=False):
+    max_mb = 20 if is_demo else int(os.getenv('COGNI_MAX_UPLOAD_MB', '200'))
+    max_seconds = int(os.getenv('COGNI_MAX_VIDEO_SECONDS', '180'))
+    return max_mb, max_seconds
+
+
+def _probe_video(file_path):
+    """Probe video file with cv2.VideoCapture. Returns (duration_seconds, width, height) or raises ValueError."""
+    cap = cv2.VideoCapture(file_path)
+    if not cap.isOpened():
+        cap.release()
+        raise ValueError("Could not open video file.")
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+    if fps <= 0 or frame_count <= 0 or width <= 0 or height <= 0:
+        raise ValueError("Invalid video stream or dimensions.")
+    duration = frame_count / fps
+    return duration, width, height
+
+
+def _validate_memory_date(date_str):
+    if not isinstance(date_str, str) or not date_str.strip():
+        return None, "Date is required."
+    date_str = date_str.strip()
+    try:
+        val = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return None, "Date must be in YYYY-MM-DD format."
+    from datetime import date, timedelta
+    today = date.today()
+    if val > today + timedelta(days=1):
+        return None, "Date cannot be in the future."
+    return date_str, None
+
+
+def _clean_memory_note(note_str):
+    if note_str is None:
+        return ""
+    if not isinstance(note_str, str):
+        raise ValueError("Note must be a string.")
+    cleaned = re.sub(r'[\x00-\x1f\x7f]', ' ', note_str).strip()
+    if len(cleaned) > 300:
+        raise ValueError("Note must be up to 300 characters.")
+    return cleaned
+
+
+def _cleanup_partial_files(base_dir, filename, memory_id=None):
+    if not base_dir:
+        return
+    if filename:
+        chunk_f = _chunks_folder(filename)
+        for p in (
+            os.path.join(base_dir, 'content', filename),
+            os.path.join(base_dir, 'content', chunk_f),
+            os.path.join(base_dir, 'video_chunks', chunk_f),
+            os.path.join(base_dir, 'frames', chunk_f),
+        ):
+            if os.path.isfile(p):
+                try: os.remove(p)
+                except OSError: pass
+            elif os.path.isdir(p):
+                try: shutil.rmtree(p, ignore_errors=True)
+                except OSError: pass
+    if memory_id:
+        thumb = os.path.join(base_dir, 'memory_thumbnails', f"{memory_id}.png")
+        if os.path.isfile(thumb):
+            try: os.remove(thumb)
+            except OSError: pass
+
+
+def _cleanup_stale_processing_jobs(patient_data_root=None):
+    root = patient_data_root or api.config.get('PATIENT_DATA_ROOT')
+    if not root or not os.path.isdir(root):
+        return
+    for item in os.listdir(root):
+        base_dir = os.path.join(root, item)
+        if not os.path.isdir(base_dir):
+            continue
+        memories_file = os.path.join(base_dir, 'memories.json')
+        if not os.path.isfile(memories_file):
+            continue
+        try:
+            with open(memories_file, 'r', encoding='utf-8') as f:
+                memories = json.load(f)
+            if not isinstance(memories, dict):
+                continue
+            changed = False
+            for mid, row in memories.items():
+                if isinstance(row, dict) and row.get('status') == 'processing':
+                    with _patient_job_lock:
+                        is_active = item in _active_patient_jobs
+                    if not is_active:
+                        row['status'] = 'failed'
+                        msg = 'Processing was interrupted. Please add the video again.'
+                        row['message'] = msg
+                        row['error'] = msg
+                        _cleanup_partial_files(base_dir, row.get('filename'), mid)
+                        changed = True
+            if changed:
+                with open(memories_file, 'w', encoding='utf-8') as f:
+                    json.dump(memories, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+
+def _invalidate_daily_plan_cache(date_val, base_dir=None):
+    date_str = _local_date(date_val) if date_val else None
+    if not date_str:
+        return
+    plans_path = os.path.join(base_dir, 'daily_plans.json') if base_dir else DAILY_PLANS_PATH
+    if os.path.exists(plans_path):
+        try:
+            with open(plans_path, 'r', encoding='utf-8') as f:
+                plans = json.load(f)
+            if isinstance(plans, dict) and date_str in plans:
+                plans.pop(date_str, None)
+                with open(plans_path, 'w', encoding='utf-8') as f:
+                    json.dump(plans, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+    try:
+        _invalidate_unplayed_plans(date_str)
+    except Exception:
+        pass
+
+
+def _generate_questions_for_video(base_dir, filename, video_date, note):
+    folder_name = _chunks_folder(filename)
+    folder_path = os.path.join(base_dir, 'video_chunks', folder_name)
+    if not os.path.isdir(folder_path):
+        return []
+
+    transcripts = {}
+    transcript_path = os.path.join(folder_path, 'full_transcript.json')
+    if os.path.exists(transcript_path):
+        try:
+            with open(transcript_path, 'r', encoding='utf-8') as f:
+                transcripts = json.load(f)
+        except Exception:
+            transcripts = {}
+
+    faces_data = {}
+    for f in os.listdir(folder_path):
+        if f.endswith('_faces.json'):
+            try:
+                with open(os.path.join(folder_path, f), 'r', encoding='utf-8') as f_in:
+                    faces_data.update(json.load(f_in))
+            except Exception:
+                pass
+
+    people_path = os.path.join(base_dir, 'people.json')
+    people = []
+    if os.path.exists(people_path):
+        try:
+            with open(people_path, 'r', encoding='utf-8') as f:
+                people = json.load(f)
+        except Exception:
+            people = []
+
+    video_data = []
+    for chunk_name, transcript in transcripts.items():
+        video_path = f"/video_chunks/{folder_name}/{chunk_name}.mp4"
+        faces = []
+        for path, names in faces_data.items():
+            if chunk_name in path:
+                faces = [dn for n in names if (dn := display_name(n, people, relation=True))]
+                break
+        video_data.append({
+            "video_path": video_path,
+            "transcript": transcript,
+            "faces": faces,
+            "journal": note
+        })
+
+    if not video_data:
+        video_path = f"/video_chunks/{folder_name}/chunk_0000_0010.mp4"
+        video_data = [{
+            "video_path": video_path,
+            "transcript": "",
+            "faces": [],
+            "journal": note
+        }]
+
+    questions_generated = []
+    ai_client = client if AI_AVAILABLE else None
+    if ai_client is not None:
+        try:
+            context = "Generate 5 memory quiz questions based on the following video data:\n\n"
+            for i, data in enumerate(video_data[:5], 1):
+                context += f"Video {i}:\n"
+                if data['transcript'] and data['transcript'] != "Audio was not understood":
+                    words = data['transcript'].split()
+                    if len(words) > 3:
+                        context += f"- Transcript: {data['transcript']}\n"
+                if data['faces']:
+                    context += f"- People present: {', '.join(data['faces'])}\n"
+                if data['journal']:
+                    context += f"- Journal entry (MOST IMPORTANT): {data['journal']}\n"
+                context += f"- Video file: {data['video_path']}\n\n"
+
+            response = ai_client.chat.completions.create(
+                model='gpt-4o-mini',
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a memory care assistant creating personalized quiz questions for dementia/Alzheimer's patients. "
+                            "Generate questions that test recall of specific events, people, places, and activities from video memories. "
+                            "IMPORTANT RULES:\n"
+                            "1. Prioritize journal entries as the PRIMARY source of information\n"
+                            "2. Only use transcripts if they are clear and meaningful (ignore short fragments)\n"
+                            "3. Focus on: who was present, what activity happened, where it took place, what was used\n"
+                            "4. Make questions specific and personal, not generic\n"
+                            "5. DO NOT ask about transcripts directly - ask about the actual event/memory\n"
+                            "6. Return ONLY a valid JSON array: [{\"question\": \"...\", \"answer\": \"...\", \"video\": \"video_path\"}]"
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": context + "\n\nGenerate 5 diverse, meaningful questions. Return only valid JSON array."
+                    }
+                ],
+                temperature=0.7
+            )
+            result = response.choices[0].message.content.strip()
+            if result.startswith('['):
+                questions_generated = json.loads(result)
+        except Exception as e:
+            print(f"AI question generation error in worker: {e}")
+
+    if not questions_generated:
+        primary_vid = video_data[0]['video_path']
+        questions_generated = [
+            {
+                "question": "What activity did you do in this video?",
+                "answer": note if note else "Please describe the activity shown",
+                "video": primary_vid,
+                "fallback": True
+            },
+            {
+                "question": "Who was with you in this memory?",
+                "answer": ", ".join(video_data[0]['faces']) if video_data and video_data[0]['faces'] else "Unknown",
+                "video": primary_vid,
+                "fallback": True
+            }
+        ]
+
+    qas_path = os.path.join(base_dir, 'qas.json')
+    existing_qas = []
+    if os.path.exists(qas_path):
+        try:
+            with open(qas_path, 'r', encoding='utf-8') as f:
+                loaded = json.load(f)
+                if isinstance(loaded, list):
+                    existing_qas = [q for q in loaded if isinstance(q, dict) and folder_name not in str(q.get('video', ''))]
+        except Exception:
+            existing_qas = []
+
+    all_qas = existing_qas + questions_generated
+    try:
+        with open(qas_path, 'w', encoding='utf-8') as f:
+            json.dump(all_qas, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Could not save qas.json: {e}")
+
+    return questions_generated
+
+
+def _process_video_job(patient_id, base_dir, memory_id, filename, video_date, note):
+    status_key = (base_dir, filename)
+    filepath = os.path.join(base_dir, 'content', filename)
+    memories_path = os.path.join(base_dir, 'memories.json')
+
+    def _set_memory_status(status, progress=0, message='', error=None):
+        processing_status[status_key] = {
+            'status': status,
+            'progress': progress,
+            'message': message,
+            'error': error
+        }
+        try:
+            if os.path.exists(memories_path):
+                with open(memories_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and memory_id in data:
+                    data[memory_id]['status'] = status
+                    data[memory_id]['progress'] = progress
+                    data[memory_id]['message'] = message
+                    if error:
+                        data[memory_id]['error'] = error
+                    elif 'error' in data[memory_id]:
+                        data[memory_id].pop('error', None)
+                    with open(memories_path, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            print(f"Error updating memories.json: {exc}")
+
+    try:
+        _set_memory_status('processing', progress=20, message='Analyzing video...')
+        from process_video import process_uploaded_video
+
+        _set_memory_status('processing', progress=40, message='Transcribing and recognizing faces...')
+        result = process_uploaded_video(filepath, base_dir)
+
+        if result.get('success'):
+            _set_memory_status('processing', progress=80, message='Creating memory questions...')
+            _generate_questions_for_video(base_dir, filename, video_date, note)
+            crosswords_file = os.path.join(base_dir, 'crosswords.json')
+            invalidate_crossword_cache(video_date, crosswords_file)
+            _invalidate_daily_plan_cache(video_date, base_dir)
+
+            try:
+                thumb_dir = os.path.join(base_dir, 'memory_thumbnails')
+                os.makedirs(thumb_dir, exist_ok=True)
+                thumb_target = os.path.join(thumb_dir, f"{memory_id}.png")
+                if not os.path.exists(thumb_target) and os.path.exists(filepath):
+                    cap = cv2.VideoCapture(filepath)
+                    cap.set(cv2.CAP_PROP_POS_MSEC, 1000)
+                    ok, frame = cap.read()
+                    cap.release()
+                    if ok:
+                        cv2.imwrite(thumb_target, frame)
+            except Exception:
+                pass
+
+            _set_memory_status('ready', progress=100, message='Ready')
+        else:
+            err = result.get('error') or 'Video processing failed'
+            _cleanup_partial_files(base_dir, filename, memory_id)
+            _set_memory_status('failed', progress=0, message=f"Processing failed: {err}", error=err)
+    except Exception as exc:
+        err = str(exc)
+        _cleanup_partial_files(base_dir, filename, memory_id)
+        _set_memory_status('failed', progress=0, message=f"Processing error: {err}", error=err)
+    finally:
+        with _patient_job_lock:
+            _active_patient_jobs.discard(patient_id)
+
+
 thumbnail_slots = threading.BoundedSemaphore(2)
 NEUTRAL_THUMBNAIL = base64.b64decode(
     'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAYAAAB49x7jAAAAFElEQVR42mNkYPj/n4GBgYGJAQoAAAwABQAB'
@@ -137,7 +490,7 @@ def _memory_data():
         filename = row.get('filename') if isinstance(row, dict) else None
         if not filename:
             continue
-        if not os.path.isfile(os.path.join(os.path.abspath(UPLOAD_FOLDER), filename)) and not os.path.isdir(os.path.join(chunks_root, os.path.splitext(filename)[0] + '_chunks')):
+        if row.get('status') not in ('failed', 'processing') and not os.path.isfile(os.path.join(os.path.abspath(UPLOAD_FOLDER), filename)) and not os.path.isdir(os.path.join(chunks_root, _chunks_folder(filename))):
             data.pop(memory_id, None); changed = True
     seen_filenames = set()
     for memory_id, row in list(data.items()):
@@ -719,8 +1072,14 @@ def list_memories():
         if not isinstance(filename, str) or not allowed_file(filename):
             continue
         path = os.path.join(os.path.abspath(UPLOAD_FOLDER), filename)
-        chunk_folder = os.path.join(os.path.abspath(VIDEO_CHUNKS_ROOT), os.path.splitext(filename)[0] + '_chunks')
-        if not os.path.isfile(path) and not os.path.isdir(chunk_folder):
+        chunk_folder = os.path.join(os.path.abspath(VIDEO_CHUNKS_ROOT), _chunks_folder(filename))
+        status_info = processing_status.get((patient_path(''), filename), {})
+        status = status_info.get('status') or row.get('status', 'ready')
+        if status == 'completed':
+            status = 'ready'
+        elif status not in ('processing', 'failed'):
+            status = 'ready'
+        if status != 'failed' and not os.path.isfile(path) and not os.path.isdir(chunk_folder):
             continue
         journal = {}
         try:
@@ -728,14 +1087,10 @@ def list_memories():
                 journal = json.load(stream).get(filename, {})
         except (OSError, ValueError, TypeError):
             pass
-        status = processing_status.get((patient_path(''), filename), {}).get('status', 'ready')
-        if status == 'processing': status = 'processing'
-        elif status == 'failed': status = 'failed'
-        else: status = 'ready'
         d_info = _friendly_memory_date(journal.get('date') or row.get('date'))
         stem = filename.rsplit('.', 1)[0]
         chunks_root = os.path.abspath(VIDEO_CHUNKS_ROOT)
-        folder = os.path.join(chunks_root, stem + '_chunks')
+        folder = os.path.join(chunks_root, _chunks_folder(filename))
         if not os.path.isdir(folder):
             cand = os.path.join(chunks_root, stem.replace(' ', '_') + '_chunks')
             if os.path.isdir(cand): folder = cand
@@ -772,6 +1127,9 @@ def list_memories():
             'note': journal.get('entry') or row.get('note', ''),
             'durationSeconds': row.get('durationSeconds'), 'thumbnailUrl': f'/memories/{memory_id}/thumbnail',
             'people': p_names, 'transcript': tr, 'status': status,
+            'progress': status_info.get('progress', 0) if status == 'processing' else (100 if status == 'ready' else (row.get('progress') or 0)),
+            'message': status_info.get('message') or row.get('message', ''),
+            'error': status_info.get('error') or row.get('error'),
         })
     rows.sort(key=lambda item: item.get('date') or '', reverse=True)
     start = 0
@@ -826,7 +1184,209 @@ def memory_thumbnail(memory_id):
 def _memory_edit_allowed():
     import auth
     session = g.get('auth_session')
-    return bool(session and session.get('kind') == 'caregiver' and (session.get('user_id') and (auth.is_caregiver() or auth.self_account())))
+    active_patient = g.get('active_patient')
+    if not session or not active_patient:
+        return False
+    if session.get('kind') == 'patient_device':
+        return False
+    user = auth.session_user()
+    if user and ('role' in user.keys() and user['role'] == 'patient'):
+        return False
+    pid = active_patient.get('id')
+    if auth.self_account():
+        return auth.owner_of(pid)
+    if auth.is_caregiver():
+        return auth.authorized_patient(pid)
+    return False
+
+
+@api.route('/memories', methods=['POST'])
+def create_memory():
+    if not _memory_edit_allowed():
+        return jsonify(error='Only a caregiver or self account can add memories.'), 403
+    active_patient = g.get('active_patient')
+    patient_id = active_patient['id']
+    base_dir = os.path.abspath(patient_path(''))
+
+    with _patient_job_lock:
+        if patient_id in _active_patient_jobs:
+            return jsonify(error='A video is already being processed'), 409
+
+    try:
+        if shutil.disk_usage(base_dir).free < MIN_FREE_DISK_BYTES:
+            return jsonify(error='Insufficient server disk space.'), 507
+    except OSError:
+        pass
+
+    total_size = sum(
+        os.path.getsize(os.path.join(dirpath, f))
+        for dirpath, _, filenames in os.walk(base_dir)
+        for f in filenames
+    )
+    if total_size > PATIENT_STORAGE_LIMIT_BYTES:
+        return jsonify(error='Patient storage limit exceeded (2 GB).'), 507
+
+    if 'file' not in request.files and 'video' not in request.files:
+        return jsonify(error='No video file provided.'), 400
+    file = request.files.get('file') or request.files.get('video')
+    if not file or not file.filename:
+        return jsonify(error='No file selected.'), 400
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in {'.mp4', '.mov', '.webm'}:
+        return jsonify(error='Invalid file type. Allowed types: mp4, mov, webm.'), 400
+
+    date_val = request.form.get('date')
+    cleaned_date, date_err = _validate_memory_date(date_val)
+    if date_err:
+        return jsonify(error=date_err), 400
+
+    note_val = request.form.get('note', '')
+    try:
+        cleaned_note = _clean_memory_note(note_val)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+
+    import auth
+    is_demo = auth.is_demo_patient(patient_id) if hasattr(auth, 'is_demo_patient') else False
+    max_mb, max_seconds = _get_upload_limits(is_demo)
+    max_bytes = max_mb * 1024 * 1024
+
+    temp_name = f"{uuid.uuid4().hex}.tmp"
+    content_dir = os.path.join(base_dir, 'content')
+    os.makedirs(content_dir, exist_ok=True)
+    temp_path = os.path.join(content_dir, temp_name)
+    bytes_written = 0
+    try:
+        with open(temp_path, 'wb') as f_out:
+            while True:
+                chunk = file.stream.read(1024 * 1024)
+                if not chunk:
+                    break
+                bytes_written += len(chunk)
+                if bytes_written > max_bytes:
+                    raise OverflowError()
+                f_out.write(chunk)
+    except OverflowError:
+        if os.path.isfile(temp_path):
+            os.remove(temp_path)
+        return jsonify(error=f'Video exceeds maximum upload size of {max_mb} MB.'), 413
+    except Exception as e:
+        if os.path.isfile(temp_path):
+            os.remove(temp_path)
+        return jsonify(error=f'Upload failed: {str(e)}'), 500
+
+    try:
+        duration, width, height = _probe_video(temp_path)
+    except Exception:
+        if os.path.isfile(temp_path):
+            os.remove(temp_path)
+        return jsonify(error='Corrupt or unreadable video file.'), 400
+
+    if duration > max_seconds:
+        if os.path.isfile(temp_path):
+            os.remove(temp_path)
+        return jsonify(error=f'Video duration ({int(duration)}s) exceeds limit of {max_seconds} seconds.'), 400
+
+    stored_filename = f"{uuid.uuid4().hex}{ext}"
+    final_path = os.path.join(content_dir, stored_filename)
+
+    memory_id = uuid.uuid4().hex
+    memories = _memory_data()
+    memories[memory_id] = {
+        'filename': stored_filename,
+        'createdAt': datetime.now().timestamp(),
+        'title': stored_filename.rsplit('.', 1)[0],
+        'date': cleaned_date,
+        'note': cleaned_note,
+        'durationSeconds': round(duration, 1),
+        'status': 'processing',
+        'progress': 0,
+        'message': 'Video processing started'
+    }
+    os.replace(temp_path, final_path)
+    with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
+        json.dump(memories, stream, ensure_ascii=False, indent=2)
+
+    journals = {}
+    try:
+        if os.path.exists(JOURNALS_PATH):
+            with open(JOURNALS_PATH, 'r', encoding='utf-8') as stream:
+                journals = json.load(stream)
+    except Exception:
+        journals = {}
+    journals[stored_filename] = {
+        'entry': cleaned_note,
+        'timestamp': datetime.now().isoformat(),
+        'video_path': f"/content/{stored_filename}",
+        'date': cleaned_date
+    }
+    with open(JOURNALS_PATH, 'w', encoding='utf-8') as stream:
+        json.dump(journals, stream, ensure_ascii=False, indent=2)
+
+    status_key = (base_dir, stored_filename)
+    processing_status[status_key] = {
+        'status': 'processing',
+        'message': 'Video processing started',
+        'progress': 0
+    }
+
+    with _patient_job_lock:
+        _active_patient_jobs.add(patient_id)
+
+    thread = threading.Thread(
+        target=_process_video_job,
+        args=(patient_id, base_dir, memory_id, stored_filename, cleaned_date, cleaned_note)
+    )
+    thread.daemon = True
+    thread.start()
+
+    return jsonify(
+        id=memory_id,
+        status='processing',
+        progress=0,
+        message='Video uploaded and processing started.'
+    ), 201
+
+
+@api.route('/memories/<memory_id>', methods=['GET'])
+def get_memory(memory_id):
+    if not isinstance(memory_id, str) or not re.fullmatch(r'[0-9a-f]{32}', memory_id):
+        return jsonify(error='Memory not found'), 404
+    base_dir = os.path.abspath(patient_path(''))
+    memories = _memory_data()
+    row = memories.get(memory_id)
+    if not row or not isinstance(row, dict) or not row.get('filename'):
+        return jsonify(error='Memory not found'), 404
+
+    filename = row['filename']
+    status_key = (base_dir, filename)
+    live_status = processing_status.get(status_key)
+
+    status = (live_status.get('status') if live_status else None) or row.get('status') or 'ready'
+    if status == 'completed':
+        status = 'ready'
+    elif status not in ('processing', 'failed'):
+        status = 'ready'
+
+    progress = (live_status.get('progress') if live_status else None) if status == 'processing' else (100 if status == 'ready' else (row.get('progress') or 0))
+    message = (live_status.get('message') if live_status else None) or row.get('message') or ('Ready' if status == 'ready' else '')
+    error_msg = (live_status.get('error') if live_status else None) or row.get('error')
+
+    d_info = _friendly_memory_date(row.get('date'))
+    return jsonify({
+        'id': memory_id,
+        'status': status,
+        'progress': progress,
+        'message': message,
+        'error': error_msg,
+        'title': row.get('title') or filename.rsplit('.', 1)[0],
+        'date': row.get('date'),
+        'dateLabel': d_info.get('dateLabel', ''),
+        'note': row.get('note', ''),
+        'durationSeconds': row.get('durationSeconds'),
+        'thumbnailUrl': f"/memories/{memory_id}/thumbnail"
+    }), 200
 
 
 @api.route('/memories/<memory_id>', methods=['PATCH', 'PUT'])
@@ -841,23 +1401,63 @@ def update_memory(memory_id):
         return jsonify(error='Only title, note, and date can be changed.'), 400
     if 'title' in payload and (not isinstance(payload['title'], str) or len(payload['title'].strip()) > 120):
         return jsonify(error='Title is invalid.'), 400
-    if 'note' in payload and (not isinstance(payload['note'], str) or len(payload['note']) > 4000):
-        return jsonify(error='Note is invalid.'), 400
-    memories = _memory_data(); memory_id_row = memories[memory_id]
+
+    cleaned_note = None
+    if 'note' in payload:
+        try:
+            cleaned_note = _clean_memory_note(payload['note'])
+        except ValueError as e:
+            return jsonify(error=str(e)), 400
+
+    cleaned_date = None
+    if 'date' in payload:
+        cleaned_date, date_err = _validate_memory_date(payload['date'])
+        if date_err:
+            return jsonify(error=date_err), 400
+
+    base_dir = os.path.abspath(patient_path(''))
+    memories = _memory_data()
+    memory_id_row = memories[memory_id]
     old_filename = memory_id_row['filename']
+    old_date = memory_id_row.get('date')
+
     journals = {}
     try:
-        with open(JOURNALS_PATH, 'r', encoding='utf-8') as stream: journals = json.load(stream)
-    except (OSError, ValueError, TypeError): pass
+        with open(JOURNALS_PATH, 'r', encoding='utf-8') as stream:
+            journals = json.load(stream)
+    except (OSError, ValueError, TypeError):
+        pass
     journal = dict(journals.get(old_filename, {}))
-    if 'title' in payload: memory_id_row['title'] = payload['title'].strip()
-    if 'note' in payload: journal['entry'] = payload['note']; memory_id_row['note'] = payload['note']
-    if 'date' in payload: journal['date'] = payload['date']; memory_id_row['date'] = payload['date']
-    if journal: journals[old_filename] = journal
-    with open(JOURNALS_PATH, 'w', encoding='utf-8') as stream: json.dump(journals, stream, ensure_ascii=False, indent=2)
-    with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream: json.dump(memories, stream, ensure_ascii=False, indent=2)
-    invalidate_crossword_cache(journal.get('date'))
-    return jsonify(id=memory_id, title=memory_id_row.get('title') or old_filename.rsplit('.', 1)[0], note=journal.get('entry', ''), date=journal.get('date'))
+
+    if 'title' in payload:
+        memory_id_row['title'] = payload['title'].strip()
+    if cleaned_note is not None:
+        journal['entry'] = cleaned_note
+        memory_id_row['note'] = cleaned_note
+    if cleaned_date is not None:
+        journal['date'] = cleaned_date
+        memory_id_row['date'] = cleaned_date
+
+    journals[old_filename] = journal
+    with open(JOURNALS_PATH, 'w', encoding='utf-8') as stream:
+        json.dump(journals, stream, ensure_ascii=False, indent=2)
+    with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
+        json.dump(memories, stream, ensure_ascii=False, indent=2)
+
+    if cleaned_date is not None and cleaned_date != old_date:
+        invalidate_crossword_cache(old_date)
+        invalidate_crossword_cache(cleaned_date)
+        _invalidate_daily_plan_cache(old_date, base_dir)
+        _invalidate_daily_plan_cache(cleaned_date, base_dir)
+    elif old_date:
+        invalidate_crossword_cache(old_date)
+
+    return jsonify(
+        id=memory_id,
+        title=memory_id_row.get('title') or old_filename.rsplit('.', 1)[0],
+        note=memory_id_row.get('note', ''),
+        date=memory_id_row.get('date')
+    )
 
 
 @api.route('/memories/<memory_id>', methods=['DELETE'])
@@ -867,24 +1467,61 @@ def delete_memory(memory_id):
     row = _memory_for_id(memory_id)
     if not row:
         return jsonify(error='Memory not found'), 404
-    filename = row['filename']; base = os.path.abspath(patient_path('')); memories = _memory_data(); memories.pop(memory_id, None)
+    base = os.path.abspath(patient_path(''))
+    filename = row['filename']
+
+    status_key = (base, filename)
+    live_status = processing_status.get(status_key)
+    if (live_status and live_status.get('status') == 'processing') or row.get('status') == 'processing':
+        return jsonify(error='Cannot delete a memory while it is processing.'), 409
+
+    memories = _memory_data()
+    memories.pop(memory_id, None)
+
     for path in (os.path.join(base, 'content', filename), os.path.join(base, 'memory_thumbnails', memory_id + '.png')):
-        if os.path.isfile(path): os.remove(path)
+        if os.path.isfile(path):
+            try: os.remove(path)
+            except OSError: pass
+
     chunk_folder = _chunks_folder(filename)
-    for folder in ('video_chunks', 'frames'):
+    for folder in ('video_chunks', 'frames', 'content'):
         path = os.path.join(base, folder, chunk_folder)
-        if os.path.isdir(path): shutil.rmtree(path, ignore_errors=True)
+        if os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+
     journals = {}
     try:
-        with open(JOURNALS_PATH, 'r', encoding='utf-8') as stream: journals = json.load(stream)
-    except (OSError, ValueError, TypeError): pass
+        with open(JOURNALS_PATH, 'r', encoding='utf-8') as stream:
+            journals = json.load(stream)
+    except (OSError, ValueError, TypeError):
+        pass
     date_value = journals.pop(filename, {}).get('date') if isinstance(journals.get(filename, {}), dict) else None
-    with open(JOURNALS_PATH, 'w', encoding='utf-8') as stream: json.dump(journals, stream, ensure_ascii=False, indent=2)
+    if not date_value:
+        date_value = row.get('date')
+
+    with open(JOURNALS_PATH, 'w', encoding='utf-8') as stream:
+        json.dump(journals, stream, ensure_ascii=False, indent=2)
+
+    # Filter qas.json to only remove questions matching this video's chunk folder
     qas_path = os.path.join(base, 'qas.json')
     if os.path.exists(qas_path):
-        with open(qas_path, 'w', encoding='utf-8') as stream: json.dump([], stream)
-    with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream: json.dump(memories, stream, ensure_ascii=False, indent=2)
-    invalidate_crossword_cache(date_value)
+        try:
+            with open(qas_path, 'r', encoding='utf-8') as stream:
+                qas = json.load(stream)
+            if isinstance(qas, list):
+                filtered_qas = [q for q in qas if isinstance(q, dict) and chunk_folder not in str(q.get('video', ''))]
+                with open(qas_path, 'w', encoding='utf-8') as stream:
+                    json.dump(filtered_qas, stream, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
+    with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
+        json.dump(memories, stream, ensure_ascii=False, indent=2)
+
+    if date_value:
+        invalidate_crossword_cache(date_value)
+        _invalidate_daily_plan_cache(date_value, base)
+
     return jsonify(ok=True)
 
 
@@ -2100,32 +2737,33 @@ def generate_questions():
             with open(journal_file, 'r', encoding='utf-8') as f:
                 journals = json.load(f)
         
-        # Collect data from video chunks
+        # Collect data from video chunks via memories.json
         video_data = []
-        for folder_name in os.listdir(video_chunks_root):
+        memories = _memory_data()
+        for memory_id, row in memories.items():
+            if not isinstance(row, dict):
+                continue
+            fn = row.get('filename')
+            if not fn:
+                continue
+            folder_name = _chunks_folder(fn)
             folder_path = os.path.join(video_chunks_root, folder_name)
             if not os.path.isdir(folder_path):
                 continue
-            
-            # Get journal entry and date if exists
-            journal_entry = None
-            video_date = None
-            for video_name, journal_data in journals.items():
-                if folder_name.replace('_chunks', '') in video_name:
-                    journal_entry = journal_data.get('entry')
-                    video_date = journal_data.get('date')
-                    break
-            
+
+            journal_entry = row.get('note') or (journals.get(fn, {}).get('entry') if isinstance(journals.get(fn), dict) else None)
+            video_date = row.get('date') or (journals.get(fn, {}).get('date') if isinstance(journals.get(fn), dict) else None)
+
             # Filter by date if provided
             if target_date and video_date:
                 from datetime import datetime
                 try:
-                    target = datetime.fromisoformat(target_date.replace('Z', '+00:00')).date()
-                    video = datetime.fromisoformat(video_date.replace('Z', '+00:00')).date()
+                    target = datetime.fromisoformat(str(target_date).replace('Z', '+00:00')).date()
+                    video = datetime.fromisoformat(str(video_date).replace('Z', '+00:00')).date()
                     if target != video:
                         continue  # Skip videos that don't match the date
-                except:
-                    pass  # If date parsing fails, include the video anyway
+                except Exception:
+                    pass
             
             # Load transcript
             transcript_path = os.path.join(folder_path, 'full_transcript.json')
@@ -2718,6 +3356,7 @@ from auth import init_auth
 
 configure(api)
 init_auth(api, lambda: _load_settings())
+_cleanup_stale_processing_jobs()
 CORS(api, origins=api.config['AUTH_ORIGINS'], supports_credentials=True)
 
 
