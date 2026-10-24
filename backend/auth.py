@@ -19,6 +19,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import db as database
 import mailer
+from locks import rescan_reset_lock
 
 bp = Blueprint('auth', __name__)
 DAY = 86400
@@ -595,8 +596,7 @@ def logout():
 def demo_reset():
     if not demo_enabled() or not is_demo_session():
         return error(404)
-    from app import _rescan_reset_lock
-    with _rescan_reset_lock:
+    with rescan_reset_lock:
         patient = database.fetchone('SELECT id FROM patients WHERE is_demo=1 ORDER BY created_at LIMIT 1')
         if not patient:
             return error(404)

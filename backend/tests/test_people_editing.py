@@ -509,6 +509,192 @@ class TestPeopleEditing(unittest.TestCase):
         for p in demo_people:
             self.assertTrue((self.demo_base / 'known_faces' / p['photo']).exists())
 
+    def test_both_modules_import_same_lock_object(self):
+        import locks
+        self.assertIs(app.rescan_reset_lock, locks.rescan_reset_lock)
+        self.assertIs(auth.rescan_reset_lock, locks.rescan_reset_lock)
+
+    def test_demo_reset_waits_while_rescan_holds_lock(self):
+        import threading
+        import locks
+        lock = locks.rescan_reset_lock
+
+        # Acquire lock in main thread (simulating a running background rescan)
+        lock.acquire()
+        reset_started = threading.Event()
+        reset_finished = threading.Event()
+
+        def do_reset():
+            reset_started.set()
+            res = self.client_demo.post('/demo/reset')
+            self.assertEqual(res.status_code, 200)
+            reset_finished.set()
+
+        t = threading.Thread(target=do_reset)
+        t.start()
+
+        # Confirm thread started and is blocked waiting for the lock
+        self.assertTrue(reset_started.wait(timeout=1.0))
+        time.sleep(0.15)
+        self.assertFalse(reset_finished.is_set(), "demo_reset should wait while rescan holds lock")
+
+        # Now release the lock
+        lock.release()
+        # Thread should now proceed and finish promptly
+        self.assertTrue(reset_finished.wait(timeout=2.0))
+        t.join()
+
+    def test_photo_dimension_limit_rejects_huge_declared_size(self):
+        import struct
+        import zlib
+        sig = b'\x89PNG\r\n\x1a\n'
+        w, h = 10000, 10000
+        ihdr_data = struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)
+        ihdr_crc = struct.pack('>I', zlib.crc32(b'IHDR' + ihdr_data))
+        ihdr_chunk = struct.pack('>I', 13) + b'IHDR' + ihdr_data + ihdr_crc
+        iend_chunk = struct.pack('>I', 0) + b'IEND' + struct.pack('>I', zlib.crc32(b'IEND'))
+        huge_png = sig + ihdr_chunk + iend_chunk
+
+        res = self.client_self.post('/people', data={
+            'name': 'Huge Resolution Pic',
+            'relation': 'Friend',
+            'photo': (io.BytesIO(huge_png), 'huge.png')
+        }, content_type='multipart/form-data')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('resolution is too large', res.get_json().get('error', '').lower())
+
+    def test_delete_person_in_zoo_video_faces_file_handled_without_crash_or_none(self):
+        from seed_demo_media import seed_demo_media
+        seed_demo_media(self.demo_base, Path(__file__).resolve().parent.parent)
+
+        memories = json.loads((self.demo_base / 'memories.json').read_text(encoding='utf-8'))
+        zoo_id = next(mid for mid, row in memories.items() if 'zoo' in str(row.get('filename', '')).lower())
+        today_date = memories[zoo_id].get('date')
+
+        # Confirm Jawed Karim was initially loaded in the memory
+        mems_before = self.client_demo.get('/memories').get_json().get('memories', [])
+        zoo_before = next(m for m in mems_before if m['id'] == zoo_id)
+        self.assertIn('Jawed Karim', zoo_before['people'])
+
+        # Delete Jawed Karim
+        del_res = self.client_demo.delete('/people/jawed_karim')
+        self.assertEqual(del_res.status_code, 200)
+
+        # 1. GET /memories: no crash, no None, Jawed Karim is dropped
+        mems_after = self.client_demo.get('/memories').get_json().get('memories', [])
+        zoo_after = next(m for m in mems_after if m['id'] == zoo_id)
+        self.assertNotIn('Jawed Karim', zoo_after['people'])
+        self.assertNotIn('None', zoo_after['people'])
+        self.assertNotIn(None, zoo_after['people'])
+        self.assertEqual(zoo_after['people'], [])
+
+        # 2. POST /memories/ask "Who is in it?"
+        res_who = self.client_demo.post('/memories/ask', json={
+            'question': 'Who is in it?',
+            'scope': 'memory',
+            'memory_id': zoo_id
+        }).get_json()
+        self.assertNotIn('None', res_who.get('answer', ''))
+        self.assertNotIn('jawed_karim', res_who.get('answer', '').lower())
+
+        # 3. POST /memories/ask "Tell me about this video"
+        res_about = self.client_demo.post('/memories/ask', json={
+            'question': 'Tell me about this video',
+            'scope': 'memory',
+            'memory_id': zoo_id
+        }).get_json()
+        self.assertNotIn('None', res_about.get('answer', ''))
+        self.assertNotIn('jawed karim', res_about.get('answer', '').lower())
+
+        # 4. Question generator
+        res_q = self.client_demo.post('/generate-questions', json={'date': today_date})
+        self.assertEqual(res_q.status_code, 200)
+        for q in res_q.get_json().get('questions', []):
+            self.assertNotIn('None', str(q))
+            self.assertNotIn('jawed_karim', str(q).lower())
+
+        # 5. faces-for-date
+        res_df = self.client_demo.get(f'/faces-for-date?date={today_date}')
+        self.assertEqual(res_df.status_code, 200)
+        self.assertEqual(res_df.get_json().get('detected'), [])
+
+    def test_session_types_editing_people(self):
+        # 1. self session: 201 on POST, 200 on PUT, 200 on DELETE
+        res_self = self.client_self.post('/people', data={
+            'name': 'Self Created',
+            'relation': 'Friend',
+            'photo': (io.BytesIO(self.valid_face_bytes), 'f.jpg')
+        }, content_type='multipart/form-data')
+        self.assertEqual(res_self.status_code, 201)
+        p_self_id = res_self.get_json()['id']
+
+        put_self = self.client_self.put(f'/people/{p_self_id}', data={'name': 'Self Updated'})
+        self.assertEqual(put_self.status_code, 200)
+
+        del_self = self.client_self.delete(f'/people/{p_self_id}')
+        self.assertEqual(del_self.status_code, 200)
+
+        # 2. caregiver member of patient: 201 on POST, 200 on PUT, 200 on DELETE
+        res_cg = self.client_cg.post('/people', data={
+            'name': 'CG Created',
+            'relation': 'Doctor',
+            'photo': (io.BytesIO(self.valid_face_bytes), 'f.jpg')
+        }, content_type='multipart/form-data')
+        self.assertEqual(res_cg.status_code, 201)
+        p_cg_id = res_cg.get_json()['id']
+
+        put_cg = self.client_cg.put(f'/people/{p_cg_id}', data={'name': 'CG Updated'})
+        self.assertEqual(put_cg.status_code, 200)
+
+        del_cg = self.client_cg.delete(f'/people/{p_cg_id}')
+        self.assertEqual(del_cg.status_code, 200)
+
+        # 3. caregiver of another patient: 404 when trying to PUT or DELETE someone else's person
+        # First create a person under self_patient
+        res_target = self.client_self.post('/people', data={
+            'name': 'Target Person',
+            'relation': 'Friend',
+            'photo': (io.BytesIO(self.valid_face_bytes), 'f.jpg')
+        }, content_type='multipart/form-data')
+        p_target_id = res_target.get_json()['id']
+
+        put_other = self.client_other.put(f'/people/{p_target_id}', data={'name': 'Hacked Name'})
+        self.assertEqual(put_other.status_code, 404)
+
+        del_other = self.client_other.delete(f'/people/{p_target_id}')
+        self.assertEqual(del_other.status_code, 404)
+
+        # 4. patient-device: 403
+        res_dev_post = self.client_device.post('/people', data={
+            'name': 'Dev Person',
+            'relation': 'Friend',
+            'photo': (io.BytesIO(self.valid_face_bytes), 'f.jpg')
+        }, content_type='multipart/form-data')
+        self.assertEqual(res_dev_post.status_code, 403)
+        self.assertEqual(self.client_device.put(f'/people/{p_target_id}', data={'name': 'X'}).status_code, 403)
+        self.assertEqual(self.client_device.delete(f'/people/{p_target_id}').status_code, 403)
+
+        # 5. patient-login: 403
+        res_pl_post = self.client_patient_login.post('/people', data={
+            'name': 'PL Person',
+            'relation': 'Friend',
+            'photo': (io.BytesIO(self.valid_face_bytes), 'f.jpg')
+        }, content_type='multipart/form-data')
+        self.assertEqual(res_pl_post.status_code, 403)
+        self.assertEqual(self.client_patient_login.put(f'/people/{p_target_id}', data={'name': 'X'}).status_code, 403)
+        self.assertEqual(self.client_patient_login.delete(f'/people/{p_target_id}').status_code, 403)
+
+        # 6. no session: 401 or 403
+        anon = app.api.test_client()
+        res_anon_post = anon.post('/people', data={
+            'name': 'Anon Person',
+            'relation': 'Friend',
+            'photo': (io.BytesIO(self.valid_face_bytes), 'f.jpg')
+        }, content_type='multipart/form-data')
+        self.assertIn(res_anon_post.status_code, (401, 403))
+        self.assertIn(anon.put(f'/people/{p_target_id}', data={'name': 'X'}).status_code, (401, 403))
+        self.assertIn(anon.delete(f'/people/{p_target_id}').status_code, (401, 403))
+
 
 if __name__ == '__main__':
     unittest.main()

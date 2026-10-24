@@ -931,7 +931,8 @@ VALID_RELATIONS = {'Son', 'Daughter', 'Wife', 'Husband', 'Grandchild', 'Friend',
 RELATION_MAP = {r.lower(): r for r in VALID_RELATIONS}
 MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
-_rescan_reset_lock = threading.Lock()
+from locks import rescan_reset_lock
+_rescan_reset_lock = rescan_reset_lock
 _rescan_status_lock = threading.Lock()
 _patient_rescan_status = {}
 _patient_rescan_timestamps = {}
@@ -984,6 +985,18 @@ def _save_photo(file, old_photo=None):
         return None, "Unable to read photo file.", 400
     if len(content) > MAX_PHOTO_BYTES:
         return None, "Photo must be at most 5 MB.", 413
+
+    # Cheap dimension check before full decode
+    try:
+        from PIL import Image
+        with Image.open(BytesIO(content)) as pimg:
+            w, h = pimg.size
+            if w > 8000 or h > 8000 or (w * h) > 25_000_000:
+                return None, "Photo resolution is too large (maximum 8000x8000 and 25 megapixels).", 400
+    except Exception as e:
+        if "DecompressionBomb" in type(e).__name__:
+            return None, "Photo resolution is too large (maximum 8000x8000 and 25 megapixels).", 400
+        return None, "File is not a valid image.", 400
 
     nparr = np.frombuffer(content, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -2152,10 +2165,10 @@ def generate_questions():
                 context += f"- Journal entry (MOST IMPORTANT): {data['journal']}\n"
             context += f"- Video file: {data['video_path']}\n\n"
         
-        # Call GPT to generate questions
         api_key = os.getenv('OPENAI_API_KEY', 'not_configured')
-        if not api_key or api_key == 'not_configured':
-            # Fallback to template questions if no API key
+        ai_client = client if AI_AVAILABLE else None
+        if not api_key or api_key == 'not_configured' or ai_client is None:
+            # Fallback to template questions if no API key or client
             return jsonify({
                 "questions": [
                     {
@@ -2172,7 +2185,7 @@ def generate_questions():
             }), 200
         
         try:
-            response = client.chat.completions.create(
+            response = ai_client.chat.completions.create(
                 model='gpt-4o-mini',
                 messages=[
                     {
@@ -2218,7 +2231,20 @@ def generate_questions():
                 
         except Exception as e:
             print(f"GPT question generation error: {e}")
-            return jsonify({"error": f"GPT error: {str(e)}"}), 500
+            return jsonify({
+                "questions": [
+                    {
+                        "question": "What activity did you do in this video?",
+                        "answer": "Please describe the activity shown",
+                        "video": video_data[0]['video_path'] if video_data else ""
+                    },
+                    {
+                        "question": "Who was with you in this memory?",
+                        "answer": ", ".join(video_data[0]['faces']) if video_data and video_data[0]['faces'] else "Unknown",
+                        "video": video_data[0]['video_path'] if video_data else ""
+                    }
+                ]
+            }), 200
         
     except Exception as e:
         print(f"Generate questions error: {e}")
