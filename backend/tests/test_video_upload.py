@@ -284,10 +284,12 @@ class VideoUploadBackendTests(unittest.TestCase):
         with open(memories_file, 'r', encoding='utf-8') as f:
             updated = json.load(f)
         self.assertEqual(updated[mem_id]['status'], 'failed')
-        self.assertIn('Processing was interrupted', updated[mem_id]['error'])
+        self.assertEqual(updated[mem_id]['message'], app.SAFE_FAILURE_MESSAGE)
+        self.assertEqual(updated[mem_id]['error'], app.SAFE_FAILURE_MESSAGE)
 
-        # Verify partial files were cleaned up
-        self.assertFalse((self.base_a / 'content' / stale_fn).exists())
+        # Verify original video is kept on interruption!
+        self.assertTrue((self.base_a / 'content' / stale_fn).exists())
+        # Verify partial chunks were cleaned up
         self.assertFalse((self.base_a / 'video_chunks' / f'{stale_fn[:-4]}_chunks').exists())
 
     def test_random_stored_name_and_discovery_via_memories_json(self):
@@ -512,6 +514,150 @@ class VideoUploadBackendTests(unittest.TestCase):
         self.assertEqual(self.client_self.get(f'/memories/{mid_b}').status_code, 404)
         self.assertEqual(self.client_self.patch(f'/memories/{mid_b}', json={'note': 'Hacked'}).status_code, 404)
         self.assertEqual(self.client_self.delete(f'/memories/{mid_b}').status_code, 404)
+
+
+    def test_safe_failure_message_never_leaks_exception_or_path(self):
+        mid = '77777777777777777777777777777777'
+        fn = 'secret_vid.mp4'
+        (self.base_a / 'content' / fn).write_bytes(b'dummy')
+        with open(self.base_a / 'memories.json', 'w', encoding='utf-8') as f:
+            json.dump({mid: {'filename': fn, 'status': 'processing', 'date': '2026-10-24'}}, f)
+
+        # Worker raises exception containing sensitive path
+        with patch('process_video.process_uploaded_video', side_effect=RuntimeError("Failure in C:\\Sensitive\\SecretDir\\data.bin")):
+            app._process_video_job(self.patient_a, str(self.base_a), mid, fn, '2026-10-24', 'note')
+
+        with open(self.base_a / 'memories.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        self.assertEqual(data[mid]['status'], 'failed')
+        self.assertEqual(data[mid]['message'], app.SAFE_FAILURE_MESSAGE)
+        self.assertEqual(data[mid]['error'], app.SAFE_FAILURE_MESSAGE)
+        self.assertNotIn('Sensitive', data[mid]['message'])
+        self.assertNotIn('SecretDir', data[mid]['error'])
+
+        # API response also returns safe failure message
+        res = self.client_self.get(f'/memories/{mid}')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.get_json()['message'], app.SAFE_FAILURE_MESSAGE)
+        self.assertEqual(res.get_json()['error'], app.SAFE_FAILURE_MESSAGE)
+
+        # Original video is kept!
+        self.assertTrue((self.base_a / 'content' / fn).exists())
+
+    def test_retry_endpoint_and_409_concurrency(self):
+        mid = '88888888888888888888888888888888'
+        fn = 'retry_clip.mp4'
+        (self.base_a / 'content' / fn).write_bytes(b'kept video bytes')
+        chunk_f = f'{fn[:-4]}_chunks'
+        (self.base_a / 'video_chunks' / chunk_f).mkdir(parents=True, exist_ok=True)
+        (self.base_a / 'video_chunks' / chunk_f / 'partial.mp4').write_bytes(b'partial')
+
+        with open(self.base_a / 'memories.json', 'w', encoding='utf-8') as f:
+            json.dump({mid: {'filename': fn, 'status': 'failed', 'message': app.SAFE_FAILURE_MESSAGE, 'date': '2026-10-24', 'note': 'Retry me'}}, f)
+
+        # Patient login or device cannot retry
+        dev_res = self.client_device.post(f'/memories/{mid}/retry')
+        self.assertEqual(dev_res.status_code, 403)
+
+        # 409 if active job running
+        with app._patient_job_lock:
+            app._active_patient_jobs.add(self.patient_a)
+        conflict_res = self.client_self.post(f'/memories/{mid}/retry')
+        self.assertEqual(conflict_res.status_code, 409)
+        self.assertIn('already being processed', conflict_res.get_json()['error'])
+        with app._patient_job_lock:
+            app._active_patient_jobs.discard(self.patient_a)
+
+        # Successful retry by self or caregiver
+        with patch('process_video.process_uploaded_video', return_value={'success': True}), \
+             patch('app._generate_questions_for_video', return_value=[]):
+            retry_res = self.client_self.post(f'/memories/{mid}/retry')
+            self.assertEqual(retry_res.status_code, 200)
+            self.assertEqual(retry_res.get_json()['status'], 'processing')
+
+            time.sleep(0.2)
+            st_res = self.client_self.get(f'/memories/{mid}')
+            self.assertEqual(st_res.status_code, 200)
+            self.assertEqual(st_res.get_json()['status'], 'ready')
+
+    def test_date_rules_yesterday_today_tomorrow_and_5_days_ahead(self):
+        from datetime import date, timedelta
+        today = date.today()
+        yesterday_str = (today - timedelta(days=1)).strftime('%Y-%m-%d')
+        today_str = today.strftime('%Y-%m-%d')
+        tomorrow_str = (today + timedelta(days=1)).strftime('%Y-%m-%d')
+        two_days_str = (today + timedelta(days=2)).strftime('%Y-%m-%d')
+        five_days_str = (today + timedelta(days=5)).strftime('%Y-%m-%d')
+
+        for valid_d in (yesterday_str, today_str, tomorrow_str, two_days_str):
+            clean_d, err = app._validate_memory_date(valid_d)
+            self.assertIsNone(err, f"Expected {valid_d} to be accepted, got error: {err}")
+            self.assertEqual(clean_d, valid_d)
+
+        invalid_d, err = app._validate_memory_date(five_days_str)
+        self.assertIsNone(invalid_d)
+        self.assertEqual(err, "Date cannot be in the future.")
+
+    def test_concurrent_threads_updating_status_and_note_under_lock(self):
+        mid = 'cccc2222cccc2222cccc2222cccc2222'
+        fn = 'concur.mp4'
+        memories_file = self.base_a / 'memories.json'
+        with open(memories_file, 'w', encoding='utf-8') as f:
+            json.dump({mid: {'filename': fn, 'status': 'processing', 'progress': 0, 'note': 'Initial'}}, f)
+
+        errors = []
+
+        def update_status_worker():
+            for i in range(15):
+                try:
+                    with app._memories_lock_for_patient(self.patient_a):
+                        with open(memories_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        data[mid]['progress'] = i
+                        data[mid]['status'] = 'processing'
+                        with open(memories_file, 'w', encoding='utf-8') as f:
+                            json.dump(data, f, ensure_ascii=False, indent=2)
+                    time.sleep(0.005)
+                except Exception as e:
+                    errors.append(e)
+
+        def update_note_worker():
+            for i in range(15):
+                try:
+                    with app._memories_lock_for_patient(self.patient_a):
+                        with open(memories_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        data[mid]['note'] = f'Note update {i}'
+                        with open(memories_file, 'w', encoding='utf-8') as f:
+                            json.dump(data, f, ensure_ascii=False, indent=2)
+                    time.sleep(0.005)
+                except Exception as e:
+                    errors.append(e)
+
+        t1 = threading.Thread(target=update_status_worker)
+        t2 = threading.Thread(target=update_note_worker)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        self.assertEqual(errors, [])
+        with open(memories_file, 'r', encoding='utf-8') as f:
+            final_data = json.load(f)
+        self.assertEqual(final_data[mid]['progress'], 14)
+        self.assertEqual(final_data[mid]['note'], 'Note update 14')
+
+    def test_shared_question_generation(self):
+        video_data = [{
+            'video_path': '/video_chunks/clip_chunks/chunk_0000_0010.mp4',
+            'transcript': 'We had lunch outside with Sarah',
+            'faces': ['Sarah (daughter)'],
+            'journal': 'Picnic in the park'
+        }]
+        questions = app._generate_questions_from_video_data(video_data)
+        self.assertTrue(len(questions) >= 2)
+        self.assertTrue(all(q.get('fallback') for q in questions))
+        self.assertEqual(questions[0]['answer'], 'Picnic in the park')
 
 
 if __name__ == '__main__':

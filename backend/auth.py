@@ -1315,7 +1315,7 @@ def init_auth(app, legacy_settings):
         if request.endpoint == 'delete_performance' and not (is_caregiver() or self_account()):
             return error(403)
         if request.endpoint in {'add_person', 'update_person', 'delete_person', 'rescan_people', 'rescan_status',
-                                'create_memory', 'update_memory', 'delete_memory'}:
+                                'create_memory', 'update_memory', 'delete_memory', 'retry_memory'}:
             if session['kind'] == 'patient_device' or not (is_caregiver() or self_account()):
                 return error(403)
         elif request.endpoint in CAREGIVER_ENDPOINTS and not is_caregiver():
