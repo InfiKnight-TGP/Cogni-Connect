@@ -302,3 +302,62 @@ export function buildRadarChartData(scores: Record<Area, number | null>) {
     ],
   };
 }
+
+/**
+ * Caregivers always see decline sentences; self users only see them when the trend notes switch is on.
+ */
+export function shouldShowDeclineSentence(
+  audience: "caregiver" | "self" = "caregiver",
+  showNotes = false
+): boolean {
+  if (audience === "caregiver") return true;
+  return showNotes;
+}
+
+export function summarySentences(
+  entries: Entry[],
+  now: Date = new Date(),
+  audience: "caregiver" | "self" = "caregiver",
+  showNotes = false
+): string[] {
+  const weeks = lastFourWeeks(now);
+  const averages = weeklyAverages(entries, weeks, (entry) => entry.area);
+  const present = AREAS.filter((area) =>
+    entries.some(
+      (entry) =>
+        entry.area === area &&
+        entry.day >= weeks[3].start &&
+        entry.day <= weeks[3].end
+    )
+  );
+  const sentences = [
+    `Played ${daysPlayedThisWeek(entries, now).filter(Boolean).length} days this week.`,
+  ];
+  const changed = present
+    .map((area) => ({ area, direction: trend(averages[area] ?? []) }))
+    .filter((item) => item.direction === "up" || item.direction === "down");
+  const up = changed.filter((item) => item.direction === "up").map((item) => item.area);
+  const down = changed.filter((item) => item.direction === "down").map((item) => item.area);
+  if (up.length) {
+    sentences.push(
+      `${up.join(" and ")} ${up.length === 1 ? "was" : "were"} higher than the earlier weeks.`
+    );
+  }
+  if (shouldShowDeclineSentence(audience, showNotes) && down.length) {
+    sentences.push(
+      `${down.join(" and ")} ${down.length === 1 ? "was" : "were"} lower than the earlier weeks.`
+    );
+  }
+  if (present.length && !changed.length) {
+    sentences.push("Scores were steady across the areas played.");
+  }
+  const missing = AREAS.filter(
+    (area) => !present.some((played) => played === area)
+  );
+  if (missing.length && sentences.length < 4) {
+    sentences.push(
+      `${missing.join(" and ")} ${missing.length === 1 ? "was" : "were"} not played this week.`
+    );
+  }
+  return sentences.slice(0, 4);
+}

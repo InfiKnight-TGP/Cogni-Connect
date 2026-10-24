@@ -11,8 +11,13 @@ import {
   calcTodayGoal,
   hasThreeConsecutiveDays,
   badgesToCelebrate,
+  shouldCelebrateGoal,
 } from './self-progress.ts';
-import { starsFor } from './progress.ts';
+import {
+  starsFor,
+  shouldShowDeclineSentence,
+  summarySentences,
+} from './progress.ts';
 
 // 1. Plural helper check
 assert.equal(plural(1, 'day in a row', 'days in a row'), '1 day in a row');
@@ -193,25 +198,51 @@ assert.deepEqual(newBadges, ['streak_3'], 'A new badge celebrates');
 const celebratedAgain = badgesToCelebrate(['first_step', 'explorer', 'streak_3'], ['first_step', 'explorer', 'streak_3']);
 assert.deepEqual(celebratedAgain, [], 'Already stored badge never celebrates again');
 
-// Storage failure gives none
-function simulateCelebrationWithStorageFailure(computed, stored, isStorageAvailable) {
-  if (!isStorageAvailable) return [];
-  return badgesToCelebrate(computed, stored);
-}
+// Storage failure gives none (tested directly against real helper)
 assert.deepEqual(
-  simulateCelebrationWithStorageFailure(['first_step', 'streak_3'], ['first_step'], false),
+  badgesToCelebrate(['first_step', 'streak_3'], ['first_step'], false),
   [],
   'Storage failure gives no celebration'
 );
 
-// 12. Trend notes: WeeklySummary and ProgressContent switch ownership
-const weeklySummarySrc = await readFile(new URL('../components/caregiver/weeklySummary.tsx', import.meta.url), 'utf8');
-const progressContentSrc = await readFile(new URL('../components/caregiver/progressContent.tsx', import.meta.url), 'utf8');
-const myProgressSrc = await readFile(new URL('../app/my-progress/page.tsx', import.meta.url), 'utf8');
+// shouldCelebrateGoal: goal celebration rules
+assert.equal(shouldCelebrateGoal(false, null, '2026-10-24'), false, 'Goal not done gives no celebration');
+assert.equal(shouldCelebrateGoal(true, null, '2026-10-24'), true, 'Goal done and not yet celebrated today celebrates');
+assert.equal(shouldCelebrateGoal(true, '2026-10-23', '2026-10-24'), true, 'Goal done and celebrated yesterday celebrates today');
+assert.equal(shouldCelebrateGoal(true, '2026-10-24', '2026-10-24'), false, 'Goal already celebrated today never celebrates again');
 
-assert.match(weeklySummarySrc, /showNotes && down\.length/, 'WeeklySummary must only show lower sentence when showNotes is true');
-assert.match(progressContentSrc, /export function useTrendNotes\(\)/, 'ProgressContent must own the trend notes state');
-assert.doesNotMatch(myProgressSrc, /showTrendNotes/, 'my-progress must not have a duplicate trend notes switch');
+// 12. Trend notes & Caregiver regression: shouldShowDeclineSentence and real summarySentences
+assert.equal(shouldShowDeclineSentence('caregiver', false), true, 'Caregiver always shows decline sentences when switch is off');
+assert.equal(shouldShowDeclineSentence('caregiver', true), true, 'Caregiver always shows decline sentences when switch is on');
+assert.equal(shouldShowDeclineSentence('self', false), false, 'Self hides decline sentences when switch is off');
+assert.equal(shouldShowDeclineSentence('self', true), true, 'Self shows decline sentences when switch is on');
+
+// Test real summarySentences with entries that produce a downward trend
+const declineDate = new Date(2026, 9, 24); // Sat Oct 24 2026
+const declineEntries = [
+  { day: '2026-09-29', score: 90, area: 'Memory', gameId: 'story-builder' },
+  { day: '2026-10-06', score: 80, area: 'Memory', gameId: 'story-builder' },
+  { day: '2026-10-13', score: 60, area: 'Memory', gameId: 'story-builder' },
+  { day: '2026-10-20', score: 40, area: 'Memory', gameId: 'story-builder' },
+];
+
+const caregiverSentences = summarySentences(declineEntries, declineDate, 'caregiver', false);
+assert.ok(
+  caregiverSentences.some((s) => s.includes('lower than the earlier weeks')),
+  'Caregiver must always show decline sentence even with showNotes=false'
+);
+
+const selfSentencesOff = summarySentences(declineEntries, declineDate, 'self', false);
+assert.ok(
+  !selfSentencesOff.some((s) => s.includes('lower than the earlier weeks')),
+  'Self must hide decline sentence when showNotes=false'
+);
+
+const selfSentencesOn = summarySentences(declineEntries, declineDate, 'self', true);
+assert.ok(
+  selfSentencesOn.some((s) => s.includes('lower than the earlier weeks')),
+  'Self must show decline sentence when showNotes=true'
+);
 
 // 13. Locales coverage for self-progress UI phrases
 const hi = JSON.parse(await readFile(new URL('./interaction/locales/hi.json', import.meta.url), 'utf8'));

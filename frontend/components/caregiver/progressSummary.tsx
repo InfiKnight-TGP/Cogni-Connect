@@ -13,7 +13,7 @@ export default function ProgressSummary({ audience = "caregiver" }: { audience?:
       .then((data) => setEntries(toEntries(data))).catch(() => setEntries([]));
   }, []);
   return <div className="space-y-5" aria-label={audience === "self" ? "Your summary" : "Patient summary"}>
-    {entries === null ? <p className="py-8 text-center text-muted-foreground">Loading weekly summary…</p> : <WeeklySummary entries={entries} />}
+    {entries === null ? <p className="py-8 text-center text-muted-foreground">Loading weekly summary…</p> : <WeeklySummary entries={entries} audience={audience} />}
     <DaySnapshot />
   </div>;
 }

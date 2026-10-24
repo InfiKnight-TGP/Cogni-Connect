@@ -563,6 +563,7 @@ class TestPeopleEditing(unittest.TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn('resolution is too large', res.get_json().get('error', '').lower())
 
+    @patch.object(app, 'AI_AVAILABLE', False)
     def test_delete_person_in_zoo_video_faces_file_handled_without_crash_or_none(self):
         from seed_demo_media import seed_demo_media
         seed_demo_media(self.demo_base, Path(__file__).resolve().parent.parent)

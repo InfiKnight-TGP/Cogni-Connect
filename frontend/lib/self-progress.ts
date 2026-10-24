@@ -282,17 +282,35 @@ export function mergeBadges(
 
 /**
  * Helper to determine which newly earned badges should trigger a celebration.
+ * - When isStorageAvailable is false, returns [] (never celebrate).
  * - When storedIds is null (the key was never written in localStorage), returns []
  *   so existing history is seeded silently and never celebrates.
  * - When storedIds is an array, returns only earned badge IDs that are not present in storedIds.
  */
 export function badgesToCelebrate(
   computedEarnedIds: string[],
-  storedIds: string[] | null
+  storedIds: string[] | null,
+  isStorageAvailable: boolean = true
 ): string[] {
+  if (!isStorageAvailable) return [];
   if (storedIds === null) return [];
   const storedSet = new Set(storedIds);
   return computedEarnedIds.filter((id) => !storedSet.has(id));
+}
+
+/**
+ * Pure helper for daily goal celebration:
+ * - not done = no (false)
+ * - done and not yet celebrated today = yes (true)
+ * - same day again = no (false)
+ */
+export function shouldCelebrateGoal(
+  allDone: boolean,
+  storedDate: string | null,
+  today: string
+): boolean {
+  if (!allDone) return false;
+  return storedDate !== today;
 }
 
 /**

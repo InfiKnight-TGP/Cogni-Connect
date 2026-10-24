@@ -10,7 +10,7 @@ import { useTranslate, usePreferences } from "@/components/interaction/Interacti
 import ReadAloud from "@/components/interaction/ReadAloud";
 import { useAuth } from "@/lib/auth-context";
 import ProgressSummary from "@/components/caregiver/progressSummary";
-import ProgressContent from "@/components/caregiver/progressContent";
+import ProgressContent, { useTrendNotes } from "@/components/caregiver/progressContent";
 import ActivityLog from "@/components/caregiver/activityLog";
 import {
   AREAS,
@@ -31,6 +31,7 @@ import {
   getNextSuggestion,
   mergeBadges,
   badgesToCelebrate,
+  shouldCelebrateGoal,
   plural,
   SKILL_FRIENDLY_NAMES,
   type Badge,
@@ -110,8 +111,11 @@ export default function MyProgressPage() {
  */
 function SelfProgressView() {
   const { t } = useTranslate();
+  const tRef = useRef(t);
+  tRef.current = t;
   const { session } = useAuth();
   const { effectiveAnimations, reducedMotion } = usePreferences();
+  const [showTrendNotes, setShowTrendNotes] = useTrendNotes();
 
   const [loading, setLoading] = useState(true);
   const [allScores, setAllScores] = useState<RawScoreRecord[]>([]);
@@ -121,9 +125,11 @@ function SelfProgressView() {
   const [completedTodayIds, setCompletedTodayIds] = useState<string[]>([]);
   const [storedEarnedBadgeIds, setStoredEarnedBadgeIds] = useState<string[]>([]);
   const [celebrationMessage, setCelebrationMessage] = useState<string | null>(null);
+  const [celebratedGoalDate, setCelebratedGoalDate] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<"summary" | "trends" | "difficulty" | "log" | "report">("summary");
 
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const goalCelebrationTriggeredRef = useRef(false);
   const todayStr = useMemo(() => dayKey(new Date()), []);
   const patientKey = session?.activePatient?.id || session?.user?.id || "self";
   const badgeStorageKey = `cogni_celebrated_badges_${patientKey}`;
@@ -275,7 +281,7 @@ function SelfProgressView() {
 
     let storageAvailable = true;
     let storedBadgeIds: string[] | null = null;
-    let celebratedGoalDate: string | null = null;
+    let storedGoalDate: string | null = null;
 
     try {
       const raw = localStorage.getItem(badgeStorageKey);
@@ -283,7 +289,7 @@ function SelfProgressView() {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) storedBadgeIds = parsed;
       }
-      celebratedGoalDate = localStorage.getItem(goalStorageKey);
+      storedGoalDate = localStorage.getItem(goalStorageKey);
     } catch {
       storageAvailable = false;
     }
@@ -313,22 +319,28 @@ function SelfProgressView() {
           // ignore
         }
         const badgeObj = badges.find((b) => b.id === toCelebrate[0]);
-        const title = badgeObj ? t(badgeObj.title) : "";
-        setCelebrationMessage(t("New badge: {title}!", { title }));
+        const title = badgeObj ? tRef.current(badgeObj.title) : "";
+        setCelebrationMessage(tRef.current("New badge: {title}!", { title }));
         return;
       }
     }
 
     // 2. Finishing the day's goal: "All done today, well done!" shown at most once per day (store date per patient)
-    if (goal.allDone && celebratedGoalDate !== todayStr) {
+    const effectiveGoalDate = celebratedGoalDate || storedGoalDate;
+    if (
+      shouldCelebrateGoal(goal.allDone, effectiveGoalDate, todayStr) &&
+      !goalCelebrationTriggeredRef.current
+    ) {
+      goalCelebrationTriggeredRef.current = true;
       try {
         localStorage.setItem(goalStorageKey, todayStr);
       } catch {
         // ignore
       }
-      setCelebrationMessage(t("All done today, well done!"));
+      setCelebratedGoalDate(todayStr);
+      setCelebrationMessage(tRef.current("All done today, well done!"));
     }
-  }, [badges, badgeStorageKey, goal.allDone, goalStorageKey, loading, t, todayStr]);
+  }, [badges, badgeStorageKey, celebratedGoalDate, goal.allDone, goalStorageKey, loading, todayStr]);
 
   // Week's best activity
   const bestGame = useMemo(() => {
@@ -780,6 +792,16 @@ function SelfProgressView() {
                 <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-5 text-lg font-medium text-foreground">
                   {t("Scores describe activity only. They are not a clinical measure.")}
                 </div>
+
+                <label className="flex items-center gap-3 cursor-pointer text-lg font-semibold text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={showTrendNotes}
+                    onChange={(e) => setShowTrendNotes(e.target.checked)}
+                    className="h-5 w-5 rounded border-input text-primary focus:ring-primary"
+                  />
+                  <span>{t("Show detailed trend notes")}</span>
+                </label>
 
                 <section className="space-y-5" aria-label={t("Progress and reports")}>
                   <div role="tablist" className="flex flex-wrap gap-2 border-b pb-2">
