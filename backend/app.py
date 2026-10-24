@@ -2174,12 +2174,14 @@ def generate_questions():
                     {
                         "question": "What activity did you do in this video?",
                         "answer": "Please describe the activity shown",
-                        "video": video_data[0]['video_path'] if video_data else ""
+                        "video": video_data[0]['video_path'] if video_data else "",
+                        "fallback": True
                     },
                     {
                         "question": "Who was with you in this memory?",
                         "answer": ", ".join(video_data[0]['faces']) if video_data and video_data[0]['faces'] else "Unknown",
-                        "video": video_data[0]['video_path'] if video_data else ""
+                        "video": video_data[0]['video_path'] if video_data else "",
+                        "fallback": True
                     }
                 ]
             }), 200
@@ -2236,12 +2238,14 @@ def generate_questions():
                     {
                         "question": "What activity did you do in this video?",
                         "answer": "Please describe the activity shown",
-                        "video": video_data[0]['video_path'] if video_data else ""
+                        "video": video_data[0]['video_path'] if video_data else "",
+                        "fallback": True
                     },
                     {
                         "question": "Who was with you in this memory?",
                         "answer": ", ".join(video_data[0]['faces']) if video_data and video_data[0]['faces'] else "Unknown",
-                        "video": video_data[0]['video_path'] if video_data else ""
+                        "video": video_data[0]['video_path'] if video_data else "",
+                        "fallback": True
                     }
                 ]
             }), 200

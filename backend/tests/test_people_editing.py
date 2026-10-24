@@ -618,6 +618,22 @@ class TestPeopleEditing(unittest.TestCase):
         self.assertEqual(res_df.status_code, 200)
         self.assertEqual(res_df.get_json().get('detected'), [])
 
+    @patch.object(app, 'AI_AVAILABLE', False)
+    def test_generate_questions_fallback_flag(self):
+        from seed_demo_media import seed_demo_media
+        seed_demo_media(self.demo_base, Path(__file__).resolve().parent.parent)
+
+        memories = json.loads((self.demo_base / 'memories.json').read_text(encoding='utf-8'))
+        zoo_id = next(mid for mid, row in memories.items() if 'zoo' in str(row.get('filename', '')).lower())
+        today_date = memories[zoo_id].get('date')
+
+        res_q = self.client_demo.post('/generate-questions', json={'date': today_date})
+        self.assertEqual(res_q.status_code, 200)
+        questions = res_q.get_json().get('questions', [])
+        self.assertTrue(len(questions) > 0)
+        for q in questions:
+            self.assertTrue(q.get('fallback', False))
+
     def test_session_types_editing_people(self):
         # 1. self session: 201 on POST, 200 on PUT, 200 on DELETE
         res_self = self.client_self.post('/people', data={
