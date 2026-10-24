@@ -447,12 +447,6 @@ function SelfProgressView() {
                 <span className="text-2xl" aria-hidden>🔥</span>
                 <span>{streak > 0 ? plural(streak, t("day in a row"), t("days in a row")) : t("Start your streak today!")}</span>
               </div>
-              <Link
-                href="/settings"
-                className="min-h-[48px] inline-flex items-center text-base font-semibold text-primary underline hover:text-primary/80"
-              >
-                {t("Accessibility settings")}
-              </Link>
             </div>
           </div>
           <ReadAloud
