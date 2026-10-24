@@ -149,7 +149,7 @@ export interface PatientStats {
   doneToday: number;
 }
 
-const starsFor = (score: number) => (score >= 80 ? 3 : score >= 50 ? 2 : 1);
+export const starsFor = (score: number) => (score >= 80 ? 3 : score >= 50 ? 2 : 1);
 
 /** Calculate patient stats from the normalized, level-only activity entries. */
 export function patientStatsFromEntries(entries: Entry[], now: Date): PatientStats {
