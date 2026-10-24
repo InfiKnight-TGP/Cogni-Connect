@@ -1067,6 +1067,10 @@ def add_person():
 
     relation = request.form.get('relation', '').strip()
     rel_key = relation.lower()
+    if rel_key.startswith('your '):
+        rel_key = rel_key[5:].strip()
+    if rel_key in ('grandson', 'granddaughter'):
+        rel_key = 'grandchild'
     if rel_key not in RELATION_MAP:
         return jsonify(error="Relation must be one of: " + ", ".join(sorted(VALID_RELATIONS))), 400
     canonical_relation = RELATION_MAP[rel_key]
@@ -1114,11 +1118,19 @@ def update_person(person_id):
         person['name'] = _title(name_clean)
 
     if 'relation' in request.form:
-        relation = request.form['relation'].strip()
-        rel_key = relation.lower()
-        if rel_key not in RELATION_MAP:
-            return jsonify(error="Relation must be one of: " + ", ".join(sorted(VALID_RELATIONS))), 400
-        person['relation'] = RELATION_MAP[rel_key]
+        new_rel = request.form['relation'].strip()
+        existing_rel = person.get('relation', '').strip()
+        if new_rel == existing_rel or (existing_rel and new_rel.lower() == existing_rel.lower()):
+            person['relation'] = person.get('relation', new_rel)
+        else:
+            rel_key = new_rel.lower()
+            if rel_key.startswith('your '):
+                rel_key = rel_key[5:].strip()
+            if rel_key in ('grandson', 'granddaughter'):
+                rel_key = 'grandchild'
+            if rel_key not in RELATION_MAP:
+                return jsonify(error="Relation must be one of: " + ", ".join(sorted(VALID_RELATIONS))), 400
+            person['relation'] = RELATION_MAP[rel_key]
 
     if 'phone' in request.form:
         phone = request.form['phone'].strip()

@@ -852,5 +852,18 @@
   "Doctor": "डॉक्टर",
   "Neighbour": "पड़ोसी",
   "Caregiver": "देखभालकर्ता",
-  "Other": "अन्य"
+  "Other": "अन्य",
+  "Full name": "पूरा नाम",
+  "Preview": "पूर्वावलोकन",
+  "Photo of {name}": "{name} की तस्वीर",
+  "optional": "वैकल्पिक",
+  "Delete {name}?": "क्या {name} को हटाना चाहते हैं?",
+  "Delete person": "व्यक्ति को हटाएँ",
+  "Deleting…": "हटा रहे हैं…",
+  "Discard changes?": "बदलाव छोड़ें?",
+  "Discard": "छोड़ें",
+  "Keep editing": "संपादन जारी रखें",
+  "Face scan stopped.": "चेहरा स्कैन रोक दिया गया।",
+  "Face scan timed out. You can try again.": "चेहरा स्कैन का समय समाप्त हो गया। आप फिर कोशिश कर सकते हैं।"
 }
+

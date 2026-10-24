@@ -711,6 +711,53 @@ class TestPeopleEditing(unittest.TestCase):
         self.assertIn(anon.put(f'/people/{p_target_id}', data={'name': 'X'}).status_code, (401, 403))
         self.assertIn(anon.delete(f'/people/{p_target_id}').status_code, (401, 403))
 
+    def test_put_can_clear_phone_and_accept_unchanged_relation(self):
+        # 1. Create a person with a phone number and an existing non-approved relation (e.g. seeded as Grandson)
+        # Directly write to people.json to simulate a legacy record
+        people_path = self.self_base / 'people.json'
+        legacy_person = {
+            'id': 'legacy1',
+            'name': 'Rahul',
+            'relation': 'Grandson',
+            'phone': '+91 98765 43210',
+            'photo': 'rahul.jpg'
+        }
+        (self.self_base / 'known_faces').mkdir(parents=True, exist_ok=True)
+        (self.self_base / 'known_faces' / 'rahul.jpg').write_bytes(b'photo')
+        people_path.write_text(json.dumps([legacy_person]), encoding='utf-8')
+
+        # 2. PUT with unchanged relation 'Grandson' and empty phone: should succeed and clear phone
+        res = self.client_self.put('/people/legacy1', data={
+            'relation': 'Grandson',
+            'phone': '',
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data['relation'], 'Grandson')
+        self.assertEqual(data['phone'], '')
+
+        # Verify persisted file in storage
+        saved = json.loads(people_path.read_text(encoding='utf-8'))
+        self.assertEqual(saved[0]['phone'], '')
+        self.assertEqual(saved[0]['relation'], 'Grandson')
+
+        # 3. PUT changing relation to invalid relation 'Stranger': should fail with 400
+        res_bad = self.client_self.put('/people/legacy1', data={
+            'relation': 'Stranger',
+        })
+        self.assertEqual(res_bad.status_code, 400)
+        self.assertIn("Relation must be one of", res_bad.get_json()['error'])
+
+        # 4. POST with invalid relation 'Stranger': should fail with 400
+        res_bad_post = self.client_self.post('/people', data={
+            'name': 'New Guy',
+            'relation': 'Stranger',
+            'photo': (io.BytesIO(self.valid_face_bytes), 'f.jpg')
+        }, content_type='multipart/form-data')
+        self.assertEqual(res_bad_post.status_code, 400)
+        self.assertIn("Relation must be one of", res_bad_post.get_json()['error'])
+
 
 if __name__ == '__main__':
     unittest.main()
+

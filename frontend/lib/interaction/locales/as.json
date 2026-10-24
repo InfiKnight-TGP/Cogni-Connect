@@ -851,5 +851,18 @@
   "Doctor": "চিকিৎসক",
   "Neighbour": "চুবুৰীয়া",
   "Caregiver": "যত্ন লওঁতা",
-  "Other": "অন্য"
+  "Other": "অন্য",
+  "Full name": "সম্পূৰ্ণ নাম",
+  "Preview": "পূৰ্বদৰ্শন",
+  "Photo of {name}": "{name}ৰ ফটো",
+  "optional": "ঐচ্ছিক",
+  "Delete {name}?": "{name}ক মচিব বিচাৰে নেকি?",
+  "Delete person": "ব্যক্তিক আঁতৰাওক",
+  "Deleting…": "মচি থকা হৈছে…",
+  "Discard changes?": "পৰিৱৰ্তনবোৰ বাদ দিবনে?",
+  "Discard": "বাদ দিয়ক",
+  "Keep editing": "সম্পাদনা চলাই থাকক",
+  "Face scan stopped.": "মুখৰ স্কেন বন্ধ কৰা হ’ল।",
+  "Face scan timed out. You can try again.": "মুখৰ স্কেনৰ সময় উকলি গ’ল। আপুনি পুনৰ চেষ্টা কৰিব পাৰে।"
 }
+

@@ -11,7 +11,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 import ReadAloud from "@/components/interaction/ReadAloud";
 import { Edit2, Plus, RefreshCw, Trash2, X } from "lucide-react";
-import { Person, VALID_RELATIONS, relationText } from "@/lib/people";
+import {
+  Person,
+  VALID_RELATIONS,
+  relationText,
+  canEditPeople,
+  normalizeRelation,
+} from "@/lib/people";
 
 export default function PeoplePage() {
   const { t } = useTranslate();
@@ -24,7 +30,7 @@ export default function PeoplePage() {
   // Self accounts can edit their own people; caregivers manage their active patient.
   // Paired devices (patient_device) and patient logins have no editing controls.
   const isSelf = session?.role === "self";
-  const canEdit = Boolean(caregiver || isSelf);
+  const canEdit = canEditPeople(session, Boolean(caregiver));
 
   // Self account edit mode toggle (caregivers default to edit mode)
   const [editMode, setEditMode] = useState(Boolean(caregiver));
@@ -32,6 +38,11 @@ export default function PeoplePage() {
   // Modal dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
+
+  // Accessible delete confirmation dialog state
+  const [personToDelete, setPersonToDelete] = useState<Person | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Rescan state
   const [scanning, setScanning] = useState(false);
@@ -56,7 +67,7 @@ export default function PeoplePage() {
     load();
   }, [load]);
 
-  // Clean up rescan poll timer
+  // Clean up rescan poll timer on unmount
   useEffect(() => {
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -78,21 +89,34 @@ export default function PeoplePage() {
     setDialogOpen(true);
   };
 
-  const handleDelete = async (p: Person) => {
-    const confirmed = window.confirm(
-      t("Remove {name}? Their photo will be deleted too.", { name: p.name })
-    );
-    if (!confirmed) return;
+  const handleRequestDelete = (p: Person) => {
+    setDeleteError(null);
+    setPersonToDelete(p);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!personToDelete) return;
+    setDeleteLoading(true);
+    setDeleteError(null);
 
     try {
-      const res = await apiFetch(`${API_URL}/people/${p.id}`, { method: "DELETE" });
+      const res = await apiFetch(`${API_URL}/people/${personToDelete.id}`, {
+        method: "DELETE",
+      });
       if (!res.ok) {
-        alert(t("Could not remove this person. Please try again."));
+        const data = await res.json().catch(() => null);
+        setDeleteError(
+          t(data?.error || "Could not remove this person. Please try again.")
+        );
+        setDeleteLoading(false);
         return;
       }
+      setPersonToDelete(null);
+      setDeleteLoading(false);
       await load();
     } catch {
-      alert(t("Could not reach the server. Please try again."));
+      setDeleteError(t("Could not reach the server. Please try again."));
+      setDeleteLoading(false);
     }
   };
 
@@ -107,50 +131,69 @@ export default function PeoplePage() {
       const data = await res.json().catch(() => null);
 
       if (res.status === 429) {
-        setScanError(data?.error || t("Rescan limit reached. Please try again later."));
+        setScanError(t(data?.error || "Rescan limit reached. Please try again later."));
         setScanning(false);
         return;
       }
       if (res.status === 409) {
-        setScanError(data?.error || t("A scan is already in progress."));
+        setScanError(t(data?.error || "A scan is already in progress."));
         setScanning(false);
         return;
       }
       if (!res.ok) {
-        setScanError(data?.error || t("Could not start face scan."));
+        setScanError(t(data?.error || "Could not start face scan."));
         setScanning(false);
         return;
       }
 
       if (data?.status === "completed") {
         setScanProgress(100);
-        setScanMessage(data.message || t("Scan completed."));
+        setScanMessage(t(data.message || "Scan completed."));
         setScanning(false);
         return;
       }
 
       setScanProgress(data?.progress ?? 0);
-      setScanMessage(data?.message || t("Scanning videos…"));
+      setScanMessage(t(data?.message || "Scanning videos…"));
 
-      // Poll status every 1.5 seconds
+      const startTime = Date.now();
+      let hasBeenRunning = data?.status === "running";
+
+      // Poll status every 1.5 seconds with timeout and idle detection
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
       pollTimerRef.current = setInterval(async () => {
         try {
+          const elapsed = Date.now() - startTime;
+          // Stop polling after 5 minutes
+          if (elapsed > 5 * 60 * 1000) {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+            setScanning(false);
+            setScanError(t("Face scan timed out. You can try again."));
+            return;
+          }
+
           const statusRes = await apiFetch(`${API_URL}/people/rescan/status`);
           if (!statusRes.ok) return;
           const statusData = await statusRes.json();
-          if (statusData.status === "completed") {
+
+          if (statusData.status === "running") {
+            hasBeenRunning = true;
+            setScanProgress(statusData.progress ?? 0);
+            setScanMessage(statusData.message || t("Scanning videos…"));
+          } else if (statusData.status === "completed") {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
             setScanProgress(100);
             setScanMessage(statusData.message || t("Face scan completed successfully."));
             setScanning(false);
-            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
           } else if (statusData.status === "failed") {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
             setScanError(statusData.message || t("Face scan failed. You can try again."));
             setScanning(false);
+          } else if (statusData.status === "idle" && hasBeenRunning) {
+            // Stop polling and show a plain message when status returns "idle" after having been "running"
             if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-          } else if (statusData.status === "running") {
-            setScanProgress(statusData.progress ?? 0);
-            setScanMessage(statusData.message || t("Scanning videos…"));
+            setScanning(false);
+            setScanMessage(statusData.message || t("Face scan stopped."));
           }
         } catch {
           // ignore transient poll error
@@ -189,7 +232,7 @@ export default function PeoplePage() {
             </div>
 
             {/* Toggle edit mode for self accounts only (paired devices & patient logins see nothing) */}
-            {isSelf && !caregiver && (
+            {canEdit && isSelf && !caregiver && (
               <Button
                 variant={editMode ? "default" : "outline"}
                 size="lg"
@@ -274,7 +317,7 @@ export default function PeoplePage() {
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={photoUrl(p)}
-                      alt={p.name}
+                      alt={t("Photo of {name}", { name: p.name })}
                       className="aspect-square w-full object-cover"
                     />
                     <div className="space-y-3 p-6">
@@ -313,7 +356,7 @@ export default function PeoplePage() {
                       <Button
                         variant="destructive"
                         size="lg"
-                        onClick={() => handleDelete(p)}
+                        onClick={() => handleRequestDelete(p)}
                         className="min-h-[48px] flex-1 gap-2 text-lg font-semibold"
                       >
                         <Trash2 className="h-5 w-5" />
@@ -330,25 +373,43 @@ export default function PeoplePage() {
 
       {/* Add / Edit modal dialog */}
       <PersonDialog
-        person={editingPerson}
         isOpen={dialogOpen}
+        person={editingPerson}
         photoUrl={photoUrl}
         onClose={() => setDialogOpen(false)}
         onSaved={load}
+      />
+
+      {/* Accessible delete confirmation dialog naming the person */}
+      <ConfirmDialog
+        isOpen={personToDelete !== null}
+        title={t("Delete {name}?", { name: personToDelete?.name || "" })}
+        message={t("Remove {name}? Their photo will be deleted too.", {
+          name: personToDelete?.name || "",
+        })}
+        confirmLabel={deleteLoading ? t("Deleting…") : t("Delete")}
+        cancelLabel={t("Cancel")}
+        confirmVariant="destructive"
+        loading={deleteLoading}
+        error={deleteError}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => {
+          if (!deleteLoading) setPersonToDelete(null);
+        }}
       />
     </>
   );
 }
 
 function PersonDialog({
-  person,
   isOpen,
+  person,
   photoUrl,
   onClose,
   onSaved,
 }: {
-  person: Person | null;
   isOpen: boolean;
+  person: Person | null;
   photoUrl: (p: Person) => string;
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -360,17 +421,61 @@ function PersonDialog({
   const [photo, setPhoto] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Initialize or reset form state when dialog opens or person changes
+  // Initialize form state when dialog opens or person changes
   useEffect(() => {
     if (isOpen) {
       setName(person?.name ?? "");
-      setRelation(person?.relation ?? "");
+      const initialRel = person?.relation ? normalizeRelation(person.relation) : "";
+      setRelation(initialRel);
       setPhone(person?.phone ?? "");
       setPhoto(null);
       setError(null);
+      setShowDiscardConfirm(false);
     }
   }, [isOpen, person]);
+
+  // Trap focus within dialog when open
+  useEffect(() => {
+    if (!isOpen || showDiscardConfirm || !dialogRef.current) return;
+    const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length > 0) {
+      focusable[0].focus();
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Tab") {
+        const elements = dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (!elements || elements.length === 0) return;
+        const first = elements[0];
+        const last = elements[elements.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      } else if (e.key === "Escape") {
+        e.stopPropagation();
+        handleCancel();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
 
   // Live preview for selected photo or existing person photo
   const previewUrl = useMemo(() => {
@@ -392,11 +497,12 @@ function PersonDialog({
   const handleCancel = () => {
     const isDirty =
       name !== (person?.name ?? "") ||
-      relation !== (person?.relation ?? "") ||
+      relation !== (person?.relation ? normalizeRelation(person.relation) : "") ||
       phone !== (person?.phone ?? "") ||
       photo !== null;
 
-    if (isDirty && !window.confirm(t("You have unsaved changes. Discard them?"))) {
+    if (isDirty) {
+      setShowDiscardConfirm(true);
       return;
     }
     onClose();
@@ -410,7 +516,8 @@ function PersonDialog({
     const form = new FormData();
     form.append("name", name.trim());
     form.append("relation", relation);
-    if (phone.trim()) form.append("phone", phone.trim());
+    // Always send phone field so empty string clears it on server
+    form.append("phone", phone.trim());
     if (photo) form.append("photo", photo);
 
     try {
@@ -421,7 +528,7 @@ function PersonDialog({
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        setError(data?.error || t("Could not save. Please try again."));
+        setError(t(data?.error || "Could not save. Please try again."));
         setSaving(false);
         return;
       }
@@ -436,136 +543,292 @@ function PersonDialog({
   };
 
   return (
+    <>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="person-dialog-title"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      >
+        <div
+          ref={dialogRef}
+          className="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl border bg-card p-6 shadow-2xl sm:p-8"
+        >
+          <button
+            type="button"
+            onClick={handleCancel}
+            aria-label={t("Cancel")}
+            className="absolute right-5 top-5 rounded-full p-2 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <X className="h-6 w-6" />
+          </button>
+
+          <h2 id="person-dialog-title" className="text-3xl font-bold">
+            {person ? t("Edit {name}", { name: person.name }) : t("Add a person")}
+          </h2>
+
+          <form onSubmit={handleSave} className="mt-6 space-y-6">
+            <div className="space-y-2">
+              <label htmlFor="person-name" className="text-xl font-semibold">
+                {t("Name")} *
+              </label>
+              <Input
+                id="person-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                maxLength={60}
+                placeholder={t("Full name")}
+                className="min-h-[52px] text-xl"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="person-relation" className="text-xl font-semibold">
+                {t("Relation")} *
+              </label>
+              <select
+                id="person-relation"
+                value={relation}
+                onChange={(e) => setRelation(e.target.value)}
+                required
+                className="flex min-h-[52px] w-full rounded-md border border-input bg-background px-3 py-2 text-xl shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <option value="">{t("Choose relation…")}</option>
+                {/* Include person's current relation even if not in approved list (shown as is) */}
+                {person?.relation && !VALID_RELATIONS.includes(person.relation) && (
+                  <option value={person.relation}>{person.relation}</option>
+                )}
+                {relation &&
+                  !VALID_RELATIONS.includes(relation) &&
+                  relation !== person?.relation && (
+                    <option value={relation}>{relation}</option>
+                  )}
+                {VALID_RELATIONS.map((r) => (
+                  <option key={r} value={r}>
+                    {t(r)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="person-phone" className="text-xl font-semibold">
+                {t("Phone")}
+              </label>
+              <Input
+                id="person-phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+91 98765 43210"
+                className="min-h-[52px] text-xl"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="person-photo" className="text-xl font-semibold">
+                {t("Photo")} {person ? `(${t("optional")})` : "*"}
+              </label>
+              <Input
+                id="person-photo"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                required={!person}
+                onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+                className="min-h-[52px] text-lg file:mr-4 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:text-base file:font-semibold file:text-primary-foreground"
+              />
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  "Use a clear photo of the face. It is also used to recognise this person in videos."
+                )}
+              </p>
+            </div>
+
+            {previewUrl && (
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-muted-foreground">{t("Preview")}</span>
+                <div className="overflow-hidden rounded-2xl border bg-muted/20">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={previewUrl}
+                    alt={t("Preview")}
+                    className="aspect-square h-48 w-48 rounded-xl object-cover"
+                  />
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <p
+                role="alert"
+                className="rounded-xl border border-destructive/20 bg-destructive/10 p-4 text-lg font-semibold text-destructive"
+              >
+                {error}
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-4 pt-2">
+              <Button
+                type="submit"
+                size="lg"
+                disabled={saving || !name.trim() || !relation}
+                className="min-h-[52px] flex-1 text-xl font-bold"
+              >
+                {saving ? t("Saving…") : person ? t("Save changes") : t("Add person")}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                disabled={saving}
+                onClick={handleCancel}
+                className="min-h-[52px] flex-1 text-xl font-bold"
+              >
+                {t("Cancel")}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* Accessible discard unsaved changes confirmation dialog */}
+      <ConfirmDialog
+        isOpen={showDiscardConfirm}
+        title={t("Discard changes?")}
+        message={t("You have unsaved changes. Discard them?")}
+        confirmLabel={t("Discard")}
+        cancelLabel={t("Keep editing")}
+        confirmVariant="destructive"
+        onConfirm={() => {
+          setShowDiscardConfirm(false);
+          onClose();
+        }}
+        onCancel={() => setShowDiscardConfirm(false)}
+      />
+    </>
+  );
+}
+
+interface ConfirmDialogProps {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  confirmVariant?: "default" | "destructive";
+  error?: string | null;
+  loading?: boolean;
+  onConfirm: () => void | Promise<void>;
+  onCancel: () => void;
+}
+
+function ConfirmDialog({
+  isOpen,
+  title,
+  message,
+  confirmLabel,
+  cancelLabel,
+  confirmVariant = "destructive",
+  error,
+  loading = false,
+  onConfirm,
+  onCancel,
+}: ConfirmDialogProps) {
+  const { t } = useTranslate();
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Focus first button on open, handle Escape key and focus trap
+  useEffect(() => {
+    if (!isOpen || !dialogRef.current) return;
+    const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length > 0) {
+      focusable[0].focus();
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onCancel();
+      } else if (e.key === "Tab") {
+        const elements = dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (!elements || elements.length === 0) return;
+        const first = elements[0];
+        const last = elements[elements.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onCancel]);
+
+  if (!isOpen) return null;
+
+  return (
     <div
-      role="dialog"
+      role="alertdialog"
       aria-modal="true"
-      aria-labelledby="person-dialog-title"
+      aria-labelledby="confirm-dialog-title"
+      aria-describedby="confirm-dialog-message"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
     >
-      <div className="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl border bg-card p-6 shadow-2xl sm:p-8">
-        <button
-          type="button"
-          onClick={handleCancel}
-          aria-label={t("Cancel")}
-          className="absolute right-5 top-5 rounded-full p-2 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        >
-          <X className="h-6 w-6" />
-        </button>
-
-        <h2 id="person-dialog-title" className="text-3xl font-bold">
-          {person ? t("Edit {name}", { name: person.name }) : t("Add a person")}
+      <div
+        ref={dialogRef}
+        className="relative max-h-[90vh] w-full max-w-lg rounded-3xl border bg-card p-6 shadow-2xl sm:p-8 space-y-6"
+      >
+        <h2 id="confirm-dialog-title" className="text-3xl font-bold">
+          {title}
         </h2>
 
-        <form onSubmit={handleSave} className="mt-6 space-y-6">
-          <div className="space-y-2">
-            <label htmlFor="person-name" className="text-xl font-semibold">
-              {t("Name")} *
-            </label>
-            <Input
-              id="person-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              maxLength={60}
-              placeholder="Full name"
-              className="min-h-[52px] text-xl"
-            />
-          </div>
+        <p id="confirm-dialog-message" className="text-xl text-muted-foreground leading-relaxed">
+          {message}
+        </p>
 
-          <div className="space-y-2">
-            <label htmlFor="person-relation" className="text-xl font-semibold">
-              {t("Relation")} *
-            </label>
-            <select
-              id="person-relation"
-              value={relation}
-              onChange={(e) => setRelation(e.target.value)}
-              required
-              className="flex min-h-[52px] w-full rounded-md border border-input bg-background px-3 py-2 text-xl shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              <option value="">{t("Choose relation…")}</option>
-              {VALID_RELATIONS.map((r) => (
-                <option key={r} value={r}>
-                  {t(r)}
-                </option>
-              ))}
-            </select>
-          </div>
+        {error && (
+          <p
+            role="alert"
+            className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-base font-semibold text-destructive"
+          >
+            {error}
+          </p>
+        )}
 
-          <div className="space-y-2">
-            <label htmlFor="person-phone" className="text-xl font-semibold">
-              {t("Phone")}
-            </label>
-            <Input
-              id="person-phone"
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+91 98765 43210"
-              className="min-h-[52px] text-xl"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="person-photo" className="text-xl font-semibold">
-              {t("Photo")} {person ? `(${t("optional")})` : "*"}
-            </label>
-            <Input
-              id="person-photo"
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              required={!person}
-              onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
-              className="min-h-[52px] text-lg file:mr-4 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:text-base file:font-semibold file:text-primary-foreground"
-            />
-            <p className="text-sm text-muted-foreground">
-              {t(
-                "Use a clear photo of the face. It is also used to recognise this person in videos."
-              )}
-            </p>
-          </div>
-
-          {previewUrl && (
-            <div className="space-y-2">
-              <span className="text-sm font-medium text-muted-foreground">Preview:</span>
-              <div className="overflow-hidden rounded-2xl border bg-muted/20">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={previewUrl}
-                  alt="Preview"
-                  className="aspect-square h-48 w-48 rounded-xl object-cover"
-                />
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/10 p-4 text-lg font-semibold text-destructive">
-              {error}
-            </p>
-          )}
-
-          <div className="flex flex-wrap gap-4 pt-2">
-            <Button
-              type="submit"
-              size="lg"
-              disabled={saving || !name.trim() || !relation}
-              className="min-h-[52px] flex-1 text-xl font-bold"
-            >
-              {saving ? t("Saving…") : person ? t("Save changes") : t("Add person")}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="lg"
-              disabled={saving}
-              onClick={handleCancel}
-              className="min-h-[52px] flex-1 text-xl font-bold"
-            >
-              {t("Cancel")}
-            </Button>
-          </div>
-        </form>
+        <div className="flex flex-wrap gap-4 pt-2">
+          <Button
+            variant={confirmVariant}
+            size="lg"
+            disabled={loading}
+            onClick={onConfirm}
+            className="min-h-[52px] flex-1 text-xl font-bold"
+          >
+            {confirmLabel}
+          </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            disabled={loading}
+            onClick={onCancel}
+            className="min-h-[52px] flex-1 text-xl font-bold"
+          >
+            {cancelLabel || t("Cancel")}
+          </Button>
+        </div>
       </div>
     </div>
   );
