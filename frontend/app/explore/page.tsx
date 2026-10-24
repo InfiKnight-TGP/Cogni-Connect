@@ -4,9 +4,34 @@ import Nav from "@/components/nav";
 import ReadAloud from "@/components/interaction/ReadAloud";
 import DictationButton from "@/components/interaction/DictationButton";
 import { usePreferences, useTranslate } from "@/components/interaction/InteractionProvider";
+import { useAuth } from "@/lib/auth-context";
 import { API_URL, apiFetch } from "@/lib/api";
-import { Calendar, ChevronLeft, ChevronRight, Loader2, Play, Search, Trash2, Upload, X } from "lucide-react";
+import {
+  AlertCircle,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Pencil,
+  Play,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { formatFriendlyDate, groupMemoriesByDate } from "@/lib/date-format";
+import { dayKey } from "@/lib/progress";
+import {
+  canManageMemories,
+  validateVideoFile,
+  validateMemoryDate,
+  validateMemoryNote,
+  shouldPoll,
+  getNextPollDelay,
+  getFriendlyErrorMessage,
+  MAX_VIDEO_SECONDS,
+} from "@/lib/video-upload";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Memory = {
@@ -19,6 +44,7 @@ type Memory = {
   people?: string[];
   transcript?: string[];
   status: "ready" | "processing" | "failed";
+  message?: string;
 };
 
 type AnswerData = {
@@ -123,6 +149,9 @@ function AnswerCard({
 export default function ExplorePage() {
   const { t, language } = useTranslate();
   const { preferences } = usePreferences();
+  const { session } = useAuth();
+  const canManage = canManageMemories(session);
+  const isDemo = process.env.NEXT_PUBLIC_DEMO === "1" || Boolean(session?.user?.email?.includes("demo"));
 
   const [memories, setMemories] = useState<Memory[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -144,10 +173,48 @@ export default function ExplorePage() {
   const [playerAsking, setPlayerAsking] = useState(false);
   const [playerHistory, setPlayerHistory] = useState<{ q: string; a: string }[]>([]);
 
+  // Filters
   const [filterPerson, setFilterPerson] = useState<string>("all");
   const [filterDate, setFilterDate] = useState<string>("all");
 
-  const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const cardRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  // Upload modal state
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadDate, setUploadDate] = useState(() => dayKey(new Date()));
+  const [uploadNote, setUploadNote] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Edit modal state
+  const [editingMemory, setEditingMemory] = useState<Memory | null>(null);
+  const [editDate, setEditDate] = useState("");
+  const [editNote, setEditNote] = useState("");
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState("");
+
+  // Delete modal state
+  const [memoryToDelete, setMemoryToDelete] = useState<Memory | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  // Retry state
+  const [retryLoadingId, setRetryLoadingId] = useState<string | null>(null);
+  const [globalNotice, setGlobalNotice] = useState("");
+
+  // Polling state
+  const pollStartTimesRef = useRef<Record<string, number>>({});
+  const pollDelayRef = useRef(2500);
+  const pollTimeoutIdRef = useRef<number | null>(null);
+
+  const getMaxDateStr = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 2);
+    return dayKey(d);
+  };
 
   const load = useCallback(async (next = false) => {
     if (next && !cursor) return;
@@ -187,40 +254,112 @@ export default function ExplorePage() {
     void load();
   }, [load]);
 
-  // Polling for processing status
+  // Polling for processing status with exponential backoff, visibility pause, and 30m timeout
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      const pending = memories.filter((memory) => memory.status === "processing");
-      if (!pending.length) return;
-      void Promise.all(
-        pending.map(async (memory) => {
-          const response = await apiFetch(
-            `${API_URL}/processing-status/${encodeURIComponent(memory.id)}`,
-            { authRedirect: false }
+    const processing = memories.filter((m) => m.status === "processing");
+    if (!processing.length) {
+      pollDelayRef.current = 2500;
+      return;
+    }
+
+    const now = Date.now();
+    for (const m of processing) {
+      if (!pollStartTimesRef.current[m.id]) {
+        pollStartTimesRef.current[m.id] = now;
+      }
+    }
+
+    let active = true;
+
+    const tick = async () => {
+      if (!active) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        pollTimeoutIdRef.current = window.setTimeout(tick, pollDelayRef.current);
+        return;
+      }
+
+      const currentProcessing = memories.filter((m) => m.status === "processing");
+      if (!currentProcessing.length) return;
+
+      const currentTime = Date.now();
+      const toPoll: Memory[] = [];
+
+      for (const m of currentProcessing) {
+        const startTime = pollStartTimesRef.current[m.id] || currentTime;
+        const elapsed = (currentTime - startTime) / 1000;
+        if (!shouldPoll(m.status, true, elapsed)) {
+          setMemories((prev) =>
+            prev.map((item) =>
+              item.id === m.id
+                ? {
+                    ...item,
+                    message: "This is taking longer than usual. You can check back later.",
+                  }
+                : item
+            )
           );
-          if (!response.ok) return null;
-          const status = (await response.json()) as { status?: string };
-          return {
-            id: memory.id,
-            status:
-              status.status === "completed"
-                ? "ready"
-                : status.status === "failed"
-                ? "failed"
-                : "processing",
-          } as const;
-        })
-      ).then((updates) =>
-        setMemories((current) =>
-          current.map((memory) => {
-            const update = updates.find((item) => item?.id === memory.id);
-            return update ? { ...memory, status: update.status } : memory;
+        } else {
+          toPoll.push(m);
+        }
+      }
+
+      if (!toPoll.length) return;
+
+      try {
+        const results = await Promise.all(
+          toPoll.map(async (m) => {
+            try {
+              const res = await apiFetch(`${API_URL}/memories/${encodeURIComponent(m.id)}`, {
+                authRedirect: false,
+              });
+              if (!res.ok) return null;
+              return await res.json();
+            } catch {
+              return null;
+            }
           })
-        )
-      );
-    }, 2500);
-    return () => window.clearInterval(timer);
+        );
+
+        if (active) {
+          setMemories((current) =>
+            current.map((mem) => {
+              const data = results.find((r) => r?.id === mem.id);
+              if (!data) return mem;
+              const newStatus =
+                data.status === "ready" || data.status === "completed"
+                  ? "ready"
+                  : data.status === "failed"
+                  ? "failed"
+                  : "processing";
+              return {
+                ...mem,
+                status: newStatus,
+                title: data.title || mem.title,
+                date: data.date ?? mem.date,
+                dateLabel: data.dateLabel ?? mem.dateLabel,
+                note: data.note ?? mem.note,
+                thumbnailUrl: data.thumbnailUrl || mem.thumbnailUrl,
+                message: data.message,
+              };
+            })
+          );
+        }
+      } catch {}
+
+      if (active) {
+        pollDelayRef.current = getNextPollDelay(pollDelayRef.current);
+        pollTimeoutIdRef.current = window.setTimeout(tick, pollDelayRef.current);
+      }
+    };
+
+    pollTimeoutIdRef.current = window.setTimeout(tick, pollDelayRef.current);
+
+    return () => {
+      active = false;
+      if (pollTimeoutIdRef.current) {
+        window.clearTimeout(pollTimeoutIdRef.current);
+      }
+    };
   }, [memories]);
 
   const openMemoryModal = useCallback((memory: Memory) => {
@@ -246,9 +385,18 @@ export default function ExplorePage() {
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape") {
+        if (memoryToDelete && !deleteLoading) {
+          setMemoryToDelete(null);
+        } else if (editingMemory && !editLoading) {
+          setEditingMemory(null);
+        } else if (uploadModalOpen && !uploading) {
+          setUploadModalOpen(false);
+        } else if (open) {
+          close();
+        }
+      }
     };
     const onPop = () => setOpen(null);
     window.addEventListener("keydown", onKey);
@@ -257,7 +405,251 @@ export default function ExplorePage() {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("popstate", onPop);
     };
-  }, [open, close]);
+  }, [open, close, memoryToDelete, deleteLoading, editingMemory, editLoading, uploadModalOpen, uploading]);
+
+  // Video duration validation and file selection
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadFile(null);
+    setUploadError("");
+
+    const val = validateVideoFile(file, isDemo);
+    if (!val.valid) {
+      setUploadError(val.error ?? "Invalid video file.");
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    const tempVideo = document.createElement("video");
+    tempVideo.preload = "metadata";
+    tempVideo.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      if (tempVideo.duration > MAX_VIDEO_SECONDS) {
+        setUploadError("Video must be 3 minutes or less.");
+        setUploadFile(null);
+      } else {
+        setUploadFile(file);
+      }
+    };
+    tempVideo.onerror = () => {
+      URL.revokeObjectURL(url);
+      setUploadFile(file);
+    };
+    tempVideo.src = url;
+  };
+
+  // Upload handler via XMLHttpRequest for accurate progress
+  const handleUploadSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadFile) {
+      setUploadError("Please select a video file.");
+      return;
+    }
+    const dateVal = validateMemoryDate(uploadDate);
+    if (!dateVal.valid) {
+      setUploadError(dateVal.error ?? "Invalid date.");
+      return;
+    }
+    const noteVal = validateMemoryNote(uploadNote);
+    if (!noteVal.valid) {
+      setUploadError(noteVal.error ?? "Note is too long.");
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadError("");
+
+    const formData = new FormData();
+    formData.append("file", uploadFile);
+    formData.append("date", dateVal.cleaned ?? uploadDate);
+    formData.append("note", noteVal.cleaned);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_URL}/memories`);
+    xhr.withCredentials = true;
+
+    xhr.upload.onprogress = (evt) => {
+      if (evt.lengthComputable) {
+        setUploadProgress(Math.round((evt.loaded / evt.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      setUploading(false);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          const mem = data.memory;
+          if (mem) {
+            const newMem: Memory = {
+              id: mem.id,
+              title: mem.title || uploadFile.name.replace(/\.[^/.]+$/, ""),
+              date: mem.date || uploadDate,
+              dateLabel: mem.dateLabel || "",
+              note: mem.note || uploadNote,
+              thumbnailUrl: mem.thumbnailUrl || `/memories/${mem.id}/thumbnail`,
+              status: "processing",
+            };
+            setMemories((prev) => [newMem, ...prev.filter((m) => m.id !== mem.id)]);
+            pollStartTimesRef.current[mem.id] = Date.now();
+            pollDelayRef.current = 2500;
+          }
+        } catch {
+          void load();
+        }
+        setUploadModalOpen(false);
+        setUploadFile(null);
+        setUploadNote("");
+        setUploadDate(dayKey(new Date()));
+      } else {
+        let msg = "";
+        try {
+          const data = JSON.parse(xhr.responseText);
+          msg = data.error || data.message;
+        } catch {}
+        setUploadError(msg || getFriendlyErrorMessage(xhr.status));
+      }
+    };
+
+    xhr.onerror = () => {
+      setUploading(false);
+      setUploadError("Could not upload video. Please check your connection and try again.");
+    };
+
+    xhr.send(formData);
+  };
+
+  // Retry processing failed memory
+  const handleRetry = async (memoryId: string) => {
+    setRetryLoadingId(memoryId);
+    setGlobalNotice("");
+    try {
+      const res = await apiFetch(`${API_URL}/memories/${encodeURIComponent(memoryId)}/retry`, {
+        method: "POST",
+      });
+      if (res.status === 409) {
+        setGlobalNotice(t("A video is already being processed"));
+        return;
+      }
+      if (!res.ok) {
+        let errText = "";
+        try {
+          const d = await res.json();
+          errText = d.error || d.message;
+        } catch {}
+        setGlobalNotice(errText || getFriendlyErrorMessage(res.status));
+        return;
+      }
+      pollStartTimesRef.current[memoryId] = Date.now();
+      pollDelayRef.current = 2500;
+      setMemories((prev) =>
+        prev.map((m) => (m.id === memoryId ? { ...m, status: "processing", message: "" } : m))
+      );
+    } catch {
+      setGlobalNotice("Could not retry video processing. Please try again.");
+    } finally {
+      setRetryLoadingId(null);
+    }
+  };
+
+  // Edit memory (PATCH /memories/<id>)
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMemory) return;
+
+    const dateVal = validateMemoryDate(editDate);
+    if (!dateVal.valid) {
+      setEditError(dateVal.error ?? "Invalid date.");
+      return;
+    }
+    const noteVal = validateMemoryNote(editNote);
+    if (!noteVal.valid) {
+      setEditError(noteVal.error ?? "Note is too long.");
+      return;
+    }
+
+    setEditLoading(true);
+    setEditError("");
+    try {
+      const res = await apiFetch(`${API_URL}/memories/${encodeURIComponent(editingMemory.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: dateVal.cleaned, note: noteVal.cleaned }),
+      });
+      if (!res.ok) {
+        let errText = "";
+        try {
+          const d = await res.json();
+          errText = d.error || d.message;
+        } catch {}
+        setEditError(errText || getFriendlyErrorMessage(res.status, "Could not update memory."));
+        return;
+      }
+      const data = await res.json();
+      const updatedMem = data.memory;
+      setMemories((prev) =>
+        prev.map((m) =>
+          m.id === editingMemory.id
+            ? {
+                ...m,
+                date: updatedMem?.date ?? dateVal.cleaned,
+                note: updatedMem?.note ?? noteVal.cleaned,
+                dateLabel: updatedMem?.dateLabel ?? m.dateLabel,
+              }
+            : m
+        )
+      );
+      if (open?.id === editingMemory.id) {
+        setOpen((prev) =>
+          prev
+            ? {
+                ...prev,
+                date: updatedMem?.date ?? dateVal.cleaned,
+                note: updatedMem?.note ?? noteVal.cleaned,
+                dateLabel: updatedMem?.dateLabel ?? prev.dateLabel,
+              }
+            : null
+        );
+      }
+      setEditingMemory(null);
+    } catch {
+      setEditError("Could not update memory. Please try again.");
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  // Delete memory (DELETE /memories/<id>)
+  const handleDelete = async () => {
+    if (!memoryToDelete) return;
+    setDeleteLoading(true);
+    setDeleteError("");
+    try {
+      const res = await apiFetch(`${API_URL}/memories/${encodeURIComponent(memoryToDelete.id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        let errText = "";
+        try {
+          const d = await res.json();
+          errText = d.error || d.message;
+        } catch {}
+        setDeleteError(errText || getFriendlyErrorMessage(res.status, "Could not delete memory."));
+        return;
+      }
+      setMemories((prev) => prev.filter((m) => m.id !== memoryToDelete.id));
+      if (open?.id === memoryToDelete.id) {
+        close();
+      }
+      setMemoryToDelete(null);
+    } catch {
+      setDeleteError("Could not delete memory. Please check your connection and try again.");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const askGallery = async (questionText = galleryQuery) => {
     const clean = questionText.trim();
@@ -422,14 +814,39 @@ export default function ExplorePage() {
               {t("Look back at moments that matter.")}
             </p>
           </div>
-          <a
-            href="/upload"
-            className="inline-flex min-h-12 items-center gap-2 rounded-xl border-2 border-border bg-card px-5 text-base font-semibold shadow-sm transition hover:border-primary"
-          >
-            <Upload className="h-5 w-5" />
-            {t("Add a video")}
-          </a>
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => {
+                setUploadFile(null);
+                setUploadError("");
+                setUploadNote("");
+                setUploadDate(dayKey(new Date()));
+                setUploadModalOpen(true);
+              }}
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl border-2 border-border bg-card px-5 text-base font-semibold shadow-sm transition hover:border-primary"
+            >
+              <Upload className="h-5 w-5" />
+              {t("Add a video")}
+            </button>
+          )}
         </header>
+
+        {globalNotice && (
+          <section
+            className="mb-8 flex items-center justify-between rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-base"
+            role="alert"
+          >
+            <p>{t(globalNotice)}</p>
+            <button
+              type="button"
+              onClick={() => setGlobalNotice("")}
+              className="text-sm font-semibold text-muted-foreground hover:text-foreground"
+            >
+              {t("Clear")}
+            </button>
+          </section>
+        )}
 
         {error && (
           <section
@@ -607,13 +1024,22 @@ export default function ExplorePage() {
             <p className="mt-2 text-lg text-muted-foreground">
               {t("Your memories will appear here when they are ready.")}
             </p>
-            <a
-              href="/upload"
-              className="mt-5 inline-flex min-h-12 items-center gap-2 rounded-xl bg-primary px-6 text-base font-semibold text-primary-foreground shadow-sm transition hover:opacity-90"
-            >
-              <Upload className="h-5 w-5" />
-              {t("Add your first video")}
-            </a>
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUploadFile(null);
+                  setUploadError("");
+                  setUploadNote("");
+                  setUploadDate(dayKey(new Date()));
+                  setUploadModalOpen(true);
+                }}
+                className="mt-5 inline-flex min-h-12 items-center gap-2 rounded-xl bg-primary px-6 text-base font-semibold text-primary-foreground shadow-sm transition hover:opacity-90"
+              >
+                <Upload className="h-5 w-5" />
+                {t("Add your first video")}
+              </button>
+            )}
           </section>
         ) : (
           <div className="space-y-12">
@@ -625,71 +1051,129 @@ export default function ExplorePage() {
                 <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                   {group.items.map((memory) => {
                     const friendlyDate = formatFriendlyDate(memory.date, language);
+                    const isReady = memory.status === "ready";
+                    const isFailed = memory.status === "failed";
+                    const isProcessing = memory.status === "processing";
+
                     return (
-                      <button
+                      <div
                         key={memory.id}
                         ref={(element) => {
                           cardRefs.current[memory.id] = element;
                         }}
-                        type="button"
-                        onClick={() => memory.status === "ready" && openMemoryModal(memory)}
-                        disabled={memory.status !== "ready"}
-                        className="group overflow-hidden rounded-2xl border-2 border-border bg-card text-left shadow-sm transition hover:border-primary hover:shadow-md disabled:cursor-default disabled:opacity-80"
+                        className="group flex flex-col justify-between overflow-hidden rounded-2xl border-2 border-border bg-card shadow-sm transition hover:border-primary hover:shadow-md"
                       >
-                        <div className="relative aspect-video bg-muted overflow-hidden">
+                        <div
+                          onClick={() => isReady && openMemoryModal(memory)}
+                          className={`relative aspect-video bg-muted overflow-hidden ${
+                            isReady ? "cursor-pointer" : "cursor-default"
+                          }`}
+                        >
                           <img
                             src={`${API_URL}${memory.thumbnailUrl}`}
                             alt=""
-                            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                            className={`h-full w-full object-cover transition duration-300 ${
+                              isReady ? "group-hover:scale-105" : "opacity-40"
+                            }`}
                           />
-                          {memory.status === "ready" && (
+                          {isReady && (
                             <span className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-90 transition group-hover:opacity-100">
                               <span className="rounded-full bg-primary p-4 text-primary-foreground shadow-lg transition transform group-hover:scale-110">
                                 <Play className="h-7 w-7 fill-current" />
                               </span>
                             </span>
                           )}
-                          {memory.status !== "ready" && (
-                            <span className="absolute inset-0 flex items-center justify-center bg-background/80 p-4 text-center text-lg font-semibold">
-                              {memory.status === "processing"
-                                ? t("Processing…")
-                                : t("Could not process this video")}
+                          {isProcessing && (
+                            <span className="absolute inset-0 flex flex-col items-center justify-center bg-background/85 p-4 text-center">
+                              <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                              <span className="text-lg font-semibold">{t("Processing…")}</span>
+                              {memory.message && (
+                                <span className="mt-1 text-sm text-muted-foreground">{t(memory.message)}</span>
+                              )}
+                            </span>
+                          )}
+                          {isFailed && (
+                            <span className="absolute inset-0 flex flex-col items-center justify-center bg-background/90 p-4 text-center">
+                              <AlertCircle className="h-8 w-8 text-destructive mb-2" />
+                              <span className="text-base font-semibold text-destructive">
+                                {t(memory.message || "Couldn't process this video")}
+                              </span>
                             </span>
                           )}
                         </div>
-                        <div className="space-y-2 p-5">
-                          <h3 className="text-xl font-bold leading-snug">
-                            {memory.title}
-                          </h3>
-                          {friendlyDate && (
-                            <p className="flex items-center gap-2 text-base text-muted-foreground">
-                              <Calendar className="h-4 w-4" />
-                              {friendlyDate}
-                            </p>
-                          )}
-                          {memory.note && (
-                            <p className="line-clamp-2 text-base text-muted-foreground">
-                              {memory.note}
-                            </p>
-                          )}
-                          {memory.people && memory.people.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 pt-1">
-                              {memory.people.map((person) => (
-                                <span
-                                  key={person}
-                                  className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-foreground"
-                                >
-                                  {person}
-                                </span>
-                              ))}
+
+                        <div className="flex flex-1 flex-col justify-between p-5 space-y-3">
+                          <div className="space-y-2">
+                            <h3
+                              onClick={() => isReady && openMemoryModal(memory)}
+                              className={`text-xl font-bold leading-snug ${
+                                isReady ? "cursor-pointer hover:text-primary" : ""
+                              }`}
+                            >
+                              {memory.title}
+                            </h3>
+                            {friendlyDate && (
+                              <p className="flex items-center gap-2 text-base text-muted-foreground">
+                                <Calendar className="h-4 w-4" />
+                                {friendlyDate}
+                              </p>
+                            )}
+                            {memory.note && (
+                              <p className="line-clamp-2 text-base text-muted-foreground">
+                                {memory.note}
+                              </p>
+                            )}
+                            {memory.people && memory.people.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {memory.people.map((person) => (
+                                  <span
+                                    key={person}
+                                    className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-foreground"
+                                  >
+                                    {person}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Actions for failed card */}
+                          {isFailed && canManage && (
+                            <div className="flex items-center gap-2 pt-2 border-t border-border">
+                              <button
+                                type="button"
+                                disabled={retryLoadingId === memory.id}
+                                onClick={() => handleRetry(memory.id)}
+                                className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-border bg-background px-3 text-sm font-semibold hover:border-primary disabled:opacity-50"
+                              >
+                                {retryLoadingId === memory.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="h-4 w-4" />
+                                )}
+                                {t("Retry")}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setMemoryToDelete(memory)}
+                                className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-destructive/40 bg-destructive/10 px-3 text-sm font-semibold text-destructive hover:border-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                {t("Remove")}
+                              </button>
                             </div>
                           )}
-                          <ReadAloud
-                            text={`${memory.title}. ${memory.note ?? ""}`}
-                            autoRead={false}
-                          />
+
+                          {isReady && (
+                            <div className="pt-1">
+                              <ReadAloud
+                                text={`${memory.title}. ${memory.note ?? ""}`}
+                                autoRead={false}
+                              />
+                            </div>
+                          )}
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -719,15 +1203,43 @@ export default function ExplorePage() {
         >
           <div className="relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-y-auto rounded-3xl bg-background p-6 shadow-2xl">
             {/* Header / Nav */}
-            <div className="mb-4 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={close}
-                className="inline-flex min-h-12 items-center rounded-xl border-2 border-border bg-card px-4 text-base font-semibold transition hover:border-primary"
-              >
-                <X className="mr-2 h-5 w-5" />
-                {t("Close")}
-              </button>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={close}
+                  className="inline-flex min-h-12 items-center rounded-xl border-2 border-border bg-card px-4 text-base font-semibold transition hover:border-primary"
+                >
+                  <X className="mr-2 h-5 w-5" />
+                  {t("Close")}
+                </button>
+
+                {canManage && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingMemory(open);
+                        setEditDate(open.date || dayKey(new Date()));
+                        setEditNote(open.note || "");
+                        setEditError("");
+                      }}
+                      className="inline-flex min-h-12 items-center rounded-xl border-2 border-border bg-card px-4 text-base font-semibold transition hover:border-primary"
+                    >
+                      <Pencil className="mr-2 h-4 w-4" />
+                      {t("Edit memory")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMemoryToDelete(open)}
+                      className="inline-flex min-h-12 items-center rounded-xl border-2 border-destructive/40 bg-destructive/10 px-4 text-base font-semibold text-destructive transition hover:border-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {t("Delete memory")}
+                    </button>
+                  </>
+                )}
+              </div>
 
               <div className="flex gap-2">
                 <button
@@ -924,6 +1436,329 @@ export default function ExplorePage() {
                 </div>
               )}
             </section>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Modal Dialog */}
+      {uploadModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="upload-dialog-title"
+        >
+          <div className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-3xl border-2 border-border bg-background p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <h2 id="upload-dialog-title" className="text-2xl font-bold">
+                {t("Add a video")}
+              </h2>
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={() => {
+                  setUploadModalOpen(false);
+                  setUploadError("");
+                }}
+                className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl border-2 border-border hover:border-primary disabled:opacity-50"
+                aria-label={t("Cancel")}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUploadSubmit} className="mt-5 space-y-4">
+              {uploadError && (
+                <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+                  {t(uploadError)}
+                </div>
+              )}
+
+              {/* Video File Picker */}
+              <div>
+                <label className="block text-sm font-semibold text-muted-foreground mb-1">
+                  {t("Upload video")}
+                </label>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".mp4,.mov,.webm,video/mp4,video/quicktime,video/webm"
+                  onChange={handleFileChange}
+                  disabled={uploading}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex min-h-24 w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border bg-muted/20 p-4 transition hover:border-primary hover:bg-muted/40"
+                >
+                  <Upload className="h-7 w-7 text-primary mb-1" />
+                  <span className="text-base font-semibold">
+                    {uploadFile ? uploadFile.name : t("Add a video")}
+                  </span>
+                  <span className="text-xs text-muted-foreground mt-0.5">
+                    {uploadFile
+                      ? `${(uploadFile.size / (1024 * 1024)).toFixed(1)} MB`
+                      : isDemo
+                      ? t("Up to 20 MB, up to 3 minutes")
+                      : t("Up to 200 MB, up to 3 minutes")}
+                  </span>
+                </button>
+              </div>
+
+              {/* Date */}
+              <div>
+                <label htmlFor="upload-memory-date" className="block text-sm font-semibold text-muted-foreground mb-1">
+                  {t("Date")}
+                </label>
+                <input
+                  id="upload-memory-date"
+                  type="date"
+                  value={uploadDate}
+                  max={getMaxDateStr()}
+                  onChange={(e) => setUploadDate(e.target.value)}
+                  disabled={uploading}
+                  className="min-h-12 w-full rounded-xl border-2 border-border bg-background px-3 text-base outline-none focus:border-primary"
+                  required
+                />
+              </div>
+
+              {/* Note ("What happened?") */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="upload-memory-note" className="text-sm font-semibold text-muted-foreground">
+                    {t("What happened?")}
+                  </label>
+                  <span className="text-xs text-muted-foreground">
+                    {uploadNote.length}/300
+                  </span>
+                </div>
+                <textarea
+                  id="upload-memory-note"
+                  rows={3}
+                  maxLength={300}
+                  value={uploadNote}
+                  onChange={(e) => setUploadNote(e.target.value)}
+                  disabled={uploading}
+                  placeholder={t("What happened?")}
+                  className="w-full rounded-xl border-2 border-border bg-background p-3 text-base outline-none focus:border-primary"
+                />
+                <div className="mt-1 flex justify-end">
+                  <DictationButton value={uploadNote} onText={setUploadNote} />
+                </div>
+              </div>
+
+              {/* Privacy Disclosure */}
+              <p className="rounded-xl border border-border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
+                {t("Your video is processed to make your questions. Speech and frames may be sent to the services listed in the Privacy page.")}{" "}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" className="font-semibold underline text-foreground">
+                  {t("Privacy page")}
+                </a>
+              </p>
+
+              {/* Processing note */}
+              <p className="text-xs italic text-muted-foreground">
+                {t("This can take a few minutes")}
+              </p>
+
+              {/* Upload progress */}
+              {uploading && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span>{t("Uploading…")}</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div
+                    className="h-3 w-full overflow-hidden rounded-full bg-muted"
+                    role="progressbar"
+                    aria-valuenow={uploadProgress}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <div
+                      className="h-full bg-primary transition-all duration-150"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={() => setUploadModalOpen(false)}
+                  className="min-h-12 rounded-xl border-2 border-border px-5 text-base font-semibold hover:border-primary disabled:opacity-50"
+                >
+                  {t("Cancel")}
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploading || !uploadFile}
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl bg-primary px-6 text-base font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 disabled:opacity-50"
+                >
+                  {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {t("Upload video")}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal Dialog */}
+      {editingMemory && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-dialog-title"
+        >
+          <div className="relative w-full max-w-lg rounded-3xl border-2 border-border bg-background p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <h2 id="edit-dialog-title" className="text-2xl font-bold">
+                {t("Edit memory")}
+              </h2>
+              <button
+                type="button"
+                disabled={editLoading}
+                onClick={() => setEditingMemory(null)}
+                className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl border-2 border-border hover:border-primary disabled:opacity-50"
+                aria-label={t("Cancel")}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="mt-5 space-y-4">
+              {editError && (
+                <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+                  {t(editError)}
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="edit-memory-date" className="block text-sm font-semibold text-muted-foreground mb-1">
+                  {t("Date")}
+                </label>
+                <input
+                  id="edit-memory-date"
+                  type="date"
+                  value={editDate}
+                  max={getMaxDateStr()}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  disabled={editLoading}
+                  className="min-h-12 w-full rounded-xl border-2 border-border bg-background px-3 text-base outline-none focus:border-primary"
+                  required
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="edit-memory-note" className="text-sm font-semibold text-muted-foreground">
+                    {t("What happened?")}
+                  </label>
+                  <span className="text-xs text-muted-foreground">
+                    {editNote.length}/300
+                  </span>
+                </div>
+                <textarea
+                  id="edit-memory-note"
+                  rows={3}
+                  maxLength={300}
+                  value={editNote}
+                  onChange={(e) => setEditNote(e.target.value)}
+                  disabled={editLoading}
+                  placeholder={t("What happened?")}
+                  className="w-full rounded-xl border-2 border-border bg-background p-3 text-base outline-none focus:border-primary"
+                />
+                <div className="mt-1 flex justify-end">
+                  <DictationButton value={editNote} onText={setEditNote} />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
+                <button
+                  type="button"
+                  disabled={editLoading}
+                  onClick={() => setEditingMemory(null)}
+                  className="min-h-12 rounded-xl border-2 border-border px-5 text-base font-semibold hover:border-primary disabled:opacity-50"
+                >
+                  {t("Cancel")}
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl bg-primary px-6 text-base font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 disabled:opacity-50"
+                >
+                  {editLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {t("Save changes")}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {memoryToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-dialog-title"
+        >
+          <div className="relative w-full max-w-md rounded-3xl border-2 border-border bg-background p-6 shadow-2xl">
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-destructive/10 p-3 text-destructive">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              <div>
+                <h2 id="delete-dialog-title" className="text-xl font-bold">
+                  {t("Delete this memory?")}
+                </h2>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <p className="text-base text-muted-foreground">
+                {t("Are you sure you want to delete this memory? This cannot be undone.")}
+              </p>
+              <p className="rounded-xl border border-border bg-muted/40 p-3 font-semibold text-foreground">
+                "{memoryToDelete.title}"
+              </p>
+            </div>
+
+            {deleteError && (
+              <div className="mt-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+                {t(deleteError)}
+              </div>
+            )}
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={() => {
+                  setMemoryToDelete(null);
+                  setDeleteError("");
+                }}
+                className="min-h-12 rounded-xl border-2 border-border px-5 text-base font-semibold hover:border-primary disabled:opacity-50"
+              >
+                {t("Cancel")}
+              </button>
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={handleDelete}
+                className="inline-flex min-h-12 items-center justify-center rounded-xl bg-destructive px-6 text-base font-semibold text-destructive-foreground shadow-sm transition hover:opacity-90 disabled:opacity-50"
+              >
+                {deleteLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {t("Delete")}
+              </button>
+            </div>
           </div>
         </div>
       )}
