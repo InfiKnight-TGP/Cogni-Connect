@@ -63,7 +63,7 @@ def seed_demo_media(base_dir, backend_root=None):
     destination_face = base / 'known_faces' / 'jawed_karim.jpg'
     if face_source.exists() and face_source.resolve() != destination_face.resolve(): shutil.copy2(face_source, destination_face)
     people_path = base / 'people.json'
-    try: people = json.loads(people_path.read_text(encoding='utf-8')) if people_path.exists() else []
+    try: people = json.loads(people_path.read_text(encoding='utf-8-sig')) if people_path.exists() else []
     except (OSError, ValueError, TypeError): people = []
     if not any(person.get('id') == 'jawed_karim' for person in people):
         people.append({'id': 'jawed_karim', 'name': 'Jawed Karim', 'relation': 'Friend', 'phone': '', 'photo': 'jawed_karim.jpg'})

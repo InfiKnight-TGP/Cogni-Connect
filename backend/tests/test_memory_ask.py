@@ -336,6 +336,7 @@ class MemoryAskTests(unittest.TestCase):
             self.assertFalse(ans.startswith('On '))
             self.assertNotIn('said:', ans)
 
+    @patch.object(app, 'AI_AVAILABLE', False)
     def test_picture_questions_without_ai_return_pictures_message_only_when_no_text_rule(self):
         # 1. "What was I doing?" is an about-question -> returns ABOUT summary
         res_doing = self.client.post('/memories/ask', json={

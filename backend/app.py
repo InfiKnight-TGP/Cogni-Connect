@@ -8,6 +8,9 @@ import base64
 import re
 import shutil
 import cv2
+import numpy as np
+import glob
+import time
 from werkzeug.utils import secure_filename
 from patient_storage import scoped, patient_path, configure, initialize_patient
 import threading
@@ -29,7 +32,7 @@ api = Flask(__name__)
 UPLOAD_FOLDER = scoped('content')
 KNOWN_FACES_FOLDER = scoped('known_faces')
 ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'webm'}
-ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png'}
+ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
 api.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 api.config['KNOWN_FACES_FOLDER'] = KNOWN_FACES_FOLDER
 api.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
@@ -402,7 +405,7 @@ def search():
                         # Extract names from face data (handle different JSON structures)
                         for path, names in face_info.items():
                             if names and isinstance(names, list):
-                                face_data[video_path] = [display_name(n, people, relation=True) for n in names]
+                                face_data[video_path] = [dn for n in names if (dn := display_name(n, people, relation=True))]
                                 break  # Only need one entry per file
         
         # If no transcripts found, return all available videos
@@ -915,7 +918,7 @@ def _load_people():
                 people.append({"id": stem, "name": _title(stem.replace('_', ' ')), "relation": "", "phone": "", "photo": filename})
         _save_people(people)
         return people
-    with open(PEOPLE_FILE, 'r', encoding='utf-8') as f:
+    with open(PEOPLE_FILE, 'r', encoding='utf-8-sig') as f:
         return json.load(f)
 
 
@@ -924,15 +927,46 @@ def _title(name):
     return ' '.join(w[:1].upper() + w[1:] for w in name.split())
 
 
+VALID_RELATIONS = {'Son', 'Daughter', 'Wife', 'Husband', 'Grandchild', 'Friend', 'Doctor', 'Neighbour', 'Caregiver', 'Other'}
+RELATION_MAP = {r.lower(): r for r in VALID_RELATIONS}
+MAX_PHOTO_BYTES = 5 * 1024 * 1024
+
+_rescan_reset_lock = threading.Lock()
+_rescan_status_lock = threading.Lock()
+_patient_rescan_status = {}
+_patient_rescan_timestamps = {}
+
+
+def _people_edit_allowed():
+    import auth
+    session = g.get('auth_session')
+    if not session or session.get('kind') == 'patient_device':
+        return False
+    if not g.get('active_patient'):
+        return False
+    patient_id = g.active_patient['id']
+    if not auth.authorized_patient(patient_id):
+        return False
+    if auth.self_account():
+        user = auth.session_user()
+        if not user or user['patient_id'] != patient_id:
+            return False
+        return True
+    if auth.is_caregiver() and session.get('kind') == 'caregiver':
+        return True
+    return False
+
+
 def display_name(face_id, people, relation=False):
     """Face recognition reports a photo's id (with "_" sometimes shown as " ").
     Return that person's name, optionally with the relation: "Dinesh (son)"."""
     key = face_id.strip().lower()
     for p in people:
-        if key in (p['id'].lower(), p['id'].replace('_', ' ').lower()):
+        stem = os.path.splitext(p.get('photo', ''))[0].lower()
+        if key in (p['id'].lower(), p['id'].replace('_', ' ').lower(), stem, stem.replace('_', ' ')):
             name = _title(p['name'])
             return f"{name} ({p['relation'].lower()})" if relation and p.get('relation') else name
-    return _title(face_id.replace('_', ' '))
+    return None
 
 
 def _save_people(people):
@@ -940,28 +974,58 @@ def _save_people(people):
         json.dump(people, f, indent=2, ensure_ascii=False)
 
 
-def _save_photo(file, person_id, old_photo=None):
-    """Save an uploaded photo as known_faces/<id>.<ext>. Returns (filename, error)."""
+def _save_photo(file, old_photo=None):
+    """Save an uploaded photo as known_faces/<random>.<ext>. Returns (filename, error, status_code)."""
     if not file or file.filename == '':
-        return None, "Please choose a photo"
-    if not allowed_image_file(file.filename):
-        return None, f"Photo must be one of: {', '.join(sorted(ALLOWED_IMAGE_EXTENSIONS))}"
-    from process_video import has_face
-    tmp_path = os.path.join(KNOWN_FACES_FOLDER, f"{person_id}.tmp")
-    file.save(tmp_path)
+        return None, "Please choose a photo.", 400
     try:
+        content = file.read()
+    except Exception:
+        return None, "Unable to read photo file.", 400
+    if len(content) > MAX_PHOTO_BYTES:
+        return None, "Photo must be at most 5 MB.", 413
+
+    nparr = np.frombuffer(content, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img is None:
+        return None, "File is not a valid image.", 400
+
+    ext = None
+    if content.startswith(b'\xff\xd8\xff'):
+        ext = 'jpg'
+    elif content.startswith(b'\x89PNG\r\n\x1a\n'):
+        ext = 'png'
+    elif len(content) >= 12 and content[:4] == b'RIFF' and content[8:12] == b'WEBP':
+        ext = 'webp'
+    if not ext:
+        return None, "Photo must be JPEG, PNG, or WebP.", 400
+
+    from process_video import has_face
+    known_faces_dir = patient_path('known_faces')
+    os.makedirs(known_faces_dir, exist_ok=True)
+    tmp_path = os.path.join(known_faces_dir, f"tmp_{uuid.uuid4().hex}.{ext}")
+    try:
+        with open(tmp_path, 'wb') as f:
+            f.write(content)
         if not has_face(tmp_path):
-            return None, "We could not find a face in this photo. Please use a clear photo of the face."
-        filename = f"{person_id}.{file.filename.rsplit('.', 1)[1].lower()}"
-        os.replace(tmp_path, os.path.join(KNOWN_FACES_FOLDER, filename))
+            return None, "No face found in this photo. Try a clear photo of the face.", 400
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        dest_path = os.path.join(known_faces_dir, filename)
+        os.replace(tmp_path, dest_path)
         if old_photo and old_photo != filename:
-            old_path = os.path.join(KNOWN_FACES_FOLDER, old_photo)
-            if os.path.exists(old_path):
-                os.remove(old_path)
-        return filename, None
+            old_path = os.path.join(known_faces_dir, old_photo)
+            if os.path.isfile(old_path):
+                try:
+                    os.remove(old_path)
+                except OSError:
+                    pass
+        return filename, None, 200
     finally:
         if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 @api.route('/people', methods=['GET'])
@@ -971,23 +1035,48 @@ def list_people():
 
 @api.route('/people', methods=['POST'])
 def add_person():
-    """multipart form: name (required), relation, phone, photo (required)."""
-    name = _title(request.form.get('name', ''))
-    if not name:
-        return jsonify({"error": "Name is required"}), 400
-    import uuid
-    person_id = uuid.uuid4().hex[:8]
-    photo, error = _save_photo(request.files.get('photo'), person_id)
-    if error:
-        return jsonify({"error": error}), 400
-    person = {
-        "id": person_id,
-        "name": name,
-        "relation": request.form.get('relation', '').strip(),
-        "phone": request.form.get('phone', '').strip(),
-        "photo": photo,
-    }
+    """multipart form: name (required), relation (required), phone (optional), photo (required)."""
+    if not _people_edit_allowed():
+        return jsonify(error="Only a caregiver or self account can edit people."), 403
     people = _load_people()
+    import auth
+    if auth.is_demo_session() or (g.get('active_patient') and g.active_patient.get('is_demo')):
+        if len(people) >= 12:
+            return jsonify(error="Demo accounts can have at most 12 people."), 400
+
+    raw_name = request.form.get('name', '')
+    name_clean = raw_name.strip()
+    if not name_clean or len(name_clean) > 60:
+        return jsonify(error="Name must be between 1 and 60 characters."), 400
+    if any(ord(c) < 32 or ord(c) == 127 for c in name_clean):
+        return jsonify(error="Name must not contain control characters."), 400
+    name = _title(name_clean)
+
+    relation = request.form.get('relation', '').strip()
+    rel_key = relation.lower()
+    if rel_key not in RELATION_MAP:
+        return jsonify(error="Relation must be one of: " + ", ".join(sorted(VALID_RELATIONS))), 400
+    canonical_relation = RELATION_MAP[rel_key]
+
+    phone = request.form.get('phone', '').strip()
+    if phone:
+        if not (6 <= len(phone) <= 20) or not re.fullmatch(r'^[0-9\s+\-()]+$', phone):
+            return jsonify(error="Phone must be between 6 and 20 characters and contain only digits, spaces, +, -, (, )."), 400
+
+    photo_file = request.files.get('photo')
+    if not photo_file or photo_file.filename == '':
+        return jsonify(error="Photo is required."), 400
+    filename, err, status_code = _save_photo(photo_file)
+    if err:
+        return jsonify(error=err), status_code
+
+    person = {
+        "id": uuid.uuid4().hex[:8],
+        "name": name,
+        "relation": canonical_relation,
+        "phone": phone,
+        "photo": filename,
+    }
     people.append(person)
     _save_people(people)
     return jsonify(person), 201
@@ -996,39 +1085,62 @@ def add_person():
 @api.route('/people/<person_id>', methods=['PUT'])
 def update_person(person_id):
     """multipart form; any of name, relation, phone, photo."""
+    if not _people_edit_allowed():
+        return jsonify(error="Only a caregiver or self account can edit people."), 403
     people = _load_people()
     person = next((p for p in people if p['id'] == person_id), None)
     if not person:
-        return jsonify({"error": "Person not found"}), 404
+        return jsonify(error="Person not found"), 404
+
     if 'name' in request.form:
-        name = _title(request.form['name'])
-        if not name:
-            return jsonify({"error": "Name is required"}), 400
-        person['name'] = name
-    for field in ('relation', 'phone'):
-        if field in request.form:
-            person[field] = request.form[field].strip()
+        name_clean = request.form['name'].strip()
+        if not name_clean or len(name_clean) > 60:
+            return jsonify(error="Name must be between 1 and 60 characters."), 400
+        if any(ord(c) < 32 or ord(c) == 127 for c in name_clean):
+            return jsonify(error="Name must not contain control characters."), 400
+        person['name'] = _title(name_clean)
+
+    if 'relation' in request.form:
+        relation = request.form['relation'].strip()
+        rel_key = relation.lower()
+        if rel_key not in RELATION_MAP:
+            return jsonify(error="Relation must be one of: " + ", ".join(sorted(VALID_RELATIONS))), 400
+        person['relation'] = RELATION_MAP[rel_key]
+
+    if 'phone' in request.form:
+        phone = request.form['phone'].strip()
+        if phone:
+            if not (6 <= len(phone) <= 20) or not re.fullmatch(r'^[0-9\s+\-()]+$', phone):
+                return jsonify(error="Phone must be between 6 and 20 characters and contain only digits, spaces, +, -, (, )."), 400
+        person['phone'] = phone
+
     if request.files.get('photo'):
-        photo, error = _save_photo(request.files['photo'], person_id, person.get('photo'))
-        if error:
-            return jsonify({"error": error}), 400
-        person['photo'] = photo
+        filename, err, status_code = _save_photo(request.files['photo'], old_photo=person.get('photo'))
+        if err:
+            return jsonify(error=err), status_code
+        person['photo'] = filename
+
     _save_people(people)
-    return jsonify(person)
+    return jsonify(person), 200
 
 
 @api.route('/people/<person_id>', methods=['DELETE'])
 def delete_person(person_id):
+    if not _people_edit_allowed():
+        return jsonify(error="Only a caregiver or self account can edit people."), 403
     people = _load_people()
     person = next((p for p in people if p['id'] == person_id), None)
     if not person:
-        return jsonify({"error": "Person not found"}), 404
+        return jsonify(error="Person not found"), 404
     if person.get('photo'):
-        photo_path = os.path.join(KNOWN_FACES_FOLDER, person['photo'])
-        if os.path.exists(photo_path):
-            os.remove(photo_path)
+        photo_path = os.path.join(patient_path('known_faces'), person['photo'])
+        if os.path.isfile(photo_path):
+            try:
+                os.remove(photo_path)
+            except OSError:
+                pass
     _save_people([p for p in people if p['id'] != person_id])
-    return jsonify({"success": True})
+    return jsonify(success=True), 200
 
 
 @api.route('/known-faces', methods=['GET'])
@@ -1041,12 +1153,128 @@ def list_known_faces():
 
 @api.route('/known-faces/<filename>', methods=['GET'])
 def serve_face_image(filename):
-    """Serve a known face image."""
+    """Serve a known face image scoped to active patient."""
     try:
-        return send_from_directory(api.config['KNOWN_FACES_FOLDER'], filename)
-    except Exception as e:
-        print(f"Serve image error: {e}")
-        return jsonify({"error": str(e)}), 404
+        if not g.get('active_patient'):
+            return jsonify(error="No active patient"), 404
+        if not filename or '/' in filename or '\\' in filename or '..' in filename:
+            return jsonify(error="Invalid filename"), 404
+        people = _load_people()
+        if not any(p.get('photo') == filename for p in people):
+            return jsonify(error="Photo not found"), 404
+        folder = patient_path('known_faces')
+        if not os.path.isfile(os.path.join(folder, filename)):
+            return jsonify(error="Photo not found"), 404
+        return send_from_directory(folder, filename)
+    except Exception:
+        return jsonify(error="Photo not found"), 404
+
+
+def _run_rescan_worker(patient_id, base_dir, chunk_folders):
+    with _rescan_reset_lock:
+        try:
+            from process_video import perform_face_recognition
+            total = len(chunk_folders)
+            for idx, folder in enumerate(chunk_folders):
+                perform_face_recognition(folder, base_dir)
+                for faces_file in glob.glob(os.path.join(folder, "*_faces.json")):
+                    copy_folder = os.path.join(base_dir, "content", os.path.basename(folder))
+                    if os.path.isdir(copy_folder):
+                        shutil.copy(faces_file, copy_folder)
+                scanned = idx + 1
+                progress = int((scanned / total) * 100)
+                with _rescan_status_lock:
+                    _patient_rescan_status[patient_id] = {
+                        "status": "running",
+                        "progress": progress,
+                        "message": f"Scanning video {scanned} of {total}...",
+                        "scanned_videos": scanned,
+                        "total_videos": total,
+                    }
+            with _rescan_status_lock:
+                _patient_rescan_status[patient_id] = {
+                    "status": "completed",
+                    "progress": 100,
+                    "message": "Face scan completed.",
+                    "scanned_videos": total,
+                    "total_videos": total,
+                }
+        except Exception as e:
+            # Addition 3: log failures in Flask console without paths
+            print(f"Rescan error: {e.__class__.__name__}")
+            with _rescan_status_lock:
+                _patient_rescan_status[patient_id] = {
+                    "status": "failed",
+                    "progress": 0,
+                    "message": "Face scan failed. Please try again.",
+                    "scanned_videos": 0,
+                    "total_videos": len(chunk_folders),
+                }
+
+
+@api.route('/people/rescan', methods=['POST'])
+def rescan_people():
+    if not _people_edit_allowed():
+        return jsonify(error="Only a caregiver or self account can rescan people."), 403
+    patient_id = g.active_patient['id']
+    now_ts = time.time()
+
+    with _rescan_status_lock:
+        history = [ts for ts in _patient_rescan_timestamps.get(patient_id, []) if now_ts - ts < 3600]
+        if len(history) >= 3:
+            return jsonify(error="Rescan rate limit reached (maximum 3 per hour). Please try again later."), 429
+
+        current = _patient_rescan_status.get(patient_id, {})
+        if current.get('status') == 'running':
+            return jsonify(error="A rescan job is already in progress for this patient."), 409
+
+        chunks_root = patient_path('video_chunks')
+        chunk_folders = sorted(f for f in glob.glob(os.path.join(chunks_root, "*_chunks")) if os.path.isdir(f))
+        if not chunk_folders:
+            _patient_rescan_status[patient_id] = {
+                "status": "completed",
+                "progress": 100,
+                "message": "No videos to scan yet",
+                "scanned_videos": 0,
+                "total_videos": 0,
+            }
+            return jsonify(status="completed", message="No videos to scan yet", progress=100), 200
+
+        history.append(now_ts)
+        _patient_rescan_timestamps[patient_id] = history
+
+        _patient_rescan_status[patient_id] = {
+            "status": "running",
+            "progress": 0,
+            "message": f"Scanning video 1 of {len(chunk_folders)}...",
+            "scanned_videos": 0,
+            "total_videos": len(chunk_folders),
+        }
+
+    base_dir = patient_path('')
+    thread = threading.Thread(
+        target=_run_rescan_worker,
+        args=(patient_id, base_dir, chunk_folders),
+        daemon=True,
+    )
+    thread.start()
+    return jsonify(status="running", message="Rescan started", progress=0), 200
+
+
+@api.route('/people/rescan/status', methods=['GET'])
+def rescan_status():
+    if not _people_edit_allowed():
+        return jsonify(error="Only a caregiver or self account can view rescan status."), 403
+    patient_id = g.active_patient['id']
+    with _rescan_status_lock:
+        status_info = _patient_rescan_status.get(patient_id, {
+            "status": "idle",
+            "progress": 0,
+            "message": "No scan in progress",
+            "scanned_videos": 0,
+            "total_videos": 0,
+        })
+        return jsonify(status_info), 200
 
 
 @api.get('/video_chunks')
@@ -1408,9 +1636,9 @@ def faces_for_date():
                     with open(os.path.join(folder, file), 'r', encoding='utf-8') as f:
                         for names in json.load(f).values():
                             for n in names:
-                                n = display_name(n, people)
-                                if n not in detected:
-                                    detected.append(n)
+                                dn = display_name(n, people)
+                                if dn and dn not in detected:
+                                    detected.append(dn)
     except Exception as e:
         print(f"Faces for date error: {e}")
         return jsonify({"date": date_str, "detected": [], "error": str(e)}), 500
@@ -1896,7 +2124,7 @@ def generate_questions():
                 faces = []
                 for path, names in faces_data.items():
                     if chunk_name in path:
-                        faces = [display_name(n, people, relation=True) for n in names]
+                        faces = [dn for n in names if (dn := display_name(n, people, relation=True))]
                         break
                 
                 video_data.append({
@@ -2150,7 +2378,7 @@ def _ask_context(memory_id=None):
                     with open(os.path.join(folder, face_file), encoding='utf-8') as f:
                         face = json.load(f)
                     ids = {n for values in face.values() for n in values} if isinstance(face, dict) else set()
-                    names.extend(display_name(n, people) for n in ids)
+                    names.extend(dn for n in ids if (dn := display_name(n, people)))
                 except Exception:
                     pass
         out.append({

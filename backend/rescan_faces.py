@@ -33,7 +33,7 @@ def main():
         for faces_file in sorted(glob.glob(os.path.join(folder, "*_faces.json"))):
             with open(faces_file, "r", encoding="utf-8") as f:
                 for ids in json.load(f).values():
-                    found += [display_name(i, people) for i in ids if display_name(i, people) not in found]
+                    found += [dn for i in ids if (dn := display_name(i, people)) and dn not in found]
             for copy_root in [base_dir / "content"]:
                 copy_folder = os.path.join(copy_root, os.path.basename(folder))
                 if os.path.isdir(copy_folder):

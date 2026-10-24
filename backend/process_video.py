@@ -70,7 +70,7 @@ def known_photos(base_dir):
             return [(p['id'], os.path.join(known_faces_dir, p['photo'])) for p in json.load(f) if p.get('photo')]
     # Before the app's first run there is no people.json yet; the photo file names are the ids
     return [(os.path.splitext(f)[0], os.path.join(known_faces_dir, f))
-            for f in sorted(os.listdir(known_faces_dir)) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+            for f in sorted(os.listdir(known_faces_dir)) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
 
 
 def load_known_features(recognizer, base_dir):

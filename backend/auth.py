@@ -595,23 +595,27 @@ def logout():
 def demo_reset():
     if not demo_enabled() or not is_demo_session():
         return error(404)
-    patient = database.fetchone('SELECT id FROM patients WHERE is_demo=1 ORDER BY created_at LIMIT 1')
-    if not patient:
-        return error(404)
-    from patient_storage import initialize_patient
-    base = Path(current_app.config['PATIENT_DATA_ROOT']).resolve() / patient['id']
-    if base.exists():
-        shutil.rmtree(base)
-    initialize_patient(base, 'Demo Patient')
-    sample = Path(__file__).with_name('sample_data')
-    for item in sample.iterdir():
-        if item.is_file():
-            shutil.copy2(item, base / item.name)
-    from seed_demo_media import seed_demo_media
-    seed_demo_media(base, Path(__file__).parent)
-    database.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE is_demo=1) OR patient_id=?', (patient['id'],))
-    database.execute('DELETE FROM trusted_devices WHERE user_id IN (SELECT id FROM users WHERE is_demo=1)')
-    return jsonify(ok=True)
+    from app import _rescan_reset_lock
+    with _rescan_reset_lock:
+        patient = database.fetchone('SELECT id FROM patients WHERE is_demo=1 ORDER BY created_at LIMIT 1')
+        if not patient:
+            return error(404)
+        from patient_storage import initialize_patient
+        base = Path(current_app.config['PATIENT_DATA_ROOT']).resolve() / patient['id']
+        if base.exists():
+            shutil.rmtree(base)
+        initialize_patient(base, 'Demo Patient')
+        sample = Path(__file__).with_name('sample_data')
+        for item in sample.iterdir():
+            if item.is_file():
+                shutil.copy2(item, base / item.name)
+            elif item.is_dir() and item.name == 'known_faces':
+                shutil.copytree(item, base / 'known_faces', dirs_exist_ok=True)
+        from seed_demo_media import seed_demo_media
+        seed_demo_media(base, Path(__file__).parent)
+        database.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE is_demo=1) OR patient_id=?', (patient['id'],))
+        database.execute('DELETE FROM trusted_devices WHERE user_id IN (SELECT id FROM users WHERE is_demo=1)')
+        return jsonify(ok=True)
 
 
 @bp.get('/auth/me')
@@ -1056,7 +1060,7 @@ def reset_adaptive():
 
 
 CAREGIVER_ENDPOINTS = {
-    'get_processing_status', 'add_person', 'update_person', 'delete_person',
+    'get_processing_status',
     'get_reports_days', 'get_report_for_day', 'save_settings',
 }
 DEMO_BLOCKED_ENDPOINTS = {'pair_invite', 'unpair', 'create_patient_login', 'remove_patient_login', 'reset_patient_login_password', 'patient_pin', 'legacy_change_pin'}
@@ -1310,8 +1314,8 @@ def init_auth(app, legacy_settings):
                 return jsonify(error='Demo uploads are limited to three per day.'), 403
         if request.endpoint == 'delete_performance' and not (is_caregiver() or self_account()):
             return error(403)
-        if request.endpoint in {'add_person', 'update_person', 'delete_person'}:
-            if not (is_caregiver() or self_account()):
+        if request.endpoint in {'add_person', 'update_person', 'delete_person', 'rescan_people', 'rescan_status'}:
+            if session['kind'] == 'patient_device' or not (is_caregiver() or self_account()):
                 return error(403)
         elif request.endpoint in CAREGIVER_ENDPOINTS and not is_caregiver():
             return error(403)
