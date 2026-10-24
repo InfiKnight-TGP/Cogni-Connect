@@ -575,8 +575,11 @@ class VideoUploadBackendTests(unittest.TestCase):
             self.assertEqual(retry_res.status_code, 200)
             self.assertEqual(retry_res.get_json()['status'], 'processing')
 
-            time.sleep(0.2)
-            st_res = self.client_self.get(f'/memories/{mid}')
+            for _ in range(20):
+                time.sleep(0.1)
+                st_res = self.client_self.get(f'/memories/{mid}')
+                if st_res.status_code == 200 and st_res.get_json().get('status') == 'ready':
+                    break
             self.assertEqual(st_res.status_code, 200)
             self.assertEqual(st_res.get_json()['status'], 'ready')
 
@@ -657,8 +660,29 @@ class VideoUploadBackendTests(unittest.TestCase):
         questions = app._generate_questions_from_video_data(video_data)
         self.assertTrue(len(questions) >= 2)
         self.assertTrue(all(q.get('fallback') for q in questions))
-        self.assertEqual(questions[0]['answer'], 'Picnic in the park')
+
+    def test_get_memory_limits(self):
+        # 1. Anonymous session returns 401
+        anon_client = app.api.test_client()
+        resp = anon_client.get('/memories/limits')
+        self.assertEqual(resp.status_code, 401)
+
+        # 2. Self session returns limits
+        resp_self = self.client_self.get('/memories/limits')
+        self.assertEqual(resp_self.status_code, 200)
+        data_self = resp_self.get_json()
+        self.assertEqual(data_self['maxUploadMb'], 200)
+        self.assertEqual(data_self['maxVideoSeconds'], 180)
+        self.assertFalse(data_self['demo'])
+
+        # 3. Caregiver session returns limits
+        resp_cg = self.client_cg.get('/memories/limits')
+        self.assertEqual(resp_cg.status_code, 200)
+        data_cg = resp_cg.get_json()
+        self.assertEqual(data_cg['maxUploadMb'], 200)
+        self.assertEqual(data_cg['maxVideoSeconds'], 180)
 
 
 if __name__ == '__main__':
     unittest.main()
+

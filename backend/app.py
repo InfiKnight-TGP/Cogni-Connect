@@ -1243,6 +1243,28 @@ def _memory_edit_allowed():
     return False
 
 
+@api.route('/memories/limits', methods=['GET'])
+def get_memory_limits():
+    import auth
+    is_demo = False
+    active_patient = g.get('active_patient')
+    if active_patient and hasattr(auth, 'is_demo_patient'):
+        is_demo = auth.is_demo_patient(active_patient.get('id'))
+    else:
+        session = g.get('auth_session')
+        if session and hasattr(auth, 'is_demo_session'):
+            is_demo = auth.is_demo_session(session)
+        elif os.getenv('COGNI_DEMO') == '1':
+            is_demo = True
+
+    max_mb, max_seconds = _get_upload_limits(is_demo)
+    return jsonify({
+        'maxUploadMb': max_mb,
+        'maxVideoSeconds': max_seconds,
+        'demo': bool(is_demo)
+    }), 200
+
+
 @api.route('/memories', methods=['POST'])
 def create_memory():
     if not _memory_edit_allowed():
