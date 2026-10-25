@@ -179,7 +179,7 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
         "description": "Follow a weekly medication schedule with multiple rules.",
         "primary_domain": "Executive Function",
         "secondary_domains": [],
-        "playable": False,
+        "playable": True,
         "domain_weights": {"Executive Function": 1.0},
     },
     "whack-a-mole": {

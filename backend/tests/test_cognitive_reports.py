@@ -64,9 +64,7 @@ class CognitiveReportTests(unittest.TestCase):
         self.assertEqual(normalize_domain("Recognition & Orientation"), "Recognition & Orientation")
 
     def test_registry_playability_matches_built_games(self):
-        for game_id in ("pill-box-planner",):
-            self.assertFalse(GAME_REGISTRY[game_id]["playable"])
-        for game_id in ("whack-a-mole", "word-association", "sound-tap", "memory-cards", "pattern-completion", "object-naming", "yesterday-quiz", "memory-crossword", "odd-one-out"):
+        for game_id in ("pill-box-planner", "whack-a-mole", "word-association", "sound-tap", "memory-cards", "pattern-completion", "object-naming", "yesterday-quiz", "memory-crossword", "odd-one-out"):
             self.assertTrue(GAME_REGISTRY[game_id]["playable"])
         self.assertEqual(GAME_REGISTRY["story-builder"]["primary_domain"], "Memory")
         self.assertEqual(GAME_REGISTRY["face-recognition"]["primary_domain"], "Recognition & Orientation")

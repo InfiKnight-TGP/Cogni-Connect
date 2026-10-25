@@ -17,6 +17,7 @@ import PatternCompletion from "./pattern-completion";
 import ObjectNaming from "./object-naming";
 import YesterdayQuiz from "./yesterday-quiz";
 import MemoryCrossword from "./memory-crossword";
+import PillBoxPlanner from "./pill-box-planner";
 import { GameProps } from "./_shared/types";
 import { Area } from "@/lib/progress";
 
@@ -145,7 +146,8 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     skill: "rule switching",
     area: "Executive Function",
     levels: [2],
-    comingSoon: true,
+    component: PillBoxPlanner,
+    comingSoon: false,
     emoji: "💊",
     description: "Follow a weekly medication schedule with multiple rules.",
     trains: "Following several rules at once (a weekly medication schedule)",
