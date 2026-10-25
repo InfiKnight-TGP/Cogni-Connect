@@ -13,12 +13,14 @@ const MONTHS: Record<string, string[]> = {
  * Parse a "yyyy-MM-dd" date string as a local Date (never UTC).
  * Using `new Date("yyyy-MM-dd")` parses as UTC midnight, which in Western
  * timezones shifts the date to the previous day. This helper prevents that.
+ * Returns null if the date string is invalid or empty.
  */
-export function parseLocalDate(dateStr: string): Date {
+export function parseLocalDate(dateStr?: string | null): Date | null {
+  if (!dateStr) return null;
   const clean = String(dateStr).trim().slice(0, 10);
   const parts = clean.split("-").map(Number);
   if (parts.length !== 3 || parts.some(isNaN)) {
-    return new Date();
+    return null;
   }
   return new Date(parts[0], parts[1] - 1, parts[2]);
 }
@@ -30,11 +32,8 @@ export function getMemoryDateCategory(
   dateStr?: string | null,
   baseDate?: Date
 ): "today" | "this_week" | "earlier" {
-  if (!dateStr) return "earlier";
-  const clean = String(dateStr).trim().slice(0, 10);
-  const parts = clean.split("-").map(Number);
-  if (parts.length !== 3 || parts.some(isNaN)) return "earlier";
-  const targetDate = new Date(parts[0], parts[1] - 1, parts[2]);
+  const targetDate = parseLocalDate(dateStr);
+  if (!targetDate) return "earlier";
   const now = baseDate ?? new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const diffDays = Math.round((today.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -45,12 +44,8 @@ export function getMemoryDateCategory(
 }
 
 export function formatFriendlyDate(dateStr?: string | null, lang: string = "en", baseDate?: Date): string {
-  if (!dateStr) return "";
-  const clean = String(dateStr).slice(0, 10);
-  const parts = clean.split("-").map(Number);
-  if (parts.length !== 3 || parts.some(isNaN)) return clean;
-  const [year, month, day] = parts;
-  const targetDate = new Date(year, month - 1, day);
+  const targetDate = parseLocalDate(dateStr);
+  if (!targetDate) return "";
   const now = baseDate ?? new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const diffDays = Math.round((today.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -64,6 +59,8 @@ export function formatFriendlyDate(dateStr?: string | null, lang: string = "en",
 
   const dayOfWeekIndex = (targetDate.getDay() + 6) % 7; // Monday = 0, Sunday = 6
   const weekday = (WEEKDAYS[lang] ?? WEEKDAYS.en)[dayOfWeekIndex];
+  const day = targetDate.getDate();
+  const month = targetDate.getMonth() + 1;
   const monthName = (MONTHS[lang] ?? MONTHS.en)[month - 1];
   return `${weekday} ${day} ${monthName}`;
 }

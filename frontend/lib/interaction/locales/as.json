@@ -863,7 +863,9 @@
     "Good effort!": "ভাল প্ৰচেষ্টা!",
     "Look again at the {color} pill: {instruction}": "{color} বড়িটো আকৌ এবাৰ চাওক: {instruction}",
     "View Summary": "সাৰাংশ চাওক",
-    "Next Round": "পৰৱৰ্তী ৰাউণ্ড"
+    "Next Round": "পৰৱৰ্তী ৰাউণ্ড",
+    "When did this happen?": "এইটো কেতিয়া হৈছিল?",
+    "The date shown on your memory.": "আপোনাৰ স্মৃতিত দেখুওৱা তাৰিখ।"
   },
   "reviewStatus": "Machine translation — needs native review",
   "Mole Path": "ম'ল পথ (পথটো মনত ৰাখক)",

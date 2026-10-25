@@ -21,10 +21,14 @@ assert.equal(formatFriendlyDate('2026-10-19', 'en', baseDate), 'Monday 19 Octobe
 assert.equal(formatFriendlyDate('2026-10-19', 'hi', baseDate), 'सोमवार 19 अक्टूबर');
 assert.equal(formatFriendlyDate('2026-10-19', 'as', baseDate), 'সোমবাৰ 19 অক্টোবৰ');
 
-// D. Edge cases: empty or invalid date
+// D. Edge cases: empty or invalid date (empty label)
 assert.equal(formatFriendlyDate('', 'en', baseDate), '');
 assert.equal(formatFriendlyDate(null, 'en', baseDate), '');
-assert.equal(formatFriendlyDate('not-a-date', 'en', baseDate), 'not-a-date');
+assert.equal(formatFriendlyDate('not-a-date', 'en', baseDate), '');
+assert.equal(parseLocalDate('not-a-date'), null);
+assert.equal(parseLocalDate(''), null);
+assert.equal(parseLocalDate(null), null);
+assert.equal(parseLocalDate(undefined), null);
 
 // Also test formatFriendlyDate without baseDate (using current system date dynamically)
 const now = new Date();

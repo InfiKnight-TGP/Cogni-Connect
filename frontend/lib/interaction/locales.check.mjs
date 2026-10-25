@@ -207,7 +207,9 @@ required.push(
   'Good effort!',
   'Look again at the {color} pill: {instruction}',
   'View Summary',
-  'Next Round'
+  'Next Round',
+  'When did this happen?',
+  'The date shown on your memory.'
 );
 for (const phrase of required) {
   assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing UI phrase: ${phrase}`);

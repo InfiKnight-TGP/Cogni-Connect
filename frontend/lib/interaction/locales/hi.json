@@ -865,7 +865,9 @@
     "Good effort!": "अच्छा प्रयास!",
     "Look again at the {color} pill: {instruction}": "{color} गोली को फिर से देखें: {instruction}",
     "View Summary": "सारांश देखें",
-    "Next Round": "अगला राउंड"
+    "Next Round": "अगला राउंड",
+    "When did this happen?": "यह कब हुआ था?",
+    "The date shown on your memory.": "आपकी याद पर दिखाई जाने वाली तारीख।"
   },
   "reviewStatus": "Machine translation — needs native review",
   "Mole Path": "मोल पथ (रास्ता याद रखें)",
