@@ -190,6 +190,14 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
         "playable": False,
         "domain_weights": {"Executive Function": 1.0},
     },
+    "whack-a-mole": {
+        "name": "Garden Taps",
+        "description": "Tap target moles while letting resting visitors stay undisturbed.",
+        "primary_domain": "Attention",
+        "secondary_domains": [],
+        "playable": True,
+        "domain_weights": {"Attention": 1.0},
+    },
     "daily_recall": {
         "name": "Daily Recall",
         "description": "Personalized face recognition, name recall, and memories.",

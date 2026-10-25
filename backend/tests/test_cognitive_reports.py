@@ -64,9 +64,9 @@ class CognitiveReportTests(unittest.TestCase):
         self.assertEqual(normalize_domain("Recognition & Orientation"), "Recognition & Orientation")
 
     def test_registry_playability_matches_built_games(self):
-        for game_id in ("whack-a-mole", "pill-box-planner"):
+        for game_id in ("pill-box-planner",):
             self.assertFalse(GAME_REGISTRY[game_id]["playable"])
-        for game_id in ("word-association", "sound-tap", "memory-cards", "pattern-completion", "object-naming", "yesterday-quiz", "memory-crossword", "odd-one-out"):
+        for game_id in ("whack-a-mole", "word-association", "sound-tap", "memory-cards", "pattern-completion", "object-naming", "yesterday-quiz", "memory-crossword", "odd-one-out"):
             self.assertTrue(GAME_REGISTRY[game_id]["playable"])
         self.assertEqual(GAME_REGISTRY["story-builder"]["primary_domain"], "Memory")
         self.assertEqual(GAME_REGISTRY["face-recognition"]["primary_domain"], "Recognition & Orientation")
@@ -473,6 +473,60 @@ class CognitiveReportTests(unittest.TestCase):
                 plan_seen = True
                 break
         self.assertTrue(plan_seen, "Daily plan builder should select ready word-association in level 1 pool")
+
+    def test_garden_taps_integration(self):
+        from app import api
+        from unittest.mock import patch
+        from flask import g
+
+        api.config["TESTING"] = True
+        client = self.auth_client
+
+        # 1. Performance score counted under Attention on /reports/day
+        date_str = "2026-10-25"
+        perf_data = {
+            "scores": [],
+            "game_scores": [
+                {"game_id": "whack-a-mole", "level": 2, "skill": "inhibition", "score": 85, "date": date_str}
+            ],
+        }
+        self.perf_path.write_text(json.dumps(perf_data), encoding="utf-8")
+        with patch.object(__import__("app"), "PERFORMANCE_PATH", str(self.perf_path)), \
+             patch.object(__import__("app"), "SETTINGS_PATH", str(self.settings_path)), \
+             patch.object(__import__("app"), "DAILY_PLANS_PATH", str(self.plans_path)), \
+             patch.object(__import__("app"), "GAMES_PATH", str(self.games_path)):
+            res = client.get(f"/reports/day?date={date_str}")
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertEqual(data["domains"]["Attention"]["score"], 85)
+            self.assertIn("whack-a-mole", data["domains"]["Attention"]["game_ids"])
+
+        # 2. Adaptive state accepted for whack-a-mole
+        from tests.auth_support import make_client
+        device_client = make_client("patient_device")
+        state_payload = {
+            "game_id": "whack-a-mole",
+            "knob": 3,
+            "rating": 1100,
+            "recent": [],
+            "baselines": {"tap": [420], "typed": [], "voice": []},
+            "decision": "stay",
+            "reason": "Steady pace",
+        }
+        res_adapt = device_client.put("/adaptive/state", json=state_payload)
+        self.assertEqual(res_adapt.status_code, 200)
+        self.assertEqual(res_adapt.get_json()["state"]["knob"], 3)
+
+        # 3. Daily plan builder picks from real games.json containing ready whack-a-mole in level 2 pool
+        real_games_file = Path(__file__).resolve().parent.parent / "games.json"
+        plan_seen = False
+        for offset in range(30):
+            day = f"2026-11-{offset + 1:02d}"
+            plan = build_daily_plan(day, games_file=real_games_file, plans_file=self.plans_path, settings_file=self.settings_path, performance_file=self.perf_path, today_str="2026-10-01")
+            if "whack-a-mole" in plan.get("level2", []):
+                plan_seen = True
+                break
+        self.assertTrue(plan_seen, "Daily plan builder should select ready whack-a-mole in level 2 pool")
 
 
 if __name__ == "__main__":

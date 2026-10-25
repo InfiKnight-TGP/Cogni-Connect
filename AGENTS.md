@@ -16,6 +16,6 @@ Dementia memory-support platform (SIH26003, MDoNER). Flask backend in /backend (
 ## Rules
 - Read files before editing; minimal edits; keep existing logic and routes.
 - Don't run `npm run build` or start another dev server while `npm run dev` runs.
-- Checks: `npx tsc --noEmit`, `node lib/progress.check.mjs`, `node lib/self-progress.check.mjs`, and `node lib/word-association.check.mjs` (in frontend); `.venv\Scripts\python.exe -m unittest tests/test_cognitive_reports.py` and `.venv\Scripts\python.exe -c "import app"` (in backend).
+- Checks: `npx tsc --noEmit`, `node lib/progress.check.mjs`, `node lib/self-progress.check.mjs`, `node lib/word-association.check.mjs`, and `node lib/whack-a-mole.check.mjs` (in frontend); `.venv\Scripts\python.exe -m unittest tests/test_cognitive_reports.py` and `.venv\Scripts\python.exe -c "import app"` (in backend).
 - Open JSON files with encoding="utf-8".
 - Show the real git diff and commit after each part.

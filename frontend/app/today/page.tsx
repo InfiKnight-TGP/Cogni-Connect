@@ -17,6 +17,7 @@ import {
   Package,
   Search,
   Sparkles,
+  Sprout,
   Target,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -43,7 +44,7 @@ const ACTIVITY_MAP: Record<string, ActivityMeta> = {
   "odd-one-out": { name: "Spot the Odd One", icon: Search },
   "mole-path": { name: "Path Memory", icon: Footprints },
   "sorting-station": { name: "Sorting", icon: Package },
-  "whack-a-mole": { name: "Quick Tap", icon: Hand },
+  "whack-a-mole": { name: "Garden Taps", icon: Sprout },
   "attention-hunt": { name: "Find It", icon: Target },
   "map-navigator": { name: "Find the Way", icon: Map },
 };
