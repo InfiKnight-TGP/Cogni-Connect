@@ -122,6 +122,11 @@ const gameKeyPhrases = [
   "Raat · Before sleep",
   "Check this",
   "Yellow pill: Monday to Friday morning, but skip Wednesday.",
+  "Nice work, you followed the rules.",
+  "Good effort!",
+  "Look again at the {color} pill: {instruction}",
+  "View Summary",
+  "Next Round",
 ];
 
 for (const phrase of gameKeyPhrases) {
@@ -173,6 +178,8 @@ const {
   evaluateRoundPlacements,
   calculatePillBoxSessionScore,
   getScenariosForKnob,
+  createFinishGuard,
+  findRuleHint,
 } = await import("../components/games/pill-box-planner/logic.ts");
 
 // 1. Colour Invariant: Only red, blue, yellow, green
@@ -219,9 +226,59 @@ assert(
   'Permanent banner "Practice only. This is not medical advice." missing in active JSX element'
 );
 assert(
-  strippedCode.includes('text="Practice only. This is not medical advice."'),
+  strippedCode.includes('text={t("Practice only. This is not medical advice.")}') ||
+    strippedCode.includes('text="Practice only. This is not medical advice."'),
   'Permanent banner must include ReadAloud speech rendered in active JSX'
 );
+assert(
+  !strippedCode.includes("forceAutoRead"),
+  "forceAutoRead must not be used on the banner; speech must respect read-aloud setting"
+);
+
+// Knob and Date check
+assert(
+  indexContent.includes('readSkill("pill-box-planner")'),
+  'index.tsx must read skill knob via readSkill("pill-box-planner")'
+);
+assert(
+  indexContent.includes("date?: string") && indexContent.includes("date={date}"),
+  "index.tsx must accept date prop and pass date to GameShell"
+);
+
+// Finish once check: ref-guarded and summary Finish button is the only caller
+assert(
+  indexContent.includes("finishedRef"),
+  "index.tsx must guard handleFinish with a ref"
+);
+assert(
+  !indexContent.includes("handleFinishCallback(overallScore)"),
+  "handleNextRound must not call handleFinish before summary screen"
+);
+
+// No numbers check: no raw scores or out of 100 shown to the patient
+assert(!strippedCode.includes("Round Score"), "Must not display raw 'Round Score'");
+assert(!strippedCode.includes("Overall Score"), "Must not display raw 'Overall Score'");
+assert(!strippedCode.includes("Out of 100"), "Must not display 'Out of 100'");
+assert(!strippedCode.includes("/ 100"), "Must not display '/ 100'");
+assert(indexContent.includes("starsFor"), "Must use starsFor from lib/progress");
+
+// SIZES CHECK: Game folder must have no text-xs or text-[Npx] where N < 16
+for (const fileName of dirFiles) {
+  const fileUrl = new URL(fileName, plannerDir);
+  const content = await readFile(fileUrl, "utf8");
+  assert(
+    !/\btext-xs\b/.test(content),
+    `[${fileName}] contains forbidden small size class 'text-xs'`
+  );
+  const arbitraryMatches = content.matchAll(/\btext-\[(\d+)px\]/g);
+  for (const m of arbitraryMatches) {
+    const px = parseInt(m[1], 10);
+    assert(
+      px >= 16,
+      `[${fileName}] contains forbidden small size class 'text-[${px}px]' (must be >= 16px)`
+    );
+  }
+}
 
 // 4. Knobs & Rule Scenarios Validation + Rule Instruction vs Expansion comparison
 for (const knob of [1, 2, 3, 4]) {
@@ -326,8 +383,18 @@ const testRound = {
   id: "test-round",
   title: "Test Practice",
   rules: [
-    { pillColor: "red", days: ["Monday", "Wednesday"], times: ["morning"] }, // 2 targets
-    { pillColor: "blue", days: ["Friday"], times: ["night"] }, // 1 target
+    {
+      pillColor: "red",
+      days: ["Monday", "Wednesday"],
+      times: ["morning"],
+      instruction: "Red pill: Monday and Wednesday morning.",
+    },
+    {
+      pillColor: "blue",
+      days: ["Friday"],
+      times: ["night"],
+      instruction: "Blue pill: Friday night.",
+    },
   ],
 };
 // Required compartments: Monday:morning:red, Wednesday:morning:red, Friday:night:blue (3 targets)
@@ -338,19 +405,20 @@ const perfectPlacements = [
   { day: "Wednesday", time: "morning", pill: "red" },
   { day: "Friday", time: "night", pill: "blue" },
 ];
-const evalPerfect = evaluateRoundPlacements(testRound, perfectPlacements, []);
+const evalPerfect = evaluateRoundPlacements(testRound, perfectPlacements, [], false);
+assert.equal(evalPerfect.isPerfect, true, "Perfect placement must score 100 and have isPerfect true");
 assert.equal(evalPerfect.roundScore, 100, "Perfect placement must score 100");
 assert.equal(evalPerfect.missingCount, 0);
 assert.equal(evalPerfect.extraCount, 0);
 
-// Scenario B: 1 missing, 1 extra pill
+// Scenario B: 1 missing, 1 extra pill (fixUsed = false)
 // Placed: Monday:morning:red, Friday:night:blue, Saturday:night:blue (extra). Missing: Wednesday:morning:red.
 const partialPlacements = [
   { day: "Monday", time: "morning", pill: "red" },
   { day: "Friday", time: "night", pill: "blue" },
   { day: "Saturday", time: "night", pill: "blue" }, // extra
 ];
-const evalPartial = evaluateRoundPlacements(testRound, partialPlacements, []);
+const evalPartial = evaluateRoundPlacements(testRound, partialPlacements, [], false);
 // Correct = 2. Extra = 1. Required = 3.
 // Score = (2 / 3 - 0.05 * 1) * 100 = (0.6667 - 0.05) * 100 = 61.67 -> 62
 assert.equal(evalPartial.correctInitial, 2);
@@ -358,19 +426,57 @@ assert.equal(evalPartial.missingCount, 1);
 assert.equal(evalPartial.extraCount, 1);
 assert.equal(evalPartial.roundScore, 62);
 
-// Scenario C: One fix per round (corrected compartment counts half)
+// Scenario C: One fix per round (corrected compartment counts half, fixUsed = true)
 // In the fix, Wednesday:morning:red is added, Saturday:night:blue is removed.
 const fixedPlacements = [
   { day: "Monday", time: "morning", pill: "red" },
   { day: "Friday", time: "night", pill: "blue" },
   { day: "Wednesday", time: "morning", pill: "red" }, // Corrected during fix!
 ];
-const evalAfterFix = evaluateRoundPlacements(testRound, partialPlacements, fixedPlacements);
-// Initial correct = 2. Corrected in fix = 1 (counts half = 0.5).
+const evalAfterFix = evaluateRoundPlacements(testRound, partialPlacements, fixedPlacements, true);
+// Initial retained = 2. Corrected in fix = 1 (counts half = 0.5).
 // Effective correct = 2 + 0.5 = 2.5. Extra = 0. Required = 3.
 // Score = (2.5 / 3) * 100 = 83.33 -> 83
 assert.equal(evalAfterFix.correctedInFix, 1);
 assert.equal(evalAfterFix.roundScore, 83);
+
+// Scenario C2: A correct pill removed during the fix must not count as correct
+const initialWithTwo = [
+  { day: "Monday", time: "morning", pill: "red" },
+  { day: "Friday", time: "night", pill: "blue" },
+];
+// User removed Monday:morning:red during fix
+const fixWithRemoved = [
+  { day: "Friday", time: "night", pill: "blue" },
+];
+const evalRemoved = evaluateRoundPlacements(testRound, initialWithTwo, fixWithRemoved, true);
+assert.equal(evalRemoved.correctInitial, 1, "Removed pill must not count as correct (retainedInitial = 1)");
+assert.equal(evalRemoved.correctedInFix, 0);
+assert.equal(evalRemoved.missingCount, 2);
+assert.equal(evalRemoved.roundScore, 33, "Score must reflect only currently retained pills");
+
+// Scenario C3: An emptied fix (user removes all pills during fix)
+const evalEmptied = evaluateRoundPlacements(testRound, initialWithTwo, [], true);
+assert.equal(evalEmptied.correctInitial, 0, "Emptied fix must have 0 correct pills");
+assert.equal(evalEmptied.correctedInFix, 0);
+assert.equal(evalEmptied.missingCount, 3, "All 3 targets missing in emptied fix");
+assert.equal(evalEmptied.roundScore, 0, "Emptied fix must score 0");
+
+// Scenario C4: Finish guard ensures finish path cannot run twice
+let finishCount = 0;
+const finishCallback = (score) => { finishCount++; };
+const guardedFinish = createFinishGuard(finishCallback);
+const res1 = guardedFinish(90);
+const res2 = guardedFinish(90);
+assert.equal(res1, true, "First finish call must succeed");
+assert.equal(res2, false, "Second finish call must be blocked");
+assert.equal(finishCount, 1, "Finish callback must run exactly once");
+
+// Scenario C5: Specific rule hint finder
+const ruleHint = findRuleHint(testRound, ["Monday:morning:red"], []);
+assert(ruleHint !== null, "Must find rule hint for missing red pill");
+assert.equal(ruleHint.pillColor, "red");
+assert(ruleHint.hintText.includes("red pill"), "Hint must mention red pill");
 
 // Scenario D: The Exception Rule verification
 const exceptionScenario = {

@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import GameShell from "../_shared/GameShell";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 import ReadAloud from "@/components/interaction/ReadAloud";
 import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
+import { readSkill } from "@/lib/interaction/events";
+import { starsFor } from "@/lib/progress";
 import {
   KNOB_SCENARIOS,
   PILL_COLORS,
@@ -25,21 +27,29 @@ import {
   evaluateRoundPlacements,
   calculatePillBoxSessionScore,
   getScenariosForKnob,
+  findRuleHint,
 } from "./logic";
-import { CheckCircle2, AlertTriangle, ArrowRight, RotateCcw, Check } from "lucide-react";
+import { CheckCircle2, Info, ArrowRight, RotateCcw, Check } from "lucide-react";
 
 interface PillBoxPlannerProps {
   level?: 1 | 2 | 3;
   onFinish?: (score: number) => void;
-  knob?: number;
+  date?: string;
 }
 
 export default function PillBoxPlanner({
   level = 2,
   onFinish,
-  knob = 2,
+  date,
 }: PillBoxPlannerProps) {
   const { t } = useTranslate();
+
+  // Read the adaptive knob ONCE with clamp(1..4, default 2)
+  const [knob] = useState(() => {
+    const raw = readSkill("pill-box-planner").knob;
+    return Math.max(1, Math.min(4, Math.round(typeof raw === "number" && !Number.isNaN(raw) ? raw : 2)));
+  });
+
   const scenarios = useMemo(() => getScenariosForKnob(knob, KNOB_SCENARIOS), [knob]);
 
   const [currentRoundIdx, setCurrentRoundIdx] = useState(0);
@@ -57,6 +67,9 @@ export default function PillBoxPlanner({
   const [completedRounds, setCompletedRounds] = useState<RoundResult[]>([]);
   const [sessionFinished, setSessionFinished] = useState(false);
   const [finalScore, setFinalScore] = useState<number | null>(null);
+
+  // Ref ensuring handleFinish runs exactly once per session
+  const finishedRef = useRef(false);
 
   const scenario: PlannerScenario = scenarios[currentRoundIdx] ?? scenarios[0];
 
@@ -121,7 +134,7 @@ export default function PillBoxPlanner({
 
   // Check button handler
   const handleCheck = () => {
-    const result = evaluateRoundPlacements(scenario, currentPlacements);
+    const result = evaluateRoundPlacements(scenario, currentPlacements, [], false);
     setInitialPlacementsSnapshot([...currentPlacements]);
     setRoundResult(result);
 
@@ -145,7 +158,8 @@ export default function PillBoxPlanner({
     const finalResult = evaluateRoundPlacements(
       scenario,
       initialPlacementsSnapshot,
-      currentPlacements
+      currentPlacements,
+      true
     );
     setRoundResult(finalResult);
     setPhase("completed");
@@ -160,8 +174,8 @@ export default function PillBoxPlanner({
     setPhase("idle");
   };
 
-  // Proceed to next round or finish
-  const handleNextRound = (handleFinishCallback: (score: number) => void) => {
+  // Proceed to next round or show summary screen
+  const handleNextRound = () => {
     if (!roundResult) return;
 
     const updatedCompleted = [...completedRounds, roundResult];
@@ -176,12 +190,18 @@ export default function PillBoxPlanner({
       setPhase("idle");
       setActiveDayTab("Monday");
     } else {
-      // Finished all 3 rounds
+      // Finished all 3 rounds: display summary screen only
       const overallScore = calculatePillBoxSessionScore(updatedCompleted);
       setFinalScore(overallScore);
       setSessionFinished(true);
-      handleFinishCallback(overallScore);
     }
+  };
+
+  // Safe finish caller: Finish button on summary screen is the only caller
+  const handleSafeFinish = (handleFinishCallback: (score: number) => void) => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    handleFinishCallback(finalScore ?? 100);
   };
 
   // Helper: check if compartment is flagged as needing attention in review
@@ -193,6 +213,43 @@ export default function PillBoxPlanner({
     return missing || extra;
   };
 
+  // Compute gentle rule-specific hint if checked and not perfect
+  const activeRuleHint = useMemo(() => {
+    if (!roundResult || roundResult.isPerfect) return null;
+    return findRuleHint(scenario, roundResult.missingKeys, roundResult.extraKeys);
+  }, [roundResult, scenario]);
+
+  const hintSpeech = useMemo(() => {
+    if (!activeRuleHint) {
+      return t("Check complete. A few compartments need attention.");
+    }
+    const colorLabel = t(PILL_COLORS[activeRuleHint.pillColor].name);
+    const instructionLabel = t(activeRuleHint.hintDetail);
+    return t("Look again at the {color} pill: {instruction}", {
+      color: colorLabel,
+      instruction: instructionLabel,
+    });
+  }, [activeRuleHint, t]);
+
+  // Round completion stars and encouraging words (no raw numbers shown to patient)
+  const roundScoreVal = roundResult?.roundScore ?? 0;
+  const roundStars = starsFor(roundScoreVal);
+  const roundPraise =
+    roundStars === 3
+      ? "Well done!"
+      : roundStars === 2
+      ? "Nice work, you followed the rules."
+      : "Good effort!";
+
+  // Session completion stars and encouraging words
+  const sessionStars = starsFor(finalScore ?? 100);
+  const sessionPraise =
+    sessionStars === 3
+      ? "Well done!"
+      : sessionStars === 2
+      ? "Nice work, you followed the rules."
+      : "Good effort!";
+
   return (
     <GameShell
       gameId="pill-box-planner"
@@ -201,70 +258,75 @@ export default function PillBoxPlanner({
       level={level}
       skill="rule switching"
       onFinish={onFinish}
+      date={date}
     >
       {(handleFinish) => (
         <div className="w-full max-w-5xl mx-auto space-y-6 pb-8">
-          {/* Permanent Safety Banner - Rendered unconditionally and read aloud at start */}
-          <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/60 shadow-sm text-amber-900 dark:text-amber-200">
-            <div className="flex items-center gap-2.5">
-              <span className="text-xl" aria-hidden="true">🛡️</span>
-              <span className="font-semibold text-sm sm:text-base tracking-wide">
+          {/* Permanent Safety Banner - Always visible, read aloud only when read-aloud is on */}
+          <div className="flex items-center justify-between gap-3 px-5 py-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/60 shadow-sm text-amber-900 dark:text-amber-200">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl" aria-hidden="true">🛡️</span>
+              <span className="font-semibold text-base sm:text-lg tracking-wide">
                 {t("Practice only. This is not medical advice.")}
               </span>
             </div>
-            <ReadAloud text="Practice only. This is not medical advice." autoRead forceAutoRead />
+            <ReadAloud text={t("Practice only. This is not medical advice.")} autoRead />
           </div>
 
           {!sessionFinished ? (
             <>
               {/* Progress and Round Bar */}
-              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-base font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     {t("Round")}
                   </span>
-                  <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 font-bold text-sm">
+                  <span className="px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 font-bold text-base">
                     {currentRoundIdx + 1} / {scenarios.length}
                   </span>
                 </div>
-                <div className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                <div className="text-base font-semibold text-slate-700 dark:text-slate-300">
                   {t(scenario.title)}
                 </div>
               </div>
 
               {/* Doctor's Note Card */}
-              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border-2 border-blue-200 dark:border-blue-900/50 shadow-sm space-y-4">
+              <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border-2 border-blue-200 dark:border-blue-900/50 shadow-sm space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     <span className="text-2xl" aria-hidden="true">📋</span>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                       {t("Doctor's Note")}
                     </h3>
                   </div>
                   <ReadAloud
-                    text={scenario.rules.map((r) => r.instruction).join(" ") + (scenario.exceptionNote ? ` ${scenario.exceptionNote}` : "")}
+                    text={
+                      scenario.rules.map((r) => t(r.instruction)).join(" ") +
+                      (scenario.exceptionNote ? ` ${t(scenario.exceptionNote)}` : "")
+                    }
+                    autoRead={false}
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {scenario.rules.map((rule, idx) => {
                     const colorMeta = PILL_COLORS[rule.pillColor];
                     return (
                       <div
                         key={idx}
-                        className={`flex items-start gap-3 p-3.5 rounded-xl border ${colorMeta.bgClass} ${colorMeta.borderClass}`}
+                        className={`flex items-start gap-3.5 p-4 rounded-2xl border-2 ${colorMeta.bgClass} ${colorMeta.borderClass}`}
                       >
                         <div
-                          className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 border border-white shadow-sm font-bold text-xs"
+                          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 border border-white shadow-sm font-bold text-base"
                           style={{ backgroundColor: colorMeta.hex, color: "#fff" }}
                         >
                           {colorMeta.name[0]}
                         </div>
-                        <div className="space-y-0.5">
-                          <div className={`font-bold text-sm ${colorMeta.textClass}`}>
+                        <div className="space-y-1">
+                          <div className={`font-bold text-lg ${colorMeta.textClass}`}>
                             {t(colorMeta.name)} {t("Pill")}
                           </div>
-                          <div className="text-sm text-slate-700 dark:text-slate-200">
+                          <div className="text-lg font-medium text-slate-800 dark:text-slate-100">
                             {t(rule.instruction)}
                           </div>
                         </div>
@@ -273,40 +335,25 @@ export default function PillBoxPlanner({
                   })}
                 </div>
 
-                {/* Exception Callout if present */}
+                {/* Exception Callout: calm sky/blue style with Info icon */}
                 {scenario.exceptionNote && (
-                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-sm font-semibold">
-                    <span className="text-lg" aria-hidden="true">⚠️</span>
-                    <span>{t(scenario.exceptionNote)}</span>
+                  <div className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border-2 border-sky-200 dark:border-sky-800/60 text-sky-900 dark:text-sky-200 text-base sm:text-lg font-medium">
+                    <div className="flex items-center gap-3">
+                      <Info className="w-6 h-6 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden="true" />
+                      <span>{t(scenario.exceptionNote)}</span>
+                    </div>
+                    <ReadAloud text={t(scenario.exceptionNote)} autoRead={false} />
                   </div>
                 )}
               </div>
 
-              {/* Knob 1 Row Hints */}
-              {scenario.rowHints && (
-                <div className="p-4 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/40 space-y-1.5">
-                  <div className="text-xs font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300">
-                    {t("Row Hints")}
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-medium text-slate-700 dark:text-slate-300">
-                    {DAY_TIMES.map((time) => (
-                      <div key={time} className="flex items-center gap-1.5">
-                        <span>{TIME_SLOT_META[time].icon}</span>
-                        <span className="font-semibold">{t(TIME_SLOT_META[time].name)}:</span>
-                        <span>{t(scenario.rowHints?.[time] ?? "")}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Pill Colour Picker Palette */}
-              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <span className="text-base font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                     {t("Select Colour to Place")}
                   </span>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                  <span className="text-base text-slate-500 dark:text-slate-400">
                     {t("Tap a compartment to place or remove")}
                   </span>
                 </div>
@@ -319,14 +366,14 @@ export default function PillBoxPlanner({
                         key={color.id}
                         type="button"
                         onClick={() => setSelectedColor(color.id)}
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all font-bold text-sm ${
+                        className={`min-h-[56px] flex items-center gap-3 px-5 py-3 rounded-2xl border-2 transition-all font-bold text-base ${
                           isSelected
                             ? `${color.borderClass} ${color.bgClass} shadow-md scale-105 ring-2 ring-blue-400/30`
                             : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100"
                         }`}
                       >
                         <span
-                          className="w-5 h-5 rounded-full inline-block border border-white shadow-xs"
+                          className="w-6 h-6 rounded-full inline-block border border-white shadow-xs"
                           style={{ backgroundColor: color.hex }}
                         />
                         <span>{t(color.name)}</span>
@@ -337,18 +384,18 @@ export default function PillBoxPlanner({
               </div>
 
               {/* Weekly Pill Box */}
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  <h4 className="text-base font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                     {t("Weekly Pill Box (7 Days)")}
                   </h4>
                   {phase === "idle" && currentPlacements.length > 0 && (
                     <button
                       type="button"
                       onClick={handleResetRound}
-                      className="text-xs font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 flex items-center gap-1"
+                      className="min-h-[56px] px-4 py-2.5 text-base font-medium text-slate-600 hover:text-slate-800 dark:text-slate-300 flex items-center gap-2 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     >
-                      <RotateCcw className="w-3.5 h-3.5" />
+                      <RotateCcw className="w-4 h-4" />
                       {t("Clear All")}
                     </button>
                   )}
@@ -359,13 +406,13 @@ export default function PillBoxPlanner({
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700">
-                        <th className="p-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-32">
+                        <th className="p-3.5 text-left text-base font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 w-48">
                           {t("Time")}
                         </th>
                         {WEEK_DAYS.map((day) => (
                           <th
                             key={day}
-                            className="p-3 text-center text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 border-l border-slate-200 dark:border-slate-700"
+                            className="p-3.5 text-center text-base font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 border-l border-slate-200 dark:border-slate-700"
                           >
                             {t(day.slice(0, 3))}
                           </th>
@@ -375,17 +422,23 @@ export default function PillBoxPlanner({
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                       {DAY_TIMES.map((time) => {
                         const timeMeta = TIME_SLOT_META[time];
+                        const rowHint = scenario.rowHints?.[time];
                         return (
                           <tr key={time}>
-                            <td className="p-3 bg-slate-50/70 dark:bg-slate-800/40">
-                              <div className="flex flex-col">
-                                <div className="flex items-center gap-1.5 font-bold text-sm text-slate-800 dark:text-slate-200">
+                            <td className="p-3.5 bg-slate-50/70 dark:bg-slate-800/40 w-48 align-top">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2 font-bold text-base text-slate-800 dark:text-slate-200">
                                   <span>{timeMeta.icon}</span>
                                   <span>{t(timeMeta.name)}</span>
                                 </div>
-                                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
+                                <span className="text-base text-slate-500 dark:text-slate-400 font-normal">
                                   {t(timeMeta.subLabel)}
                                 </span>
+                                {rowHint && (
+                                  <span className="text-base font-semibold text-blue-800 dark:text-blue-300 bg-blue-50/90 dark:bg-blue-950/60 px-2.5 py-1 rounded-xl border border-blue-200 dark:border-blue-800/60 mt-1">
+                                    {t(rowHint)}
+                                  </span>
+                                )}
                               </div>
                             </td>
                             {WEEK_DAYS.map((day) => {
@@ -395,21 +448,21 @@ export default function PillBoxPlanner({
                                 <td
                                   key={day}
                                   onClick={() => handleTogglePill(day, time)}
-                                  className={`p-2.5 text-center border-l border-slate-200 dark:border-slate-700 cursor-pointer transition-colors min-h-[70px] ${
+                                  className={`p-3 text-center border-l border-slate-200 dark:border-slate-700 cursor-pointer transition-colors min-h-[72px] h-[72px] ${
                                     flagged
                                       ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/60 dark:bg-slate-800/40"
                                       : "hover:bg-blue-50/50 dark:hover:bg-slate-800/50"
                                   }`}
                                 >
                                   {flagged && (
-                                    <div className="inline-flex items-center gap-1 px-1.5 py-0.5 mb-1 rounded text-[10px] font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600">
+                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 mb-1 rounded-xl text-base font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600">
                                       <span aria-hidden="true">🔍</span>
                                       <span>{t("Check this")}</span>
                                     </div>
                                   )}
-                                  <div className="flex flex-wrap items-center justify-center gap-1.5 min-h-[46px]">
+                                  <div className="flex flex-wrap items-center justify-center gap-2 min-h-[52px]">
                                     {pills.length === 0 ? (
-                                      <span className="text-slate-300 dark:text-slate-600 text-sm font-semibold select-none">
+                                      <span className="text-slate-300 dark:text-slate-600 text-lg font-bold select-none">
                                         +
                                       </span>
                                     ) : (
@@ -422,7 +475,7 @@ export default function PillBoxPlanner({
                                               e.stopPropagation();
                                               handleTogglePill(day, time, pillId);
                                             }}
-                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-white/60 shadow-xs text-xs font-bold text-white transition-transform hover:scale-105"
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/60 shadow-xs text-base font-bold text-white transition-transform hover:scale-105"
                                             style={{ backgroundColor: color.hex }}
                                           >
                                             <span>{t(color.name)}</span>
@@ -443,8 +496,8 @@ export default function PillBoxPlanner({
 
                 {/* Mobile Tabbed Layout: Day tabs + 3 vertical time slots */}
                 <div className="block md:hidden space-y-4">
-                  {/* Day Tabs */}
-                  <div className="flex overflow-x-auto gap-1.5 pb-1">
+                  {/* Day Tabs - at least 56px tall */}
+                  <div className="flex overflow-x-auto gap-2 pb-2">
                     {WEEK_DAYS.map((day) => {
                       const isActive = activeDayTab === day;
                       const dayPillCount = currentPlacements.filter((p) => p.day === day).length;
@@ -453,15 +506,15 @@ export default function PillBoxPlanner({
                           key={day}
                           type="button"
                           onClick={() => setActiveDayTab(day)}
-                          className={`px-3 py-2 rounded-xl font-bold text-xs whitespace-nowrap transition-all border ${
+                          className={`min-h-[56px] px-4 py-3 rounded-2xl font-bold text-base whitespace-nowrap transition-all border-2 flex items-center gap-2 ${
                             isActive
                               ? "bg-blue-600 text-white border-blue-600 shadow-sm"
                               : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
                           }`}
                         >
-                          {t(day.slice(0, 3))}
+                          <span>{t(day.slice(0, 3))}</span>
                           {dayPillCount > 0 && (
-                            <span className="ms-1 px-1.5 py-0.2 rounded-full bg-white/20 text-[10px]">
+                            <span className="ms-1 px-2.5 py-0.5 rounded-full bg-white/25 text-base font-bold">
                               {dayPillCount}
                             </span>
                           )}
@@ -470,46 +523,54 @@ export default function PillBoxPlanner({
                     })}
                   </div>
 
-                  {/* Compartments for Active Day */}
-                  <div className="space-y-3">
+                  {/* Compartments for Active Day - at least 72px tall */}
+                  <div className="space-y-4">
                     {DAY_TIMES.map((time) => {
                       const timeMeta = TIME_SLOT_META[time];
                       const pills = getPillsInSlot(activeDayTab, time);
                       const flagged = isCompartmentFlagged(activeDayTab, time);
+                      const rowHint = scenario.rowHints?.[time];
                       return (
                         <div
                           key={time}
                           onClick={() => handleTogglePill(activeDayTab, time)}
-                          className={`p-4 rounded-2xl border-2 transition-all cursor-pointer ${
+                          className={`min-h-[72px] p-5 rounded-2xl border-2 transition-all cursor-pointer space-y-3 ${
                             flagged
                               ? "border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/60 dark:bg-slate-800/40"
                               : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
                           }`}
                         >
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2 font-bold text-sm text-slate-800 dark:text-slate-200">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 font-bold text-base text-slate-800 dark:text-slate-200">
                               <span>{timeMeta.icon}</span>
                               <span>{t(timeMeta.name)}</span>
-                              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                              <span className="text-base font-normal text-slate-500 dark:text-slate-400">
                                 ({t(timeMeta.subLabel)})
                               </span>
                             </div>
                             <div className="flex items-center gap-2">
                               {flagged && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600">
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-base font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600">
                                   <span aria-hidden="true">🔍</span>
                                   <span>{t("Check this")}</span>
                                 </span>
                               )}
-                              <span className="text-xs text-slate-500 dark:text-slate-400">
-                                {t("Tap to place/remove")}
+                              <span className="text-base text-slate-500 dark:text-slate-400">
+                                {t("Tap a compartment to place or remove")}
                               </span>
                             </div>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-2 min-h-[38px] p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                          {/* Mobile row hint shown inside compartment card */}
+                          {rowHint && (
+                            <div className="px-3.5 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 text-blue-800 dark:text-blue-300 text-base font-medium">
+                              💡 {t(rowHint)}
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap items-center gap-2.5 min-h-[52px] p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50">
                             {pills.length === 0 ? (
-                              <span className="text-xs text-slate-400 dark:text-slate-500">
+                              <span className="text-base text-slate-400 dark:text-slate-500">
                                 {t("Empty compartment")}
                               </span>
                             ) : (
@@ -522,7 +583,7 @@ export default function PillBoxPlanner({
                                       e.stopPropagation();
                                       handleTogglePill(activeDayTab, time, pillId);
                                     }}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/60 shadow-xs text-xs font-bold text-white"
+                                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/60 shadow-xs text-base font-bold text-white"
                                     style={{ backgroundColor: color.hex }}
                                   >
                                     <span>{t(color.name)}</span>
@@ -539,46 +600,49 @@ export default function PillBoxPlanner({
                 </div>
               </div>
 
-              {/* Gentle Hint Banner during Review */}
-              {(phase === "checked" || phase === "fixing") && roundResult && !roundResult.isPerfect && (
-                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 space-y-1">
-                  <div className="flex items-center gap-2 font-bold text-sm">
-                    <AlertTriangle className="w-5 h-5 text-amber-600" />
-                    <span>{t("Check complete. A few compartments need attention.")}</span>
+              {/* Gentle Rule-Specific Hint Banner during Review */}
+              {(phase === "checked" || phase === "fixing") && roundResult && !roundResult.isPerfect && activeRuleHint && (
+                <div className="p-5 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border-2 border-sky-200 dark:border-sky-800/60 text-sky-900 dark:text-sky-200 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 font-bold text-base sm:text-lg">
+                      <Info className="w-6 h-6 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden="true" />
+                      <span>{hintSpeech}</span>
+                    </div>
+                    <ReadAloud kind="feedback" text={hintSpeech} autoRead />
                   </div>
-                  <p className="text-xs sm:text-sm text-amber-800 dark:text-amber-300">
+                  <p className="text-base text-slate-700 dark:text-slate-300">
                     {t("Compartments with a dashed outline and 'Check this' label can be adjusted. You have one chance to make a fix (corrections count half).")}
                   </p>
                 </div>
               )}
 
-              {/* Action Buttons Bar */}
-              <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
+              {/* Action Buttons Bar - at least 56px tall */}
+              <div className="flex flex-wrap items-center justify-end gap-4 pt-3">
                 {phase === "idle" && (
                   <button
                     type="button"
                     onClick={handleCheck}
                     disabled={currentPlacements.length === 0}
-                    className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold text-sm shadow-md transition-all disabled:opacity-50"
+                    className="min-h-[56px] flex items-center gap-2.5 px-7 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold text-base shadow-md transition-all disabled:opacity-50"
                   >
-                    <Check className="w-4 h-4" />
+                    <Check className="w-5 h-5" />
                     {t("Check Placements")}
                   </button>
                 )}
 
                 {phase === "checked" && (
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-4">
                     <button
                       type="button"
                       onClick={handleStartFix}
-                      className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-md transition-all"
+                      className="min-h-[56px] flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-base shadow-md transition-all"
                     >
                       {t("Try a Fix")}
                     </button>
                     <button
                       type="button"
                       onClick={handleConfirmFix}
-                      className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-slate-700 hover:bg-slate-800 text-white font-bold text-sm shadow-md transition-all"
+                      className="min-h-[56px] flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-slate-700 hover:bg-slate-800 text-white font-bold text-base shadow-md transition-all"
                     >
                       {t("Finish Round")}
                     </button>
@@ -589,63 +653,77 @@ export default function PillBoxPlanner({
                   <button
                     type="button"
                     onClick={handleConfirmFix}
-                    className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all"
+                    className="min-h-[56px] flex items-center gap-2.5 px-7 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-md transition-all"
                   >
-                    <CheckCircle2 className="w-4 h-4" />
+                    <CheckCircle2 className="w-5 h-5" />
                     {t("Confirm Fix")}
                   </button>
                 )}
 
                 {phase === "completed" && (
-                  <div className="flex items-center gap-4">
-                    <div className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                      {t("Round Score")}: <span className="text-blue-600 dark:text-blue-400 font-extrabold">{roundResult?.roundScore} / 100</span>
+                  <div className="flex flex-wrap items-center gap-5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-1 text-2xl" aria-label={`${roundStars} stars`}>
+                        {Array.from({ length: 3 }).map((_, i) => (
+                          <span key={i} className={i < roundStars ? "opacity-100" : "opacity-30"}>
+                            ⭐
+                          </span>
+                        ))}
+                      </div>
+                      <span className="text-base font-bold text-slate-800 dark:text-slate-200">
+                        {t(roundPraise)}
+                      </span>
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleNextRound(handleFinish)}
-                      className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md transition-all"
+                      onClick={handleNextRound}
+                      className="min-h-[56px] flex items-center gap-2.5 px-7 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-base shadow-md transition-all"
                     >
                       <span>{currentRoundIdx + 1 < scenarios.length ? t("Next Round") : t("View Summary")}</span>
-                      <ArrowRight className="w-4 h-4" />
+                      <ArrowRight className="w-5 h-5" />
                     </button>
                   </div>
                 )}
               </div>
             </>
           ) : (
-            /* Session Completed Screen */
-            <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border-2 border-emerald-200 dark:border-emerald-800 text-center space-y-6 shadow-md">
-              <div className="w-16 h-16 mx-auto rounded-full bg-emerald-100 dark:bg-emerald-950/60 flex items-center justify-center text-3xl">
+            /* Session Completed Screen - no raw numbers shown to patient */
+            <div className="p-8 sm:p-10 rounded-3xl bg-white dark:bg-slate-900 border-2 border-emerald-200 dark:border-emerald-800 text-center space-y-6 shadow-md">
+              <div className="w-20 h-20 mx-auto rounded-full bg-emerald-100 dark:bg-emerald-950/60 flex items-center justify-center text-4xl">
                 ✨
               </div>
 
               <div className="space-y-2">
-                <h3 className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+                <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-slate-100">
                   {t("Session Complete!")}
                 </h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400 max-w-md mx-auto">
+                <p className="text-base text-slate-600 dark:text-slate-400 max-w-md mx-auto">
                   {t("Great practice following multi-step rules and schedule planning.")}
                 </p>
               </div>
 
-              <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/60 max-w-sm mx-auto border border-slate-200 dark:border-slate-700 space-y-1">
-                <div className="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
-                  {t("Overall Score")}
+              <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/60 max-w-sm mx-auto border border-slate-200 dark:border-slate-700 space-y-3">
+                <div className="flex justify-center gap-2 text-4xl" aria-label={`${sessionStars} stars`}>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <span key={i} className={i < sessionStars ? "opacity-100" : "opacity-25"}>
+                      ⭐
+                    </span>
+                  ))}
                 </div>
-                <div className="text-5xl font-black text-emerald-600 dark:text-emerald-400">
-                  {finalScore ?? 100}
+                <div className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                  {t(sessionPraise)}
                 </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400 pt-1">
-                  {t("Out of 100 points")}
-                </div>
+                <p className="text-base text-slate-600 dark:text-slate-400">
+                  {t("Nice work, you followed the rules.")}
+                </p>
               </div>
 
               <div className="flex justify-center pt-2">
                 <button
                   type="button"
-                  onClick={() => handleFinish(finalScore ?? 100)}
-                  className="px-8 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg transition-all"
+                  onClick={() => handleSafeFinish(handleFinish)}
+                  disabled={finishedRef.current}
+                  className="min-h-[56px] px-10 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-base shadow-lg transition-all"
                 >
                   {t("Finish")}
                 </button>

@@ -202,7 +202,12 @@ required.push(
   'Raat · Before sleep',
   'Check this',
   'Yellow pill: Monday to Friday morning, but skip Wednesday.',
-  "Compartments with a dashed outline and 'Check this' label can be adjusted. You have one chance to make a fix (corrections count half)."
+  "Compartments with a dashed outline and 'Check this' label can be adjusted. You have one chance to make a fix (corrections count half).",
+  'Nice work, you followed the rules.',
+  'Good effort!',
+  'Look again at the {color} pill: {instruction}',
+  'View Summary',
+  'Next Round'
 );
 for (const phrase of required) {
   assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing UI phrase: ${phrase}`);

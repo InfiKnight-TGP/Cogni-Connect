@@ -83,12 +83,17 @@ export function getScenariosForKnob(
 
 /**
  * Evaluates round placements and calculates round score (0..100).
- * Handles the one fix per round rule where corrected compartments count half.
+ * Handles the one fix per round rule where:
+ * - When fixUsed is false: initial placements are evaluated directly.
+ * - When fixUsed is true: only pills still correct after the fix count full (1.0x),
+ *   pills newly corrected in the fix count half (0.5x),
+ *   and pills removed during the fix do NOT count as correct.
  */
 export function evaluateRoundPlacements(
   scenario: PlannerScenario,
   initialPlacements: PlacedPill[],
-  fixedPlacements: PlacedPill[] = []
+  fixedPlacements: PlacedPill[] = [],
+  fixUsed: boolean = false
 ): RoundResult {
   const targetKeys = expandScenario(scenario);
   const totalRequired = targetKeys.size;
@@ -97,64 +102,76 @@ export function evaluateRoundPlacements(
     initialPlacements.map((p) => pillKey(p.day, p.time, p.pill))
   );
 
-  // Initial assessment
-  let correctInitial = 0;
-  const missingInitialKeys: string[] = [];
-  const extraInitialKeys: string[] = [];
+  if (!fixUsed) {
+    let correctInitial = 0;
+    const missingKeys: string[] = [];
+    const extraKeys: string[] = [];
 
-  targetKeys.forEach((key) => {
-    if (initialPlacedKeys.has(key)) {
-      correctInitial++;
-    } else {
-      missingInitialKeys.push(key);
-    }
-  });
-
-  initialPlacedKeys.forEach((key) => {
-    if (!targetKeys.has(key)) {
-      extraInitialKeys.push(key);
-    }
-  });
-
-  // Evaluate fix if provided
-  const hasFix = fixedPlacements.length > 0;
-  let correctedInFix = 0;
-  let finalMissingKeys = missingInitialKeys;
-  let finalExtraKeys = extraInitialKeys;
-
-  if (hasFix) {
-    const fixedKeys = new Set(
-      fixedPlacements.map((p) => pillKey(p.day, p.time, p.pill))
-    );
-
-    // Track which previously missing/wrong compartments are now correct
-    missingInitialKeys.forEach((key) => {
-      if (fixedKeys.has(key)) {
-        correctedInFix++;
-      }
-    });
-
-    finalMissingKeys = [];
     targetKeys.forEach((key) => {
-      if (!fixedKeys.has(key)) {
-        finalMissingKeys.push(key);
+      if (initialPlacedKeys.has(key)) {
+        correctInitial++;
+      } else {
+        missingKeys.push(key);
       }
     });
 
-    finalExtraKeys = [];
-    fixedKeys.forEach((key) => {
+    initialPlacedKeys.forEach((key) => {
       if (!targetKeys.has(key)) {
-        finalExtraKeys.push(key);
+        extraKeys.push(key);
       }
     });
+
+    const extraPenalty = 0.05 * extraKeys.length;
+    let ratio = totalRequired > 0 ? correctInitial / totalRequired - extraPenalty : 1;
+    ratio = Math.max(0, Math.min(1, ratio));
+    const roundScore = Math.round(ratio * 100);
+
+    return {
+      roundId: scenario.id,
+      roundScore,
+      totalRequired,
+      correctInitial,
+      correctedInFix: 0,
+      missingCount: missingKeys.length,
+      extraCount: extraKeys.length,
+      missingKeys,
+      extraKeys,
+      isPerfect: missingKeys.length === 0 && extraKeys.length === 0,
+    };
   }
 
-  // Scoring calculation:
-  // Initial correct counts 1.0 each.
-  // Corrected after fix counts 0.5 each.
-  // Extra pill penalty: 0.05 per extra pill.
-  // Ratio floor at 0.
-  const effectiveCorrect = correctInitial + 0.5 * correctedInFix;
+  // When fix is used, final placements are taken strictly from fixedPlacements
+  const fixedKeys = new Set(
+    fixedPlacements.map((p) => pillKey(p.day, p.time, p.pill))
+  );
+
+  let retainedInitial = 0;
+  let correctedInFix = 0;
+  const finalMissingKeys: string[] = [];
+  const finalExtraKeys: string[] = [];
+
+  targetKeys.forEach((key) => {
+    if (fixedKeys.has(key)) {
+      if (initialPlacedKeys.has(key)) {
+        // Correct initially AND retained after the fix -> counts 1.0
+        retainedInitial++;
+      } else {
+        // Corrected in fix -> counts 0.5
+        correctedInFix++;
+      }
+    } else {
+      // Missing in final state (even if placed initially, user removed it)
+      finalMissingKeys.push(key);
+    }
+  });
+
+  fixedKeys.forEach((key) => {
+    if (!targetKeys.has(key)) {
+      finalExtraKeys.push(key);
+    }
+  });
+
+  const effectiveCorrect = retainedInitial + 0.5 * correctedInFix;
   const extraPenalty = 0.05 * finalExtraKeys.length;
 
   let ratio = totalRequired > 0 ? effectiveCorrect / totalRequired - extraPenalty : 1;
@@ -165,13 +182,74 @@ export function evaluateRoundPlacements(
     roundId: scenario.id,
     roundScore,
     totalRequired,
-    correctInitial,
+    correctInitial: retainedInitial,
     correctedInFix,
     missingCount: finalMissingKeys.length,
     extraCount: finalExtraKeys.length,
     missingKeys: finalMissingKeys,
     extraKeys: finalExtraKeys,
     isPerfect: finalMissingKeys.length === 0 && finalExtraKeys.length === 0,
+  };
+}
+
+export interface RuleHint {
+  pillColor: PillColorId;
+  ruleInstruction: string;
+  hintDetail: string;
+  hintText: string;
+}
+
+/**
+ * Finds the first rule in the scenario that has a missing or extra placement.
+ * Returns a gentle, rule-specific hint using the rule's instruction text.
+ */
+export function findRuleHint(
+  scenario: PlannerScenario,
+  missingKeys: string[],
+  extraKeys: string[]
+): RuleHint | null {
+  for (const rule of scenario.rules) {
+    const color = rule.pillColor;
+    const hasMissing = missingKeys.some((k) => k.endsWith(`:${color}`));
+    const hasExtra = extraKeys.some((k) => k.endsWith(`:${color}`));
+    if (hasMissing || hasExtra) {
+      const rawInst = rule.instruction || `${color} pill: check schedule`;
+      const colonIdx = rawInst.indexOf(":");
+      const detail =
+        colonIdx !== -1 ? rawInst.slice(colonIdx + 1).trim() : rawInst;
+      const cleanDetail = detail.endsWith(".") ? detail.slice(0, -1) : detail;
+      return {
+        pillColor: color,
+        ruleInstruction: rawInst,
+        hintDetail: cleanDetail,
+        hintText: `Look again at the ${color} pill: ${cleanDetail}`,
+      };
+    }
+  }
+
+  if (extraKeys.length > 0) {
+    const firstExtraColor = extraKeys[0].split(":")[2] as PillColorId;
+    return {
+      pillColor: firstExtraColor,
+      ruleInstruction: `No ${firstExtraColor} pills are needed in this round.`,
+      hintDetail: `no ${firstExtraColor} pills needed`,
+      hintText: `Look again at the ${firstExtraColor} pill: no ${firstExtraColor} pills are needed`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Creates a guarded finish handler that guarantees the callback can only run once.
+ */
+export function createFinishGuard<T extends (...args: any[]) => any>(fn: T) {
+  let called = false;
+  return (...args: Parameters<T>): boolean => {
+    if (called) return false;
+    called = true;
+    fn(...args);
+    return true;
   };
 }
 
@@ -183,3 +261,4 @@ export function calculatePillBoxSessionScore(rounds: RoundResult[]): number {
   const total = rounds.reduce((sum, r) => sum + r.roundScore, 0);
   return Math.max(0, Math.min(100, Math.round(total / rounds.length)));
 }
+

@@ -858,7 +858,12 @@
     "Raat · Before sleep": "ৰাতি · শুবলৈ যোৱাৰ আগত",
     "Check this": "ইয়াক চাওক",
     "Yellow pill: Monday to Friday morning, but skip Wednesday.": "হালধীয়া বড়ি: সোমবাৰৰ পৰা শুকুৰবাৰলৈকে পুৱা, কিন্তু বুধবাৰে নহয়।",
-    "Compartments with a dashed outline and 'Check this' label can be adjusted. You have one chance to make a fix (corrections count half).": "ডেশ্ব থকা সীমা আৰু 'ইয়াক চাওক' লেবেল থকা খোপাবোৰ ঠিক কৰিব পাৰি। আপুনি এবাৰ সংশোধনৰ সুযোগ পাব (সংশোধনৰ আধা নম্বৰ পোৱা যাব)।"
+    "Compartments with a dashed outline and 'Check this' label can be adjusted. You have one chance to make a fix (corrections count half).": "ডেশ্ব থকা সীমা আৰু 'ইয়াক চাওক' লেবেল থকা খোপাবোৰ ঠিক কৰিব পাৰি। আপুনি এবাৰ সংশোধনৰ সুযোগ পাব (সংশোধনৰ আধা নম্বৰ পোৱা যাব)।",
+    "Nice work, you followed the rules.": "সুন্দৰ কাম, আপুনি নিয়মবোৰ পালন কৰিলে।",
+    "Good effort!": "ভাল প্ৰচেষ্টা!",
+    "Look again at the {color} pill: {instruction}": "{color} বড়িটো আকৌ এবাৰ চাওক: {instruction}",
+    "View Summary": "সাৰাংশ চাওক",
+    "Next Round": "পৰৱৰ্তী ৰাউণ্ড"
   },
   "reviewStatus": "Machine translation — needs native review",
   "Mole Path": "ম'ল পথ (পথটো মনত ৰাখক)",

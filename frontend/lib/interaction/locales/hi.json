@@ -860,7 +860,12 @@
     "Raat · Before sleep": "रात · सोने से पहले",
     "Check this": "इसे देखें",
     "Yellow pill: Monday to Friday morning, but skip Wednesday.": "पीली गोली: सोमवार से शुक्रवार सुबह, लेकिन बुधवार छोड़कर।",
-    "Compartments with a dashed outline and 'Check this' label can be adjusted. You have one chance to make a fix (corrections count half).": "डैश वाली रेखा और 'इसे देखें' लेबल वाले खानों को सुधारा जा सकता है। आपको एक बार सुधारने का अवसर मिलेगा (सुधार का आधा अंक मिलेगा)।"
+    "Compartments with a dashed outline and 'Check this' label can be adjusted. You have one chance to make a fix (corrections count half).": "डैश वाली रेखा और 'इसे देखें' लेबल वाले खानों को सुधारा जा सकता है। आपको एक बार सुधारने का अवसर मिलेगा (सुधार का आधा अंक मिलेगा)।",
+    "Nice work, you followed the rules.": "बहुत बढ़िया, आपने नियमों का पालन किया।",
+    "Good effort!": "अच्छा प्रयास!",
+    "Look again at the {color} pill: {instruction}": "{color} गोली को फिर से देखें: {instruction}",
+    "View Summary": "सारांश देखें",
+    "Next Round": "अगला राउंड"
   },
   "reviewStatus": "Machine translation — needs native review",
   "Mole Path": "मोल पथ (रास्ता याद रखें)",
