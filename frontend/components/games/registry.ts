@@ -149,8 +149,8 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     component: PillBoxPlanner,
     comingSoon: false,
     emoji: "💊",
-    description: "Follow a weekly medication schedule with multiple rules.",
-    trains: "Following several rules at once (a weekly medication schedule)",
+    description: "Follow several rules at once (a weekly pill-box practice)",
+    trains: "Follow several rules at once (a weekly pill-box practice)",
   },
   {
     id: "whack-a-mole",

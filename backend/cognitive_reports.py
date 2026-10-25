@@ -176,7 +176,7 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "pill-box-planner": {
         "name": "Pill Box Planner",
-        "description": "Follow a weekly medication schedule with multiple rules.",
+        "description": "Follow several rules at once (a weekly pill-box practice)",
         "primary_domain": "Executive Function",
         "secondary_domains": [],
         "playable": True,

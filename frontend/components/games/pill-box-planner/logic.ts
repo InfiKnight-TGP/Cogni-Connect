@@ -1,206 +1,185 @@
 /**
  * Pill Box Planner - Scoring and Rule-Switching Logic
+ *
+ * Scoring rules:
+ * - 3 rounds per session.
+ * - Score per round: correct compartments over required, minus 0.05 per extra pill (floor at 0).
+ * - One fix per round allowed: compartments corrected after the fix count half (0.5x).
+ * - Session score = average of round scores x 100.
  */
 
-import type { Medication, PillSlot, RoundScenario } from "./data";
+import type {
+  PillColorId,
+  PlannerScenario,
+  WeekDay,
+  DayTime,
+  PlanRule,
+} from "./data";
 
-export interface SlotPlacements {
-  morning: string[]; // Medication IDs in slot
-  afternoon: string[];
-  evening: string[];
-  bedtime: string[];
+/**
+ * Expands a rule into the exact set of required compartment keys: "day:time:pillColor".
+ */
+export function expandRule(rule: PlanRule): Set<string> {
+  const result = new Set<string>();
+  rule.days.forEach((day) => {
+    if (rule.exceptionDay && day === rule.exceptionDay) {
+      return;
+    }
+    rule.times.forEach((time) => {
+      result.add(`${day}:${time}:${rule.pillColor}`);
+    });
+  });
+  return result;
 }
 
-export interface RoundEvaluation {
+/**
+ * Generates the full set of target compartment keys for a scenario.
+ */
+export function expandScenario(scenario: PlannerScenario): Set<string> {
+  const combined = new Set<string>();
+  scenario.rules.forEach((rule) => {
+    const expanded = expandRule(rule);
+    expanded.forEach((key) => combined.add(key));
+  });
+  return combined;
+}
+
+export interface PlacedPill {
+  day: WeekDay;
+  time: DayTime;
+  pill: PillColorId;
+}
+
+export interface RoundResult {
   roundId: string;
-  isRuleSwitch: boolean;
-  score: number; // 0..100
-  correctPlacements: number;
+  roundScore: number; // 0..100
   totalRequired: number;
-  omissions: number;
-  extraPlacements: number;
-  missingPairs: { slot: PillSlot; medId: string }[];
-  extraPairs: { slot: PillSlot; medId: string }[];
+  correctInitial: number;
+  correctedInFix: number;
+  missingCount: number;
+  extraCount: number;
+  missingKeys: string[]; // "day:time:pill"
+  extraKeys: string[]; // "day:time:pill"
   isPerfect: boolean;
 }
 
-export interface SessionSummary {
-  finalScore: number; // 0..100
-  roundsCompleted: number;
-  totalCorrect: number;
-  totalRequired: number;
-  switchErrors: number; // Errors on rule-switch rounds
-  roundDetails: RoundEvaluation[];
-}
-
-export const VALID_DOSE_UNITS: readonly string[] = [
-  "mg",
-  "ml",
-  "drops",
-  "tablet",
-  "tablets",
-  "capsule",
-  "capsules",
-  "IU",
-];
-
 /**
- * Validates that all medications in the library have valid realistic names,
- * positive doses, and certified clinical dose units.
+ * Key representation for a placed pill: "day:time:pill".
  */
-export function validateMedicationsLibrary(
-  meds: Record<string, Medication>,
-  allowedUnits: readonly string[] = VALID_DOSE_UNITS
-): {
-  valid: boolean;
-  errors: string[];
-} {
-  const errors: string[] = [];
-  const validUnits = new Set(allowedUnits);
-
-  Object.keys(meds).forEach((id) => {
-    const med = meds[id];
-    if (!med.name || med.name.trim().length === 0) {
-      errors.push(`Medication ${id} is missing a name`);
-    }
-    if (!med.genericName || med.genericName.trim().length === 0) {
-      errors.push(`Medication ${id} is missing a genericName`);
-    }
-    if (typeof med.doseAmount !== "number" || med.doseAmount <= 0) {
-      errors.push(`Medication ${id} has non-positive dose amount: ${med.doseAmount}`);
-    }
-    if (!validUnits.has(med.doseUnit)) {
-      errors.push(`Medication ${id} has invalid dose unit: ${med.doseUnit}`);
-    }
-    if (!med.doseDisplay || !med.doseDisplay.includes(med.doseUnit)) {
-      errors.push(`Medication ${id} doseDisplay "${med.doseDisplay}" does not mention doseUnit "${med.doseUnit}"`);
-    }
-    if (!med.iconEmoji || med.iconEmoji.trim().length === 0) {
-      errors.push(`Medication ${id} is missing an icon emoji`);
-    }
-  });
-
-  return { valid: errors.length === 0, errors };
+export function pillKey(day: WeekDay, time: DayTime, pill: PillColorId): string {
+  return `${day}:${time}:${pill}`;
 }
 
 /**
- * Returns scenarios for a given knob level (1 to 4) using provided scenario map.
+ * Returns scenarios for a given knob level (1 to 4).
  */
 export function getScenariosForKnob(
   knob: number,
-  scenariosMap: Record<number, RoundScenario[]>
-): RoundScenario[] {
+  scenariosMap: Record<number, PlannerScenario[]>
+): PlannerScenario[] {
   const clampedKnob = Math.max(1, Math.min(4, Math.round(knob)));
   return scenariosMap[clampedKnob] ?? scenariosMap[2] ?? [];
 }
 
 /**
- * Evaluates a user's pill placements for a given scenario.
+ * Evaluates round placements and calculates round score (0..100).
+ * Handles the one fix per round rule where corrected compartments count half.
  */
-export function evaluatePlacements(
-  scenario: RoundScenario,
-  placements: SlotPlacements
-): RoundEvaluation {
-  // Construct target set of (slot, medId)
-  const targetPairs = new Set<string>();
-  scenario.rules.forEach((rule) => {
-    rule.slots.forEach((slot) => {
-      targetPairs.add(`${slot}:${rule.medicationId}`);
-    });
-  });
+export function evaluateRoundPlacements(
+  scenario: PlannerScenario,
+  initialPlacements: PlacedPill[],
+  fixedPlacements: PlacedPill[] = []
+): RoundResult {
+  const targetKeys = expandScenario(scenario);
+  const totalRequired = targetKeys.size;
 
-  // Construct placed set of (slot, medId)
-  const placedPairs = new Set<string>();
-  scenario.activeSlots.forEach((slot) => {
-    const medsInSlot = placements[slot] || [];
-    medsInSlot.forEach((medId) => {
-      placedPairs.add(`${slot}:${medId}`);
-    });
-  });
+  const initialPlacedKeys = new Set(
+    initialPlacements.map((p) => pillKey(p.day, p.time, p.pill))
+  );
 
-  let correctPlacements = 0;
-  const missingPairs: { slot: PillSlot; medId: string }[] = [];
-  const extraPairs: { slot: PillSlot; medId: string }[] = [];
+  // Initial assessment
+  let correctInitial = 0;
+  const missingInitialKeys: string[] = [];
+  const extraInitialKeys: string[] = [];
 
-  targetPairs.forEach((pair) => {
-    if (placedPairs.has(pair)) {
-      correctPlacements++;
+  targetKeys.forEach((key) => {
+    if (initialPlacedKeys.has(key)) {
+      correctInitial++;
     } else {
-      const parts = pair.split(":");
-      missingPairs.push({ slot: parts[0] as PillSlot, medId: parts[1] });
+      missingInitialKeys.push(key);
     }
   });
 
-  placedPairs.forEach((pair) => {
-    if (!targetPairs.has(pair)) {
-      const parts = pair.split(":");
-      extraPairs.push({ slot: parts[0] as PillSlot, medId: parts[1] });
+  initialPlacedKeys.forEach((key) => {
+    if (!targetKeys.has(key)) {
+      extraInitialKeys.push(key);
     }
   });
 
-  const totalRequired = targetPairs.size;
-  const omissions = missingPairs.length;
-  const extraPlacements = extraPairs.length;
+  // Evaluate fix if provided
+  const hasFix = fixedPlacements.length > 0;
+  let correctedInFix = 0;
+  let finalMissingKeys = missingInitialKeys;
+  let finalExtraKeys = extraInitialKeys;
 
-  // Score calculation:
-  // 100 * max(0, correct - 0.5 * extra) / totalRequired
-  let rawRatio = totalRequired > 0 ? (correctPlacements - 0.5 * extraPlacements) / totalRequired : 1;
-  rawRatio = Math.max(0, Math.min(1, rawRatio));
-  const score = Math.round(rawRatio * 100);
+  if (hasFix) {
+    const fixedKeys = new Set(
+      fixedPlacements.map((p) => pillKey(p.day, p.time, p.pill))
+    );
+
+    // Track which previously missing/wrong compartments are now correct
+    missingInitialKeys.forEach((key) => {
+      if (fixedKeys.has(key)) {
+        correctedInFix++;
+      }
+    });
+
+    finalMissingKeys = [];
+    targetKeys.forEach((key) => {
+      if (!fixedKeys.has(key)) {
+        finalMissingKeys.push(key);
+      }
+    });
+
+    finalExtraKeys = [];
+    fixedKeys.forEach((key) => {
+      if (!targetKeys.has(key)) {
+        finalExtraKeys.push(key);
+      }
+    });
+  }
+
+  // Scoring calculation:
+  // Initial correct counts 1.0 each.
+  // Corrected after fix counts 0.5 each.
+  // Extra pill penalty: 0.05 per extra pill.
+  // Ratio floor at 0.
+  const effectiveCorrect = correctInitial + 0.5 * correctedInFix;
+  const extraPenalty = 0.05 * finalExtraKeys.length;
+
+  let ratio = totalRequired > 0 ? effectiveCorrect / totalRequired - extraPenalty : 1;
+  ratio = Math.max(0, Math.min(1, ratio));
+  const roundScore = Math.round(ratio * 100);
 
   return {
     roundId: scenario.id,
-    isRuleSwitch: Boolean(scenario.isRuleSwitch),
-    score,
-    correctPlacements,
+    roundScore,
     totalRequired,
-    omissions,
-    extraPlacements,
-    missingPairs,
-    extraPairs,
-    isPerfect: omissions === 0 && extraPlacements === 0,
+    correctInitial,
+    correctedInFix,
+    missingCount: finalMissingKeys.length,
+    extraCount: finalExtraKeys.length,
+    missingKeys: finalMissingKeys,
+    extraKeys: finalExtraKeys,
+    isPerfect: finalMissingKeys.length === 0 && finalExtraKeys.length === 0,
   };
 }
 
 /**
- * Calculates session summary score from all rounds.
+ * Calculates session score as the average of the 3 round scores.
  */
-export function calculatePillBoxScore(rounds: RoundEvaluation[]): SessionSummary {
-  if (rounds.length === 0) {
-    return {
-      finalScore: 0,
-      roundsCompleted: 0,
-      totalCorrect: 0,
-      totalRequired: 0,
-      switchErrors: 0,
-      roundDetails: [],
-    };
-  }
-
-  let totalScore = 0;
-  let totalCorrect = 0;
-  let totalRequired = 0;
-  let switchErrors = 0;
-
-  rounds.forEach((r) => {
-    totalScore += r.score;
-    totalCorrect += r.correctPlacements;
-    totalRequired += r.totalRequired;
-
-    if (r.isRuleSwitch) {
-      // Switch error: any omissions or extra misplaced pills on a rule switch round
-      switchErrors += r.omissions + r.extraPlacements;
-    }
-  });
-
-  const finalScore = Math.max(0, Math.min(100, Math.round(totalScore / rounds.length)));
-
-  return {
-    finalScore,
-    roundsCompleted: rounds.length,
-    totalCorrect,
-    totalRequired,
-    switchErrors,
-    roundDetails: rounds,
-  };
+export function calculatePillBoxSessionScore(rounds: RoundResult[]): number {
+  if (rounds.length === 0) return 0;
+  const total = rounds.reduce((sum, r) => sum + r.roundScore, 0);
+  return Math.max(0, Math.min(100, Math.round(total / rounds.length)));
 }

@@ -1,315 +1,460 @@
 /**
- * Pill Box Planner - Medication Data and Prescriptions
+ * Pill Box Planner - Safe Practice Data
  *
- * Every medication is a realistic, familiar medicine with:
- * - Real pharmaceutical / generic name
- * - Valid dose amount and dose unit (mg, ml, drops, tablets, capsules, IU)
- * - Visual icon/shape and distinct color
+ * SAFETY RULES:
+ * - Coloured pills only: red, blue, yellow, green.
+ * - Strictly abstract coloured circle tokens for cognitive training.
+ * - Colour is NEVER the only cue: colour name is always displayed as text.
+ * - Rules use ONLY time words (morning, afternoon, night) and weekday names.
  */
 
-export type DoseUnit = "mg" | "ml" | "drops" | "tablet" | "tablets" | "capsule" | "capsules" | "IU";
+export type PillColorId = "red" | "blue" | "yellow" | "green";
 
-export interface Medication {
-  id: string;
+export interface PillColor {
+  id: PillColorId;
   name: string;
-  genericName: string;
-  doseAmount: number;
-  doseUnit: DoseUnit;
-  doseDisplay: string; // e.g. "500 mg (1 tablet)"
-  form: "tablet" | "capsule" | "drops" | "syrup";
-  color: string;
-  bgColor: string;
-  borderColor: string;
+  hex: string;
+  bgClass: string;
+  borderClass: string;
+  textClass: string;
   iconEmoji: string;
-  purpose: string; // Everyday plain description: "For blood pressure", "For joint strength", etc.
-  synonyms: string[];
 }
 
-export const VALID_DOSE_UNITS: readonly DoseUnit[] = [
-  "mg",
-  "ml",
-  "drops",
-  "tablet",
-  "tablets",
-  "capsule",
-  "capsules",
-  "IU",
-];
-
-export const MEDICATIONS: Record<string, Medication> = {
-  paracetamol: {
-    id: "paracetamol",
-    name: "Paracetamol",
-    genericName: "Paracetamol",
-    doseAmount: 500,
-    doseUnit: "mg",
-    doseDisplay: "500 mg · 1 tablet",
-    form: "tablet",
-    color: "#2563eb",
-    bgColor: "bg-blue-50 dark:bg-blue-950/40",
-    borderColor: "border-blue-300 dark:border-blue-700",
-    iconEmoji: "💊",
-    purpose: "For mild aches and fever relief",
-    synonyms: ["paracetamol", "crocin", "calpol", "dolo"],
-  },
-  metformin: {
-    id: "metformin",
-    name: "Metformin",
-    genericName: "Metformin",
-    doseAmount: 500,
-    doseUnit: "mg",
-    doseDisplay: "500 mg · 1 tablet",
-    form: "tablet",
-    color: "#059669",
-    bgColor: "bg-emerald-50 dark:bg-emerald-950/40",
-    borderColor: "border-emerald-300 dark:border-emerald-700",
-    iconEmoji: "⚪",
-    purpose: "For blood sugar balance with meals",
-    synonyms: ["metformin", "glycomet", "sugar tablet"],
-  },
-  amlodipine: {
-    id: "amlodipine",
-    name: "Amlodipine",
-    genericName: "Amlodipine",
-    doseAmount: 5,
-    doseUnit: "mg",
-    doseDisplay: "5 mg · 1 tablet",
-    form: "tablet",
-    color: "#d97706",
-    bgColor: "bg-amber-50 dark:bg-amber-950/40",
-    borderColor: "border-amber-300 dark:border-amber-700",
-    iconEmoji: "🟡",
-    purpose: "For smooth blood pressure",
-    synonyms: ["amlodipine", "amlong", "bp tablet"],
-  },
-  omeprazole: {
-    id: "omeprazole",
-    name: "Omeprazole",
-    genericName: "Omeprazole",
-    doseAmount: 20,
-    doseUnit: "mg",
-    doseDisplay: "20 mg · 1 capsule",
-    form: "capsule",
-    color: "#7c3aed",
-    bgColor: "bg-purple-50 dark:bg-purple-950/40",
-    borderColor: "border-purple-300 dark:border-purple-700",
-    iconEmoji: "🟣",
-    purpose: "For stomach comfort before meals",
-    synonyms: ["omeprazole", "omez", "gas capsule"],
-  },
-  atorvastatin: {
-    id: "atorvastatin",
-    name: "Atorvastatin",
-    genericName: "Atorvastatin",
-    doseAmount: 10,
-    doseUnit: "mg",
-    doseDisplay: "10 mg · 1 tablet",
-    form: "tablet",
-    color: "#dc2626",
-    bgColor: "bg-rose-50 dark:bg-rose-950/40",
-    borderColor: "border-rose-300 dark:border-rose-700",
+export const PILL_COLORS: Record<PillColorId, PillColor> = {
+  red: {
+    id: "red",
+    name: "Red",
+    hex: "#ef4444",
+    bgClass: "bg-red-50 dark:bg-red-950/50",
+    borderClass: "border-red-400 dark:border-red-600",
+    textClass: "text-red-700 dark:text-red-300",
     iconEmoji: "🔴",
-    purpose: "For heart and cholesterol health",
-    synonyms: ["atorvastatin", "atorva", "cholesterol tablet"],
   },
-  calcium_d3: {
-    id: "calcium_d3",
-    name: "Calcium + D3",
-    genericName: "Calcium Carbonate with Vitamin D3",
-    doseAmount: 500,
-    doseUnit: "mg",
-    doseDisplay: "500 mg · 1 tablet",
-    form: "tablet",
-    color: "#0891b2",
-    bgColor: "bg-cyan-50 dark:bg-cyan-950/40",
-    borderColor: "border-cyan-300 dark:border-cyan-700",
-    iconEmoji: "🔘",
-    purpose: "For strong bones and joints",
-    synonyms: ["calcium", "shelcal", "bone tablet"],
+  blue: {
+    id: "blue",
+    name: "Blue",
+    hex: "#3b82f6",
+    bgClass: "bg-blue-50 dark:bg-blue-950/50",
+    borderClass: "border-blue-400 dark:border-blue-600",
+    textClass: "text-blue-700 dark:text-blue-300",
+    iconEmoji: "🔵",
   },
-  vitamin_d3: {
-    id: "vitamin_d3",
-    name: "Vitamin D3",
-    genericName: "Cholecalciferol",
-    doseAmount: 60000,
-    doseUnit: "IU",
-    doseDisplay: "60,000 IU · 1 capsule",
-    form: "capsule",
-    color: "#ea580c",
-    bgColor: "bg-orange-50 dark:bg-orange-950/40",
-    borderColor: "border-orange-300 dark:border-orange-700",
-    iconEmoji: "🟠",
-    purpose: "For energy and bone wellness",
-    synonyms: ["vitamin d3", "calcirol", "d3 capsule"],
+  yellow: {
+    id: "yellow",
+    name: "Yellow",
+    hex: "#eab308",
+    bgClass: "bg-amber-50 dark:bg-amber-950/50",
+    borderClass: "border-amber-400 dark:border-amber-600",
+    textClass: "text-amber-800 dark:text-amber-300",
+    iconEmoji: "🟡",
   },
-  eye_drops: {
-    id: "eye_drops",
-    name: "Eye Drops",
-    genericName: "Carboxymethylcellulose Eye Drops",
-    doseAmount: 2,
-    doseUnit: "drops",
-    doseDisplay: "2 drops in each eye",
-    form: "drops",
-    color: "#0284c7",
-    bgColor: "bg-sky-50 dark:bg-sky-950/40",
-    borderColor: "border-sky-300 dark:border-sky-700",
-    iconEmoji: "💧",
-    purpose: "For lubricating dry and tired eyes",
-    synonyms: ["eye drops", "refresh tears", "tears"],
-  },
-  cough_syrup: {
-    id: "cough_syrup",
-    name: "Cough Syrup",
-    genericName: "Herbal Honey Cough Syrup",
-    doseAmount: 10,
-    doseUnit: "ml",
-    doseDisplay: "10 ml (2 spoons)",
-    form: "syrup",
-    color: "#ca8a04",
-    bgColor: "bg-yellow-50 dark:bg-yellow-950/40",
-    borderColor: "border-yellow-300 dark:border-yellow-700",
-    iconEmoji: "🍯",
-    purpose: "For soothing a throat cough",
-    synonyms: ["cough syrup", "syrup", "koflet", "benadryl"],
+  green: {
+    id: "green",
+    name: "Green",
+    hex: "#22c55e",
+    bgClass: "bg-emerald-50 dark:bg-emerald-950/50",
+    borderClass: "border-emerald-400 dark:border-emerald-600",
+    textClass: "text-emerald-700 dark:text-emerald-300",
+    iconEmoji: "🟢",
   },
 };
 
-export type PillSlot = "morning" | "afternoon" | "evening" | "bedtime";
+export type WeekDay =
+  | "Monday"
+  | "Tuesday"
+  | "Wednesday"
+  | "Thursday"
+  | "Friday"
+  | "Saturday"
+  | "Sunday";
 
-export interface SlotConfig {
-  id: PillSlot;
-  name: string;
-  icon: string;
-  timeHint: string;
-}
-
-export const PILL_SLOTS: SlotConfig[] = [
-  { id: "morning", name: "Morning", icon: "🌅", timeHint: "Subah · With Breakfast" },
-  { id: "afternoon", name: "Afternoon", icon: "☀️", timeHint: "Dopahar · With Lunch" },
-  { id: "evening", name: "Evening", icon: "🌆", timeHint: "Shaam · With Tea/Dinner" },
-  { id: "bedtime", name: "Bedtime", icon: "🌙", timeHint: "Raat · Before Sleep" },
+export const WEEK_DAYS: readonly WeekDay[] = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
 ];
 
-export interface PrescriptionRule {
-  medicationId: string;
-  slots: PillSlot[];
-  instruction: string;
+export type DayTime = "morning" | "afternoon" | "night";
+
+export interface TimeSlotMeta {
+  id: DayTime;
+  name: string;
+  icon: string;
+  subLabel: string;
 }
 
-export interface RoundScenario {
+export const DAY_TIMES: readonly DayTime[] = ["morning", "afternoon", "night"];
+
+export const TIME_SLOT_META: Record<DayTime, TimeSlotMeta> = {
+  morning: { id: "morning", name: "Morning", icon: "🌅", subLabel: "Subah · Early day" },
+  afternoon: { id: "afternoon", name: "Afternoon", icon: "☀️", subLabel: "Dopahar · After lunch" },
+  night: { id: "night", name: "Night", icon: "🌙", subLabel: "Raat · Before sleep" },
+};
+
+export interface PlanRule {
+  pillColor: PillColorId;
+  days: WeekDay[];
+  times: DayTime[];
+  instruction: string;
+  exceptionDay?: WeekDay; // e.g. "Sunday"
+  exceptionInstruction?: string; // e.g. "Skip the red pill on Sunday"
+}
+
+export interface PlannerScenario {
   id: string;
   title: string;
-  activeSlots: PillSlot[];
-  availableMedications: string[]; // Medication IDs in tray
-  rules: PrescriptionRule[];
-  isRuleSwitch?: boolean;
-  switchMessage?: string;
+  rules: PlanRule[];
+  hasException?: boolean;
+  exceptionNote?: string;
+  rowHints?: Record<DayTime, string>; // for Knob 1 row hints
 }
 
-export interface KnobPrescriptionConfig {
-  knob: number;
-  totalRounds: number;
-  rounds: RoundScenario[];
+/**
+ * Expands a rule into the exact set of required compartment keys: "day:time:pillColor".
+ */
+export function EXPAND_RULE(rule: PlanRule): Set<string> {
+  const result = new Set<string>();
+  rule.days.forEach((day) => {
+    if (rule.exceptionDay && day === rule.exceptionDay) {
+      // Excluded by exception rule
+      return;
+    }
+    rule.times.forEach((time) => {
+      result.add(`${day}:${time}:${rule.pillColor}`);
+    });
+  });
+  return result;
 }
 
-export const KNOB_SCENARIOS: Record<number, RoundScenario[]> = {
+/**
+ * Generates the full set of target compartment keys for a scenario.
+ */
+export function EXPAND_SCENARIO(scenario: PlannerScenario): Set<string> {
+  const combined = new Set<string>();
+  scenario.rules.forEach((rule) => {
+    const expanded = EXPAND_RULE(rule);
+    expanded.forEach((key) => combined.add(key));
+  });
+  return combined;
+}
+
+export const KNOB_SCENARIOS: Record<number, PlannerScenario[]> = {
   1: [
     {
       id: "knob1-round1",
-      title: "Daily Morning & Night Routine",
-      activeSlots: ["morning", "bedtime"],
-      availableMedications: ["omeprazole", "atorvastatin", "paracetamol"],
+      title: "Morning and Night Practice",
+      rowHints: {
+        morning: "Red pill: morning every day",
+        afternoon: "No pills after lunch",
+        night: "Blue pill: night every day",
+      },
       rules: [
-        { medicationId: "omeprazole", slots: ["morning"], instruction: "Take Omeprazole 20 mg in the Morning." },
-        { medicationId: "atorvastatin", slots: ["bedtime"], instruction: "Take Atorvastatin 10 mg at Bedtime." },
+        {
+          pillColor: "red",
+          days: [...WEEK_DAYS],
+          times: ["morning"],
+          instruction: "Red pill: morning every day.",
+        },
+        {
+          pillColor: "blue",
+          days: [...WEEK_DAYS],
+          times: ["night"],
+          instruction: "Blue pill: night every day.",
+        },
       ],
     },
     {
       id: "knob1-round2",
-      title: "Morning Heart & Bone Care",
-      activeSlots: ["morning", "bedtime"],
-      availableMedications: ["amlodipine", "calcium_d3", "cough_syrup"],
+      title: "Midday and Evening Routine",
+      rowHints: {
+        morning: "No pills in the morning",
+        afternoon: "Blue pill: afternoon only",
+        night: "Red pill: night only",
+      },
       rules: [
-        { medicationId: "amlodipine", slots: ["morning"], instruction: "Take Amlodipine 5 mg in the Morning." },
-        { medicationId: "calcium_d3", slots: ["morning"], instruction: "Take Calcium + D3 500 mg in the Morning." },
+        {
+          pillColor: "blue",
+          days: [...WEEK_DAYS],
+          times: ["afternoon"],
+          instruction: "Blue pill: afternoon only every day.",
+        },
+        {
+          pillColor: "red",
+          days: [...WEEK_DAYS],
+          times: ["night"],
+          instruction: "Red pill: night only every day.",
+        },
+      ],
+    },
+    {
+      id: "knob1-round3",
+      title: "Three-Day Weekday Schedule",
+      rowHints: {
+        morning: "Red pill: Monday, Wednesday and Friday",
+        afternoon: "No pills after lunch",
+        night: "Blue pill: Monday, Wednesday and Friday",
+      },
+      rules: [
+        {
+          pillColor: "red",
+          days: ["Monday", "Wednesday", "Friday"],
+          times: ["morning"],
+          instruction: "Red pill: Monday, Wednesday and Friday morning.",
+        },
+        {
+          pillColor: "blue",
+          days: ["Monday", "Wednesday", "Friday"],
+          times: ["night"],
+          instruction: "Blue pill: Monday, Wednesday and Friday night.",
+        },
       ],
     },
   ],
   2: [
     {
       id: "knob2-round1",
-      title: "3-Time Daily Prescription",
-      activeSlots: ["morning", "afternoon", "bedtime"],
-      availableMedications: ["omeprazole", "metformin", "atorvastatin", "paracetamol"],
+      title: "Two Pill Daily Routine",
       rules: [
-        { medicationId: "omeprazole", slots: ["morning"], instruction: "Take Omeprazole 20 mg in the Morning." },
-        { medicationId: "metformin", slots: ["morning", "afternoon"], instruction: "Take Metformin 500 mg in Morning and Afternoon." },
-        { medicationId: "atorvastatin", slots: ["bedtime"], instruction: "Take Atorvastatin 10 mg at Bedtime." },
+        {
+          pillColor: "red",
+          days: [...WEEK_DAYS],
+          times: ["morning", "night"],
+          instruction: "Red pill: morning and night every day.",
+        },
+        {
+          pillColor: "blue",
+          days: [...WEEK_DAYS],
+          times: ["afternoon"],
+          instruction: "Blue pill: after lunch only every day.",
+        },
       ],
     },
     {
       id: "knob2-round2",
-      title: "Doctor's Prescription Update",
-      isRuleSwitch: true,
-      switchMessage: "Doctor's update! Metformin now switches to Morning and Bedtime. Add Calcium in the Afternoon.",
-      activeSlots: ["morning", "afternoon", "bedtime"],
-      availableMedications: ["metformin", "calcium_d3", "paracetamol", "eye_drops"],
+      title: "Three Pill Weekday Schedule",
       rules: [
-        { medicationId: "metformin", slots: ["morning", "bedtime"], instruction: "Switched: Take Metformin 500 mg in Morning and Bedtime." },
-        { medicationId: "calcium_d3", slots: ["afternoon"], instruction: "Take Calcium + D3 500 mg in the Afternoon." },
+        {
+          pillColor: "red",
+          days: [...WEEK_DAYS],
+          times: ["morning"],
+          instruction: "Red pill: morning every day.",
+        },
+        {
+          pillColor: "yellow",
+          days: ["Monday", "Wednesday", "Friday"],
+          times: ["morning"],
+          instruction: "Yellow pill: Monday, Wednesday and Friday morning.",
+        },
+        {
+          pillColor: "blue",
+          days: [...WEEK_DAYS],
+          times: ["night"],
+          instruction: "Blue pill: night every day.",
+        },
+      ],
+    },
+    {
+      id: "knob2-round3",
+      title: "Sunday Exception Practice",
+      hasException: true,
+      exceptionNote: "Doctor's note: Skip the red pill on Sunday!",
+      rules: [
+        {
+          pillColor: "red",
+          days: [...WEEK_DAYS],
+          times: ["morning"],
+          exceptionDay: "Sunday",
+          instruction: "Red pill: morning every day, but skip the red pill on Sunday.",
+          exceptionInstruction: "Skip the red pill on Sunday.",
+        },
+        {
+          pillColor: "blue",
+          days: [...WEEK_DAYS],
+          times: ["night"],
+          instruction: "Blue pill: night every day.",
+        },
       ],
     },
   ],
   3: [
     {
       id: "knob3-round1",
-      title: "Full Day Pill Box",
-      activeSlots: ["morning", "afternoon", "evening", "bedtime"],
-      availableMedications: ["omeprazole", "amlodipine", "calcium_d3", "eye_drops", "atorvastatin"],
+      title: "Three Pill Specific Days",
       rules: [
-        { medicationId: "omeprazole", slots: ["morning"], instruction: "Take Omeprazole 20 mg in the Morning." },
-        { medicationId: "amlodipine", slots: ["morning"], instruction: "Take Amlodipine 5 mg in the Morning." },
-        { medicationId: "calcium_d3", slots: ["evening"], instruction: "Take Calcium + D3 500 mg in the Evening." },
-        { medicationId: "eye_drops", slots: ["bedtime"], instruction: "Put Eye Drops 2 drops at Bedtime." },
+        {
+          pillColor: "red",
+          days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+          times: ["morning"],
+          instruction: "Red pill: Monday through Friday morning.",
+        },
+        {
+          pillColor: "yellow",
+          days: ["Tuesday", "Thursday", "Saturday"],
+          times: ["afternoon"],
+          instruction: "Yellow pill: Tuesday, Thursday and Saturday afternoon.",
+        },
+        {
+          pillColor: "green",
+          days: ["Saturday", "Sunday"],
+          times: ["night"],
+          instruction: "Green pill: Saturday and Sunday night.",
+        },
       ],
     },
     {
       id: "knob3-round2",
-      title: "Full Day With Repeat Doses",
-      activeSlots: ["morning", "afternoon", "evening", "bedtime"],
-      availableMedications: ["metformin", "paracetamol", "cough_syrup", "atorvastatin"],
+      title: "Alternate Day Schedule",
       rules: [
-        { medicationId: "metformin", slots: ["morning", "evening"], instruction: "Take Metformin 500 mg in Morning and Evening." },
-        { medicationId: "cough_syrup", slots: ["afternoon", "bedtime"], instruction: "Take Cough Syrup 10 ml in Afternoon and Bedtime." },
-        { medicationId: "atorvastatin", slots: ["bedtime"], instruction: "Take Atorvastatin 10 mg at Bedtime." },
+        {
+          pillColor: "blue",
+          days: ["Monday", "Wednesday", "Friday", "Sunday"],
+          times: ["morning", "night"],
+          instruction: "Blue pill: Monday, Wednesday, Friday and Sunday morning and night.",
+        },
+        {
+          pillColor: "red",
+          days: ["Tuesday", "Thursday", "Saturday"],
+          times: ["morning"],
+          instruction: "Red pill: Tuesday, Thursday and Saturday morning.",
+        },
+        {
+          pillColor: "green",
+          days: ["Tuesday", "Thursday"],
+          times: ["afternoon"],
+          instruction: "Green pill: Tuesday and Thursday afternoon.",
+        },
+      ],
+    },
+    {
+      id: "knob3-round3",
+      title: "Weekend Rest Exception",
+      hasException: true,
+      exceptionNote: "Special rule: Skip the green pill on Sunday!",
+      rules: [
+        {
+          pillColor: "yellow",
+          days: ["Monday", "Wednesday", "Friday"],
+          times: ["morning"],
+          instruction: "Yellow pill: Monday, Wednesday and Friday morning.",
+        },
+        {
+          pillColor: "blue",
+          days: [...WEEK_DAYS],
+          times: ["afternoon"],
+          instruction: "Blue pill: afternoon every day.",
+        },
+        {
+          pillColor: "green",
+          days: [...WEEK_DAYS],
+          times: ["night"],
+          exceptionDay: "Sunday",
+          instruction: "Green pill: night every day, but skip the green pill on Sunday.",
+          exceptionInstruction: "Skip the green pill on Sunday.",
+        },
       ],
     },
   ],
   4: [
     {
       id: "knob4-round1",
-      title: "Initial Medication Routine",
-      activeSlots: ["morning", "afternoon", "evening", "bedtime"],
-      availableMedications: ["paracetamol", "metformin", "amlodipine", "calcium_d3", "atorvastatin"],
+      title: "Four Pill Multi-Time Schedule",
       rules: [
-        { medicationId: "amlodipine", slots: ["morning"], instruction: "Take Amlodipine 5 mg in the Morning." },
-        { medicationId: "metformin", slots: ["morning", "evening"], instruction: "Take Metformin 500 mg in Morning and Evening." },
-        { medicationId: "calcium_d3", slots: ["afternoon"], instruction: "Take Calcium + D3 500 mg in the Afternoon." },
-        { medicationId: "atorvastatin", slots: ["bedtime"], instruction: "Take Atorvastatin 10 mg at Bedtime." },
+        {
+          pillColor: "red",
+          days: [...WEEK_DAYS],
+          times: ["morning"],
+          instruction: "Red pill: morning every day.",
+        },
+        {
+          pillColor: "blue",
+          days: [...WEEK_DAYS],
+          times: ["night"],
+          instruction: "Blue pill: night every day.",
+        },
+        {
+          pillColor: "yellow",
+          days: ["Monday", "Wednesday", "Friday"],
+          times: ["afternoon"],
+          instruction: "Yellow pill: Monday, Wednesday and Friday afternoon.",
+        },
+        {
+          pillColor: "green",
+          days: ["Saturday", "Sunday"],
+          times: ["morning"],
+          instruction: "Green pill: Saturday and Sunday morning.",
+        },
       ],
     },
     {
       id: "knob4-round2",
-      title: "Clinical Rule Switch Challenge",
-      isRuleSwitch: true,
-      switchMessage: "Special instruction: Swap Calcium to Bedtime, and take Paracetamol in Morning and Afternoon for joint ache relief!",
-      activeSlots: ["morning", "afternoon", "evening", "bedtime"],
-      availableMedications: ["paracetamol", "metformin", "calcium_d3", "eye_drops", "vitamin_d3"],
+      title: "Four Pill Rule with Wednesday Exception",
+      hasException: true,
+      exceptionNote: "Doctor's update: Skip the yellow pill on Wednesday!",
       rules: [
-        { medicationId: "paracetamol", slots: ["morning", "afternoon"], instruction: "Switched: Take Paracetamol 500 mg in Morning and Afternoon." },
-        { medicationId: "calcium_d3", slots: ["bedtime"], instruction: "Switched: Take Calcium + D3 500 mg at Bedtime." },
-        { medicationId: "vitamin_d3", slots: ["morning"], instruction: "Take Vitamin D3 60,000 IU in the Morning." },
-        { medicationId: "eye_drops", slots: ["evening"], instruction: "Put Eye Drops 2 drops in the Evening." },
+        {
+          pillColor: "red",
+          days: ["Monday", "Tuesday", "Thursday", "Friday"],
+          times: ["morning", "night"],
+          instruction: "Red pill: Monday, Tuesday, Thursday and Friday morning and night.",
+        },
+        {
+          pillColor: "yellow",
+          days: ["Monday", "Wednesday", "Friday"],
+          times: ["morning"],
+          exceptionDay: "Wednesday",
+          instruction: "Yellow pill: Monday and Friday morning (skip Wednesday).",
+          exceptionInstruction: "Skip the yellow pill on Wednesday.",
+        },
+        {
+          pillColor: "green",
+          days: ["Tuesday", "Thursday", "Saturday"],
+          times: ["afternoon"],
+          instruction: "Green pill: Tuesday, Thursday and Saturday afternoon.",
+        },
+        {
+          pillColor: "blue",
+          days: [...WEEK_DAYS],
+          times: ["night"],
+          instruction: "Blue pill: night every day.",
+        },
+      ],
+    },
+    {
+      id: "knob4-round3",
+      title: "Four Pill Rule with Sunday Exception",
+      hasException: true,
+      exceptionNote: "Doctor's update: Skip the red pill on Sunday!",
+      rules: [
+        {
+          pillColor: "red",
+          days: [...WEEK_DAYS],
+          times: ["morning", "night"],
+          exceptionDay: "Sunday",
+          instruction: "Red pill: morning and night every day, but skip the red pill on Sunday.",
+          exceptionInstruction: "Skip the red pill on Sunday.",
+        },
+        {
+          pillColor: "blue",
+          days: [...WEEK_DAYS],
+          times: ["afternoon"],
+          instruction: "Blue pill: after lunch only every day.",
+        },
+        {
+          pillColor: "yellow",
+          days: ["Monday", "Wednesday", "Friday"],
+          times: ["morning"],
+          instruction: "Yellow pill: Monday, Wednesday and Friday morning.",
+        },
+        {
+          pillColor: "green",
+          days: ["Tuesday", "Thursday", "Saturday"],
+          times: ["night"],
+          instruction: "Green pill: Tuesday, Thursday and Saturday night.",
+        },
       ],
     },
   ],

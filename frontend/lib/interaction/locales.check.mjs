@@ -172,7 +172,31 @@ required.push(
   'Visitor hole',
   'Garden hole {number}',
   'You paid close attention to the garden visitors.',
-  'Good!'
+  'Good!',
+  'Pill Box Planner',
+  'Practice only. This is not medical advice.',
+  "Doctor's Note",
+  'Pill',
+  'Select Colour to Place',
+  'Tap a compartment to place or remove',
+  'Weekly Pill Box (7 Days)',
+  'Check Placements',
+  'Try a Fix',
+  'Finish Round',
+  'Confirm Fix',
+  'Round Score',
+  'Check complete. A few compartments need attention.',
+  'Compartments outlined in calm amber can be adjusted. You have one chance to make a fix (corrections count half).',
+  'Follow several rules at once (a weekly pill-box practice)',
+  'Organize your weekly pill box by following the rules on the practice card.',
+  'Clear All',
+  'Time',
+  'Empty compartment',
+  'Session Complete!',
+  'Great practice following multi-step rules and schedule planning.',
+  'Overall Score',
+  'Out of 100 points',
+  'Row Hints'
 );
 for (const phrase of required) {
   assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing UI phrase: ${phrase}`);
