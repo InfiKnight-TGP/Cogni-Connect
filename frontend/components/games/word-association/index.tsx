@@ -11,7 +11,7 @@ import { readSkill } from "@/lib/interaction/events";
 import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 import ReadAloud from "@/components/interaction/ReadAloud";
 import { WORD_ASSOCIATION_PAIRS } from "./data";
-import { calculateScore, generateSession, type AssociationRound } from "./logic";
+import { calculateScore, generateSession, buildVoiceOptions, type AssociationRound } from "./logic";
 
 export default function WordAssociation({
   level = 1,
@@ -77,22 +77,11 @@ export default function WordAssociation({
   };
 
   const promptText = t("What goes with {item}?", { item: t(currentRound.cue.word) });
-  const voiceOptions = currentRound.options.map((opt) => ({
-    id: opt.id,
-    label: opt.word,
-    synonyms: [
-      ...(opt.synonyms ?? []),
-      ...(opt.id === currentRound.targetId
-        ? [
-            `${currentRound.cue.word} ${opt.word}`,
-            "chai biscuit",
-            "tea biscuit",
-            "चाय बिस्कुट",
-            "চাহ বিস্কুট",
-          ]
-        : []),
-    ],
-  }));
+  const voiceOptions = buildVoiceOptions(
+    currentRound.cue.word,
+    currentRound.options,
+    currentRound.targetId
+  );
 
   const targetOption = currentRound.options.find((o) => o.id === currentRound.targetId);
   const targetLabel = targetOption ? t(targetOption.word) : "";

@@ -23,6 +23,12 @@ export interface KnobConfig {
   sameCategoryCount: number; // how many distractors must be same-category
 }
 
+export interface VoiceOptionItem {
+  id: string;
+  label: string;
+  synonyms: string[];
+}
+
 export function getKnobConfig(knob: number): KnobConfig {
   const k = Math.max(1, Math.min(4, Math.round(knob)));
   switch (k) {
@@ -59,6 +65,11 @@ export function shuffleArray<T>(items: T[], rng = Math.random): T[] {
 
 /**
  * Builds the round options for a given pair based on the knob settings.
+ *
+ * Fallback rule for Knob 4:
+ * When sameCategoryCount (e.g. 3) exceeds available same-category distractors in a pair,
+ * all available same-category distractors are picked first, and remaining distractor slots
+ * are filled by shuffling and slicing from the other distractors pool.
  */
 export function buildRoundOptions(
   pair: AssociationPair,
@@ -83,6 +94,7 @@ export function buildRoundOptions(
     const shuffledSame = shuffleArray(sameCat, rng);
     pickedDistractors.push(...shuffledSame.slice(0, neededDistractors));
     if (pickedDistractors.length < neededDistractors) {
+      // Documented fallback rule: fill remaining slots from otherCat
       const remainingNeeded = neededDistractors - pickedDistractors.length;
       const shuffledOther = shuffleArray(otherCat, rng);
       pickedDistractors.push(...shuffledOther.slice(0, remainingNeeded));
@@ -110,6 +122,31 @@ export function buildRoundOptions(
   }));
 
   return shuffleArray([targetOption, ...distractorOptions], rng);
+}
+
+/**
+ * Builds voice options for a round purely from data (cue word + option word, and
+ * synonyms already in the data). No phrases or languages are hardcoded in components.
+ */
+export function buildVoiceOptions(
+  cueWord: string,
+  options: AssociationOption[],
+  targetId: string
+): VoiceOptionItem[] {
+  return options.map((opt) => {
+    const extraPhrases: string[] = [];
+    if (opt.id === targetId) {
+      extraPhrases.push(`${cueWord} ${opt.word}`);
+    }
+    const synonyms = Array.from(
+      new Set([...(opt.synonyms ?? []), ...extraPhrases])
+    );
+    return {
+      id: opt.id,
+      label: opt.word,
+      synonyms,
+    };
+  });
 }
 
 /**

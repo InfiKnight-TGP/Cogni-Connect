@@ -6,6 +6,7 @@ import {
   generateSession,
   calculateScore,
   buildRoundOptions,
+  buildVoiceOptions,
 } from "../components/games/word-association/logic.ts";
 import {
   localizeAnswerOptions,
@@ -24,6 +25,7 @@ assert(
 const seenPairIds = new Set();
 const allTargetWords = new Set(WORD_ASSOCIATION_PAIRS.map((p) => p.target.word.toLowerCase()));
 const targetsByCategory = new Map();
+const pairsWithFewerThan3SameCategory = [];
 
 for (const pair of WORD_ASSOCIATION_PAIRS) {
   assert(!seenPairIds.has(pair.id), `Duplicate pair ID: ${pair.id}`);
@@ -44,6 +46,7 @@ for (const pair of WORD_ASSOCIATION_PAIRS) {
 
   // Distractors
   assert(pair.distractors.length >= 4, `Pair ${pair.id} has fewer than 4 distractors`);
+  let sameCategoryCount = 0;
   for (const [idx, dist] of pair.distractors.entries()) {
     assert(
       dist.word && dist.word.trim().length > 0,
@@ -53,6 +56,10 @@ for (const pair of WORD_ASSOCIATION_PAIRS) {
       dist.emoji && dist.emoji.trim().length > 0,
       `Pair ${pair.id} distractor ${idx} missing emoji`
     );
+
+    if (dist.sameCategory) {
+      sameCategoryCount++;
+    }
 
     // Rule: No distractor equals another pair's target for the same cue category
     const catTargets = targetsByCategory.get(pair.category);
@@ -67,58 +74,144 @@ for (const pair of WORD_ASSOCIATION_PAIRS) {
       `Distractor "${dist.word}" in pair "${pair.id}" equals target word of another pair`
     );
   }
+
+  // Count same-category distractors
+  if (sameCategoryCount < 3) {
+    pairsWithFewerThan3SameCategory.push({ id: pair.id, sameCategoryCount });
+  }
 }
 
-// 3. Voice matching verification: saying "biscuit", "chai biscuit" or Hindi synonym selects target
-const samplePair = WORD_ASSOCIATION_PAIRS[0]; // chai-biscuit
-const sampleKnobConfig = getKnobConfig(2);
-const roundOpts = buildRoundOptions(samplePair, sampleKnobConfig, () => 0.5);
+// Check list of pairs with fewer than 3 same-category distractors
+if (pairsWithFewerThan3SameCategory.length > 0) {
+  console.warn("Pairs with fewer than 3 same-category distractors:", pairsWithFewerThan3SameCategory);
+}
+assert.equal(
+  pairsWithFewerThan3SameCategory.length,
+  0,
+  `Expected all pairs to have >= 3 same-category distractors for Knob 4, found deficiencies: ${JSON.stringify(pairsWithFewerThan3SameCategory)}`
+);
 
-// Replicate the voiceOptions mapping in index.tsx
-const voiceOptions = roundOpts.map((opt) => ({
-  id: opt.id,
-  label: opt.word, // English label passed to VoiceQuestion
-  synonyms: [
-    ...(opt.synonyms ?? []),
-    ...(opt.id === `target-${samplePair.id}`
-      ? [
-          `${samplePair.cue.word} ${opt.word}`,
-          "chai biscuit",
-          "tea biscuit",
-          "चाय बिस्कुट",
-        ]
-      : []),
+// 3. Fallback rule test for Knob 4 if a pair ever has fewer than 3 same-category distractors
+const simulatedDeficientPair = {
+  id: "test-deficient",
+  category: "test",
+  cue: { word: "Test Cue", emoji: "🧪" },
+  target: { word: "Target", emoji: "🎯", synonyms: ["target"] },
+  hint: "Test hint",
+  distractors: [
+    { word: "Same 1", emoji: "1️⃣", sameCategory: true, synonyms: [] },
+    { word: "Other 1", emoji: "🅰️", sameCategory: false, synonyms: [] },
+    { word: "Other 2", emoji: "🅱️", sameCategory: false, synonyms: [] },
+    { word: "Other 3", emoji: "🆎", sameCategory: false, synonyms: [] },
   ],
-}));
+};
+const k4Config = getKnobConfig(4);
+const deficientRoundOpts = buildRoundOptions(simulatedDeficientPair, k4Config, () => 0.5);
+assert.equal(deficientRoundOpts.length, 4, "Fallback rule must still return 4 options");
+assert(deficientRoundOpts.some((o) => o.word === "Same 1"), "Fallback rule includes available same-category distractors");
+assert(deficientRoundOpts.some((o) => o.id === "target-test-deficient"), "Fallback rule includes target");
 
-// Localize options using Hindi dictionary as VoiceQuestion does
-const localizedOptions = localizeAnswerOptions(
-  voiceOptions,
+// 4. Voice matching verification via exported buildVoiceOptions
+// Check 4a: chai-biscuit
+const chaiPair = WORD_ASSOCIATION_PAIRS.find((p) => p.id === "chai-biscuit");
+const chaiOpts = buildRoundOptions(chaiPair, getKnobConfig(2), () => 0.5);
+const chaiVoiceOpts = buildVoiceOptions(chaiPair.cue.word, chaiOpts, `target-${chaiPair.id}`);
+
+const localizedChai = localizeAnswerOptions(
+  chaiVoiceOpts,
   (k) => hi.ui[k] || k,
   hi.synonyms || {}
 );
 
-// Verify exact match on English target word "biscuit"
-const matchBiscuit = matchAnswer("biscuit", localizedOptions, 0.9);
+const matchBiscuit = matchAnswer("biscuit", localizedChai, 0.9);
 assert(matchBiscuit.kind === "accept" || matchBiscuit.kind === "confirm");
-assert.equal(matchBiscuit.option.id, `target-${samplePair.id}`);
+assert.equal(matchBiscuit.option.id, `target-${chaiPair.id}`);
 
-// Verify match on phrase "chai biscuit"
-const matchChaiBiscuit = matchAnswer("chai biscuit", localizedOptions, 0.9);
+const matchChaiBiscuit = matchAnswer("chai biscuit", localizedChai, 0.9);
 assert(matchChaiBiscuit.kind === "accept" || matchChaiBiscuit.kind === "confirm");
-assert.equal(matchChaiBiscuit.option.id, `target-${samplePair.id}`);
+assert.equal(matchChaiBiscuit.option.id, `target-${chaiPair.id}`);
 
-// Verify match on Hindi translated word "बिस्कुट"
-const matchHindiBiscuit = matchAnswer("बिस्कुट", localizedOptions, 0.9);
+const matchHindiBiscuit = matchAnswer("बिस्कुट", localizedChai, 0.9);
 assert(matchHindiBiscuit.kind === "accept" || matchHindiBiscuit.kind === "confirm");
-assert.equal(matchHindiBiscuit.option.id, `target-${samplePair.id}`);
+assert.equal(matchHindiBiscuit.option.id, `target-${chaiPair.id}`);
 
-// Verify match on transliterated synonym "biskut"
-const matchBiskut = matchAnswer("biskut", localizedOptions, 0.9);
-assert(matchBiskut.kind === "accept" || matchBiskut.kind === "confirm");
-assert.equal(matchBiskut.option.id, `target-${samplePair.id}`);
+// Check 4b: lock-key
+const lockPair = WORD_ASSOCIATION_PAIRS.find((p) => p.id === "lock-key");
+const lockOpts = buildRoundOptions(lockPair, getKnobConfig(2), () => 0.5);
+const lockVoiceOpts = buildVoiceOptions(lockPair.cue.word, lockOpts, `target-${lockPair.id}`);
 
-// 4. Knob configuration checks
+const localizedLock = localizeAnswerOptions(
+  lockVoiceOpts,
+  (k) => hi.ui[k] || k,
+  hi.synonyms || {}
+);
+
+const matchKey = matchAnswer("key", localizedLock, 0.9);
+assert(matchKey.kind === "accept" || matchKey.kind === "confirm");
+assert.equal(matchKey.option.id, `target-${lockPair.id}`);
+
+const matchChabi = matchAnswer("chabi", localizedLock, 0.9);
+assert(matchChabi.kind === "accept" || matchChabi.kind === "confirm");
+assert.equal(matchChabi.option.id, `target-${lockPair.id}`);
+
+const matchLockKey = matchAnswer("lock key", localizedLock, 0.9);
+assert(matchLockKey.kind === "accept" || matchLockKey.kind === "confirm");
+assert.equal(matchLockKey.option.id, `target-${lockPair.id}`);
+
+// PROOF: "chai biscuit" selects NOTHING in a lock-key round!
+const matchLockChaiBiscuit = matchAnswer("chai biscuit", localizedLock, 0.9);
+assert(
+  matchLockChaiBiscuit.kind === "none" || !matchLockChaiBiscuit.option,
+  `Expected "chai biscuit" to select nothing in lock-key round, but got ${matchLockChaiBiscuit.kind}`
+);
+
+// Check 4c: tawa-roti
+const tawaPair = WORD_ASSOCIATION_PAIRS.find((p) => p.id === "tawa-roti");
+const tawaOpts = buildRoundOptions(tawaPair, getKnobConfig(2), () => 0.5);
+const tawaVoiceOpts = buildVoiceOptions(tawaPair.cue.word, tawaOpts, `target-${tawaPair.id}`);
+
+const localizedTawa = localizeAnswerOptions(
+  tawaVoiceOpts,
+  (k) => hi.ui[k] || k,
+  hi.synonyms || {}
+);
+
+const matchRoti = matchAnswer("roti", localizedTawa, 0.9);
+assert(matchRoti.kind === "accept" || matchRoti.kind === "confirm");
+assert.equal(matchRoti.option.id, `target-${tawaPair.id}`);
+
+const matchChapati = matchAnswer("chapati", localizedTawa, 0.9);
+assert(matchChapati.kind === "accept" || matchChapati.kind === "confirm");
+assert.equal(matchChapati.option.id, `target-${tawaPair.id}`);
+
+const matchTawaRoti = matchAnswer("tawa roti", localizedTawa, 0.9);
+assert(matchTawaRoti.kind === "accept" || matchTawaRoti.kind === "confirm");
+assert.equal(matchTawaRoti.option.id, `target-${tawaPair.id}`);
+
+// Check 4d: train-ticket
+const trainPair = WORD_ASSOCIATION_PAIRS.find((p) => p.id === "train-ticket");
+const trainOpts = buildRoundOptions(trainPair, getKnobConfig(2), () => 0.5);
+const trainVoiceOpts = buildVoiceOptions(trainPair.cue.word, trainOpts, `target-${trainPair.id}`);
+
+const localizedTrain = localizeAnswerOptions(
+  trainVoiceOpts,
+  (k) => hi.ui[k] || k,
+  hi.synonyms || {}
+);
+
+const matchTicket = matchAnswer("ticket", localizedTrain, 0.9);
+assert(matchTicket.kind === "accept" || matchTicket.kind === "confirm");
+assert.equal(matchTicket.option.id, `target-${trainPair.id}`);
+
+const matchRailTicket = matchAnswer("rail ticket", localizedTrain, 0.9);
+assert(matchRailTicket.kind === "accept" || matchRailTicket.kind === "confirm");
+assert.equal(matchRailTicket.option.id, `target-${trainPair.id}`);
+
+const matchTrainTicket = matchAnswer("train ticket", localizedTrain, 0.9);
+assert(matchTrainTicket.kind === "accept" || matchTrainTicket.kind === "confirm");
+assert.equal(matchTrainTicket.option.id, `target-${trainPair.id}`);
+
+// 5. Knob configuration checks
 const k1 = getKnobConfig(1);
 assert.equal(k1.rounds, 5);
 assert.equal(k1.optionsCount, 2);
@@ -139,7 +232,7 @@ assert.equal(k4.rounds, 8);
 assert.equal(k4.optionsCount, 4);
 assert.equal(k4.sameCategoryCount, 3);
 
-// 5. Session generator checks (seeded, non-repeating, correct option count, includes target)
+// 6. Session generator checks (seeded, non-repeating, correct option count, includes target)
 for (const knob of [1, 2, 3, 4]) {
   const session = generateSession(WORD_ASSOCIATION_PAIRS, knob, 42);
   const cfg = getKnobConfig(knob);
@@ -162,11 +255,11 @@ for (const knob of [1, 2, 3, 4]) {
   }
 }
 
-// 6. Knob 4 distractor check: all distractors must be from the same category
-const knob4Opts = buildRoundOptions(samplePair, k4, () => 0.1);
-const sameCategoryDistractors = samplePair.distractors.filter((d) => d.sameCategory).map((d) => d.word);
+// 7. Knob 4 distractor check: all distractors must be from the same category
+const knob4Opts = buildRoundOptions(chaiPair, k4, () => 0.1);
+const sameCategoryDistractors = chaiPair.distractors.filter((d) => d.sameCategory).map((d) => d.word);
 for (const opt of knob4Opts) {
-  if (opt.id !== `target-${samplePair.id}`) {
+  if (opt.id !== `target-${chaiPair.id}`) {
     assert(
       sameCategoryDistractors.includes(opt.word),
       `Knob 4 distractor ${opt.word} was not from same category`
@@ -174,7 +267,7 @@ for (const opt of knob4Opts) {
   }
 }
 
-// 7. Scoring checks
+// 8. Scoring checks
 assert.equal(calculateScore([1, 1, 1, 1, 1, 1]), 100);
 assert.equal(calculateScore([0.5, 0.5, 0.5, 0.5, 0.5, 0.5]), 50);
 assert.equal(calculateScore([0, 0, 0, 0, 0, 0]), 0);
@@ -182,4 +275,4 @@ assert.equal(calculateScore([1, 0.5, 0, 1, 0.5, 1], 6), 67); // 4 / 6 * 100 = 66
 assert.equal(calculateScore([1, 1, 1, 1, 1], 5), 100);
 assert.equal(calculateScore([], 6), 0);
 
-console.log("word-association checks passed: 18 pairs validated with no distractor conflicts, voice matching verified (biscuit, chai biscuit, Hindi, transliterated), knob levels 1-4, session generator, and scoring.");
+console.log("word-association checks passed: 18 pairs validated, 0 with < 3 same-category distractors, voice matching verified across multiple pairs with buildVoiceOptions, 'chai biscuit' verified to select nothing in lock-key round, Knob 4 fallback verified, session generator and scoring intact.");
