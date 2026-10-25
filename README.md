@@ -593,15 +593,11 @@ All backend endpoints defined across `backend/app.py` and `backend/auth.py`, org
     <img src="https://avatars.githubusercontent.com/robotaves-max" width="100px" height="100px" style="border-radius: 50%; object-fit: cover;" alt="robotaves-max"/>
   </a>
   &nbsp;&nbsp;
-  <a href="https://github.com/ved19-cyber">
-    <img src="https://avatars.githubusercontent.com/ved19-cyber" width="100px" height="100px" style="border-radius: 50%; object-fit: cover;" alt="ved19-cyber"/>
-  </a>
 </p>
 
 *Verified repository contributors (from GitHub API & commit history)*:
 - **InfiKnight-TGP** (Repository Owner)
 - **robotaves-max** (Collaborator)
-- **ved19-cyber** (Collaborator)
 
 ---
 
