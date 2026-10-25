@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { patientStatsFromEntries, toEntries, type PatientStats } from "@/lib/progress";
 
 export type { PatientStats };
@@ -14,7 +14,7 @@ export function computeStats(perf: Parameters<typeof toEntries>[0], now = new Da
 export function usePatientStats(): PatientStats | null {
   const [stats, setStats] = useState<PatientStats | null>(null);
   useEffect(() => {
-    fetch(`${API_URL}/performance`)
+    apiFetch(`${API_URL}/performance`)
       .then((r) => (r.ok ? r.json() : {}))
       .then((perf) => setStats(computeStats(perf)))
       .catch(() => setStats(computeStats({})));

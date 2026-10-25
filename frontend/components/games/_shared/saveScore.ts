@@ -1,4 +1,4 @@
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { isCaregiverUnlocked } from "@/lib/mode";
 
 export interface SaveScoreParams {
@@ -7,12 +7,13 @@ export interface SaveScoreParams {
   level: number;
   skill: string;
   score: number;
+  difficulty?: 1 | 2 | 3 | 4;
 }
 
 export async function saveScore(params: SaveScoreParams): Promise<boolean> {
   if (isCaregiverUnlocked()) return true;
   try {
-    const response = await fetch(`${API_URL}/performance`, {
+    const response = await apiFetch(`${API_URL}/performance`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

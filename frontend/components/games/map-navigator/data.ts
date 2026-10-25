@@ -163,10 +163,10 @@ export interface RoundSetup {
  *   1. Never Home
  *   2. Each goal must be at least 2 roads (BFS distance >= 2) from the previous waypoint.
  */
-export function buildRoundSetup(goalCount: 2 | 3, isRound4: boolean = false, rng: () => number = Math.random): RoundSetup {
+export function buildRoundSetup(goalCount: number, isRound4: boolean = false, rng: () => number = Math.random, knob = 2): RoundSetup {
   for (let attempt = 0; attempt < 500; attempt++) {
     const graph = generateGraph(rng);
-    const landmarkCount = Math.floor(rng() * 3) + 6; // 6, 7, or 8 landmarks
+    const landmarkCount = Math.min(LANDMARK_POOL.length, Math.floor(rng() * (knob >= 3 ? 2 : 1)) + (knob >= 3 ? 7 : 5));
     const selectedLandmarks = LANDMARK_POOL.slice(0, landmarkCount);
 
     const junctionIds = shuffle(Array.from({ length: TOTAL_NODES }, (_, i) => i), rng);

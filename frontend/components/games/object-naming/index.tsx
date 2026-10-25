@@ -7,9 +7,9 @@ import content from "./objects.json";
 export default function ObjectNaming({ date, onFinish }: GameProps) {
   return <GameShell gameId="object-naming" title="Name the picture" instructions="Say the name, or choose a word." level={1} skill="recognition" date={date} onFinish={onFinish}>{finish => <ChoiceSession game="object-naming" domain="Recognition & Orientation" finish={finish} makeRound={(index, knob) => {
     const target = content.items[index % content.items.length];
-    const distractors = content.items.filter(item => item.id !== target.id).slice(0, Math.max(2, Math.min(4, knob)));
+    const distractors = content.items.filter(item => item.id !== target.id).slice(0, Math.max(1, Math.min(4, knob - 1)));
     const options = [target, ...distractors];
     const offset = index % options.length;
-    return { prompt: content.prompt, image: target.emoji, options: [...options.slice(offset), ...options.slice(0, offset)].map(item => ({ id: item.id, label: item.label })), answer: target.id };
+    return { prompt: content.prompt, image: target.emoji, options: [...options.slice(offset), ...options.slice(0, offset)].map(item => ({ id: item.id, label: item.label, synonyms: item.synonyms })), answer: target.id };
   }} />}</GameShell>;
 }

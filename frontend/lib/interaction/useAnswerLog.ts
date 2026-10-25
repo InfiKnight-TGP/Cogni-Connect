@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { isCaregiverUnlocked } from "@/lib/mode";
 import type { AnswerInput } from "@/components/interaction/VoiceQuestion";
-import { recordAnswer } from "@/lib/interaction/events";
+import { beginAdaptiveSession, recordAnswer } from "@/lib/interaction/events";
 
 const KEY = "cogniconnect.answer-log.v1";
 type AnswerEvent = { id: string; session: string; game: string; domain: string; difficulty: number; correct: boolean; method: AnswerInput["method"]; responseMs: number | null; timestamp: number };
 
 export function useAnswerLog(game: string, domain: string, promptKey: string, difficulty: number, adaptive = false) {
-  const [session] = useState(() => `${game}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const [adaptiveSession] = useState(() => beginAdaptiveSession(game));
+  const session = adaptiveSession.session;
   const shownAt = useRef<number | null>(null);
   useEffect(() => { shownAt.current = performance.now(); }, [promptKey]);
   return (correct: boolean, input: AnswerInput = { method: "tap", responseMs: null }) => {

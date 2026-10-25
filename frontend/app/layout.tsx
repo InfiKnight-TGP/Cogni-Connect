@@ -6,6 +6,8 @@ import { ThemeProvider } from "@/components/ui/theme";
 import { SiteLinksPlacement } from "@/components/siteLinks";
 import { InteractionProvider } from "@/components/interaction/InteractionProvider";
 import { loadLocales } from "@/lib/interaction/load-locales";
+import { AuthProvider } from "@/lib/auth-context";
+import DevModeBanner from "@/components/dev-mode-banner";
 
 const satoshi = localFont({
   src: "../public/fonts/Satoshi-Variable.ttf",
@@ -35,13 +37,13 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <InteractionProvider
+          <DevModeBanner /><AuthProvider><InteractionProvider
             locales={loadLocales()}
             fontClassNames={{ hi: notoDevanagari.className, as: notoBengali.className }}
           >
             {children}
             <SiteLinksPlacement />
-          </InteractionProvider>
+          </InteractionProvider></AuthProvider>
         </ThemeProvider>
       </body>
     </html>

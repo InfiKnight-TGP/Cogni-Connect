@@ -10,7 +10,9 @@ import StepRound, { StepCard } from "./StepRound";
 import ErrandRound from "./ErrandRound";
 import { shuffle } from "./useSlots";
 
-import { API_URL as API } from "@/lib/api";
+import { mediaUrl, apiFetch, API_URL as API } from "@/lib/api";
+import { readSkill } from "@/lib/interaction/events";
+import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 
 type Round =
   | { kind: "steps"; title: string; prompt: string; cards: StepCard[] }
@@ -18,7 +20,7 @@ type Round =
 
 async function fetchJson<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(API + path);
+    const res = await apiFetch(API + path);
     return res.ok ? await res.json() : null;
   } catch {
     return null; // backend down: fall back to built-in content
@@ -44,7 +46,7 @@ async function personalRound(date: string, spareErrands: ErrandSet): Promise<Rou
       kind: "steps",
       title: "Put your day back in order",
       prompt: "Tap the photos in the order they happened.",
-      cards: frames.map((f) => ({ kind: "photo", url: API + encodeURI(f.url), timestamp: f.timestamp })),
+      cards: frames.map((f) => ({ kind: "photo", url: mediaUrl(encodeURI(f.url)), timestamp: f.timestamp })),
     };
   }
   const steps = routine?.steps ?? [];
@@ -59,38 +61,42 @@ async function personalRound(date: string, spareErrands: ErrandSet): Promise<Rou
   return { kind: "errands", set: spareErrands };
 }
 
-async function buildSession(date: string): Promise<Round[]> {
+async function buildSession(date: string, knob: number): Promise<Round[]> {
   const tasks = shuffle(TASKS);
   const sets = shuffle(ERRAND_SETS);
-  return [
+  const rounds: Round[] = [
     taskRound(tasks[0]),
     taskRound(tasks[1]),
     { kind: "errands", set: sets[0] },
     { kind: "errands", set: sets[1] },
     await personalRound(date, sets[2]),
   ];
+  return knob === 1 ? rounds.slice(0, 4) : rounds;
 }
 
 function Session({ date, onDone }: { date: string; onDone: (score: number) => void }) {
   const [rounds, setRounds] = useState<Round[] | null>(null);
   const [index, setIndex] = useState(0);
   const [total, setTotal] = useState(0); // each round is worth up to 20
+  const [knob] = useState(() => readSkill("plan-the-day").knob);
+  const log = useAnswerLog("plan-the-day", "Executive Function", String(index), knob, true);
 
   useEffect(() => {
     let cancelled = false;
-    buildSession(date).then((built) => {
+    buildSession(date, knob).then((built) => {
       if (!cancelled) setRounds(built);
     });
     return () => {
       cancelled = true;
     };
-  }, [date]);
+  }, [date, knob]);
 
   if (!rounds) {
     return <p className="py-12 text-center text-xl">Getting your rounds ready…</p>;
   }
 
   const finishRound = (points: number) => {
+    log(points >= 10, { method: "tap", responseMs: null });
     if (index === rounds.length - 1) {
       onDone(total + points);
     } else {

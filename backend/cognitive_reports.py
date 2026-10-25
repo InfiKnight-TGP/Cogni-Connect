@@ -59,7 +59,7 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
         "description": "Connect related words and concepts together.",
         "primary_domain": "Memory",
         "secondary_domains": [],
-        "playable": False,
+        "playable": True,
         "domain_weights": {"Memory": 1.0},
     },
     "odd-one-out": {
@@ -67,15 +67,7 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
         "description": "Find the item that doesn't belong in the group.",
         "primary_domain": "Attention",
         "secondary_domains": [],
-        "playable": False,
-        "domain_weights": {"Attention": 1.0},
-    },
-    "whack-a-mole": {
-        "name": "Whack-a-Mole",
-        "description": "Tap target moles while suppressing impulses for distractors.",
-        "primary_domain": "Attention",
-        "secondary_domains": [],
-        "playable": False,
+        "playable": True,
         "domain_weights": {"Attention": 1.0},
     },
     "attention-hunt": {
@@ -134,6 +126,70 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
         "playable": True,
         "domain_weights": {"Memory": 1.0},
     },
+    "memory-cards": {
+        "name": "Matching Pictures",
+        "description": "Turn over cards and find familiar picture pairs.",
+        "primary_domain": "Memory",
+        "secondary_domains": [],
+        "playable": True,
+        "domain_weights": {"Memory": 1.0},
+    },
+    "memory-crossword": {
+        "name": "Memory Crossword",
+        "description": "Recall words from your own recent memories.",
+        "primary_domain": "Memory",
+        "secondary_domains": [],
+        "playable": True,
+        "domain_weights": {"Memory": 1.0},
+    },
+    "yesterday-quiz": {
+        "name": "Remember Yesterday",
+        "description": "Recall a journal note or moment from yesterday.",
+        "primary_domain": "Memory",
+        "secondary_domains": [],
+        "playable": True,
+        "domain_weights": {"Memory": 1.0},
+    },
+    "sound-tap": {
+        "name": "Listen to the Beats",
+        "description": "Listen to a short sound or look at the dots, then choose the count.",
+        "primary_domain": "Attention",
+        "secondary_domains": [],
+        "playable": True,
+        "domain_weights": {"Attention": 1.0},
+    },
+    "pattern-completion": {
+        "name": "Finish the Pattern",
+        "description": "Look at familiar pictures and choose what comes next.",
+        "primary_domain": "Executive Function",
+        "secondary_domains": [],
+        "playable": True,
+        "domain_weights": {"Executive Function": 1.0},
+    },
+    "object-naming": {
+        "name": "Name the Picture",
+        "description": "Name familiar everyday objects.",
+        "primary_domain": "Recognition & Orientation",
+        "secondary_domains": [],
+        "playable": True,
+        "domain_weights": {"Recognition & Orientation": 1.0},
+    },
+    "pill-box-planner": {
+        "name": "Pill Box Planner",
+        "description": "Follow several rules at once (a weekly pill-box practice)",
+        "primary_domain": "Executive Function",
+        "secondary_domains": [],
+        "playable": True,
+        "domain_weights": {"Executive Function": 1.0},
+    },
+    "whack-a-mole": {
+        "name": "Garden Taps",
+        "description": "Tap target moles while letting resting visitors stay undisturbed.",
+        "primary_domain": "Attention",
+        "secondary_domains": [],
+        "playable": True,
+        "domain_weights": {"Attention": 1.0},
+    },
     "daily_recall": {
         "name": "Daily Recall",
         "description": "Personalized face recognition, name recall, and memories.",
@@ -145,6 +201,11 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
 }
 
 LEVEL_NAMES: dict[int, str] = {1: "Easy", 2: "Medium", 3: "Hard"}
+
+def difficulty_label(value: Any, fallback: str) -> str:
+    if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 4:
+        return "Easier" if value == 1 else "Normal" if value == 2 else "Harder"
+    return fallback
 
 
 def parse_iso(value: Any) -> datetime | None:
@@ -210,14 +271,18 @@ def get_active_days(performance_file: str | Path) -> list[str]:
 
 def build_daily_plan(
     date_str: str,
-    games_file: str | Path = "games.json",
-    plans_file: str | Path = "daily_plans.json",
-    settings_file: str | Path = "settings.json",
-    performance_file: str | Path = "performance_data.json",
+    games_file: str | Path = Path(__file__).with_name("games.json"),
+    plans_file: str | Path | None = None,
+    settings_file: str | Path | None = None,
+    performance_file: str | Path | None = None,
     today_str: str | None = None,
 ) -> dict[str, list[str]]:
     """Compute a stable plan. Only today and past plans are persisted."""
     from datetime import date
+    from patient_storage import patient_path
+    plans_file = plans_file if plans_file is not None else patient_path('daily_plans.json')
+    settings_file = settings_file if settings_file is not None else patient_path('settings.json')
+    performance_file = performance_file if performance_file is not None else patient_path('performance_data.json')
 
     today_str = today_str or date.today().isoformat()
     plans_path = Path(plans_file)
@@ -343,10 +408,10 @@ def _extract_breakdown_value(breakdown: dict[str, Any] | None, *keys: str) -> fl
 def build_day_report(
     performance_data: dict[str, Any],
     date_str: str,
-    games_file: str | Path = "games.json",
-    plans_file: str | Path = "daily_plans.json",
-    settings_file: str | Path = "settings.json",
-    performance_file: str | Path = "performance_data.json",
+    games_file: str | Path = Path(__file__).with_name("games.json"),
+    plans_file: str | Path | None = None,
+    settings_file: str | Path | None = None,
+    performance_file: str | Path | None = None,
 ) -> dict[str, Any]:
     """Build a daily cognitive report for date_str from performance store data."""
     all_scores: list[dict[str, Any]] = performance_data.get("scores", [])
@@ -360,7 +425,7 @@ def build_day_report(
             continue
         ts = s.get("completed_at") or s.get("timestamp") or s.get("date") or ""
         lvl_num = s.get("level")
-        diff_str = LEVEL_NAMES.get(lvl_num, "Easy") if isinstance(lvl_num, int) else "Easy"
+        diff_str = difficulty_label(s.get("difficulty"), LEVEL_NAMES.get(lvl_num, "Easy") if isinstance(lvl_num, int) else "Easy")
         breakdown = s.get("breakdown")
         game_id = s.get("game_id")
 
@@ -475,7 +540,7 @@ def build_day_report(
 
         ts = s.get("completed_at") or s.get("timestamp") or s.get("date") or ""
         lvl_num = s.get("level")
-        diff_str = LEVEL_NAMES.get(lvl_num, "Medium") if isinstance(lvl_num, int) else "Medium"
+        diff_str = difficulty_label(s.get("difficulty"), LEVEL_NAMES.get(lvl_num, "Medium") if isinstance(lvl_num, int) else "Medium")
         reg = GAME_REGISTRY.get(game_id, {
             "name": game_id.replace("-", " ").title(),
             "primary_domain": normalize_domain(s.get("skill")) or "Memory",

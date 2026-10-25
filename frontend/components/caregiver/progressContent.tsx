@@ -1,6 +1,6 @@
 "use client";
 
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { COGNITIVE_AREAS } from "@/lib/areas";
 import {
   AREAS, Entry, LEVEL_NAMES, Week, declines, lastFourWeeks, shortDate, toEntries, trend,
@@ -11,6 +11,9 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { Line } from "react-chartjs-2";
 import RecallGraph from "@/app/progress/recall-graph";
+import { GAME_REGISTRY } from "@/components/games/registry";
+import { gameArea, type Area } from "@/lib/progress";
+import { Button } from "@/components/ui/button";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
@@ -19,19 +22,63 @@ const SERIES = {
   dark: COGNITIVE_AREAS.map((area) => area.chartColors.dark),
 };
 const LEVEL_GROUPS = Object.values(LEVEL_NAMES);
+type AdaptiveState = { knob: number; mode?: "auto" | "fixed"; reason?: string; lastChange?: string | null };
+const difficultyName = (knob: number) => knob === 1 ? "Easier" : knob === 2 ? "Normal" : "Harder";
 const TREND_TEXT = { up: "↑ Better", down: "↓ Lower", steady: "→ Steady" };
 
-export default function ProgressContent() {
+let globalShowNotes = false;
+const trendNotesListeners = new Set<(val: boolean) => void>();
+
+export function useTrendNotes() {
+  const [showNotes, setShowNotes] = useState(globalShowNotes);
+  const set = (val: boolean) => {
+    globalShowNotes = val;
+    trendNotesListeners.forEach((fn) => fn(val));
+  };
+  useEffect(() => {
+    trendNotesListeners.add(setShowNotes);
+    return () => {
+      trendNotesListeners.delete(setShowNotes);
+    };
+  }, []);
+  return [showNotes, set] as const;
+}
+
+export default function ProgressContent({ audience = "caregiver" }: { audience?: "caregiver" | "self" }) {
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [adaptive, setAdaptive] = useState<Record<string, AdaptiveState> | null>(null);
+  const [adaptiveError, setAdaptiveError] = useState("");
+  const [showNotes, setShowNotes] = useTrendNotes();
   const today = new Date();
 
   useEffect(() => {
-    fetch(`${API_URL}/performance`)
+    apiFetch(`${API_URL}/performance`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((perf) => setEntries(toEntries(perf)))
       .catch(() => setFailed(true));
   }, []);
+
+  const loadAdaptive = () => apiFetch(`${API_URL}/adaptive`)
+    .then((r) => r.ok ? r.json() : Promise.reject(new Error("Could not load difficulty settings")))
+    .then((data) => { setAdaptive(data.games ?? {}); setAdaptiveError(""); })
+    .catch(() => setAdaptiveError("Could not load difficulty settings."));
+  useEffect(() => { void loadAdaptive(); }, []);
+  const setOverride = async (gameId: string, mode: "auto" | "fixed", knob?: number) => {
+    try {
+      const response = await apiFetch(`${API_URL}/adaptive/override`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ game_id: gameId, mode, ...(mode === "fixed" ? { knob } : {}) }) });
+      if (!response.ok) throw new Error("Could not save difficulty setting.");
+      await loadAdaptive();
+    } catch (error) { setAdaptiveError(error instanceof Error ? error.message : "Could not save difficulty setting."); }
+  };
+  const resetOverride = async (gameId: string) => {
+    try {
+      const response = await apiFetch(`${API_URL}/adaptive/reset`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ game_id: gameId }) });
+      if (!response.ok) throw new Error("Could not reset difficulty.");
+      await loadAdaptive();
+    } catch (error) { setAdaptiveError(error instanceof Error ? error.message : "Could not reset difficulty."); }
+  };
+  const adaptiveGroups = GAME_REGISTRY.filter((game) => !game.comingSoon).reduce<Record<Area, typeof GAME_REGISTRY>>((groups, game) => { const area = gameArea(game.id, game.area); if (area) (groups[area] ??= []).push(game); return groups; }, {} as Record<Area, typeof GAME_REGISTRY>);
 
   const weeks = lastFourWeeks(today);
   const notes = entries ? declines(entries, today) : [];
@@ -47,7 +94,10 @@ export default function ProgressContent() {
       ) : (
         <>
 
-          {notes.map((n) => (
+          {audience !== "self" && (
+            <label className="flex items-center gap-3 text-base"><input type="checkbox" checked={showNotes} onChange={event => setShowNotes(event.target.checked)} /> Show detailed trend notes</label>
+          )}
+          {showNotes && notes.map((n) => (
             <div key={n.area} role="note" className="flex gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
               <span aria-hidden className="text-xl">ℹ️</span>
               <p>
@@ -70,6 +120,13 @@ export default function ProgressContent() {
             groups={LEVEL_GROUPS}
             series={weeklyAverages(entries, weeks, (e) => (e.level ? LEVEL_NAMES[e.level] : undefined))}
           />
+
+          <section className="rounded-xl border bg-card p-6" aria-labelledby="difficulty-heading">
+            <h2 id="difficulty-heading" className="text-xl font-semibold">Difficulty</h2>
+            <p className="text-sm text-muted-foreground">Automatic settings use recent answers. A fixed setting stays until you reset it.</p>
+            {adaptiveError && <p role="alert" className="mt-2 text-sm text-destructive">{adaptiveError}</p>}
+            {adaptive === null ? <p className="mt-4 text-sm text-muted-foreground">Loading difficulty settingsâ€¦</p> : <div className="mt-5 space-y-6">{Object.entries(adaptiveGroups).map(([area, games]) => <div key={area}><h3 className="mb-2 font-semibold">{area}</h3><div className="divide-y rounded-lg border">{games.map((game) => { const state = adaptive[game.id] ?? { knob: 2, mode: "auto" as const, reason: "Getting to know your pace" }; const fixed = state.mode === "fixed"; return <div key={game.id} className="grid gap-3 p-4 md:grid-cols-[1fr_auto_auto] md:items-center"><div><p className="font-medium">{game.name}</p><p className="text-sm text-muted-foreground">{difficultyName(state.knob)} Â· {state.reason || "No change yet"}{state.lastChange ? ` Â· ${new Date(state.lastChange).toLocaleDateString()}` : ""}</p></div><div className="flex flex-wrap items-center gap-2"><label className="text-sm">Mode<select value={fixed ? "fixed" : "auto"} onChange={(event) => event.target.value === "auto" ? void setOverride(game.id, "auto") : void setOverride(game.id, "fixed", state.knob || 2)} className="ml-2 min-h-10 rounded-md border bg-background px-2"><option value="auto">Auto</option><option value="fixed">Fixed</option></select></label>{fixed && <label className="text-sm">Setting<select value={state.knob} onChange={(event) => void setOverride(game.id, "fixed", Number(event.target.value))} className="ml-2 min-h-10 rounded-md border bg-background px-2"><option value="1">Easier</option><option value="2">Normal</option><option value="3">Harder</option><option value="4">Harder</option></select></label>}</div><Button variant="outline" size="sm" onClick={() => void resetOverride(game.id)}>Reset</Button></div>;})}</div></div>)}</div>}
+          </section>
 
           <section className="flex h-96 flex-col rounded-xl border bg-card p-6">
             <h2 className="mb-1 text-xl font-semibold">Daily Recall (My Day) scores</h2>

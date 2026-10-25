@@ -10,6 +10,7 @@ import { localDateKey } from "./date";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 import { usePreferences } from "@/components/interaction/InteractionProvider";
 import { ReadAloud } from "@/components/interaction/ReadAloud";
+import { finishAdaptiveSession, readSkill } from "@/lib/interaction/events";
 
 /** True on the caregiver's All Games page: games can be tried without saving a score. */
 export const PreviewContext = createContext(false);
@@ -46,6 +47,7 @@ export default function GameShell({
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
   const [score, setScore] = useState<number | null>(null);
+  const [sessionDifficulty] = useState(() => Math.max(1, Math.min(4, Math.round(readSkill(gameId).knob))) as 1 | 2 | 3 | 4);
   const [selectedDate, setSelectedDate] = useState(date ?? localDateKey());
   const [caregiver] = useCaregiver(); // patients never see level or skill names
   const preview = useContext(PreviewContext);
@@ -59,6 +61,7 @@ export default function GameShell({
     setScore(clampedScore);
     setFinished(true);
     setStarted(false);
+    await finishAdaptiveSession(gameId);
     if (preferences.soundEffects && typeof window !== "undefined") {
       try {
         const context = new AudioContext(); const oscillator = context.createOscillator(); const gain = context.createGain();
@@ -74,6 +77,7 @@ export default function GameShell({
       level,
       skill,
       score: clampedScore,
+      difficulty: sessionDifficulty,
     });
 
     if (onFinish) {

@@ -12,11 +12,13 @@ export function DictationButton({
   onText,
   transform = text => text,
   disabled = false,
+  alwaysVisible = false,
 }: {
   value: string;
   onText: (text: string) => void;
   transform?: (text: string) => string;
   disabled?: boolean;
+  alwaysVisible?: boolean;
 }) {
   const { t, caregiver } = useTranslate();
   const { preferences } = usePreferences();
@@ -24,7 +26,7 @@ export function DictationButton({
   const [listening, setListening] = useState(false);
   const [message, setMessage] = useState("");
   const listen = useCallback(async () => {
-    if ((!preferences.answerBySpeaking && !caregiver) || listening || disabled) return;
+    if ((!preferences.answerBySpeaking && !caregiver && !alwaysVisible) || listening || disabled) return;
     const session = beginSpeechSession("dictation");
     setListening(true);
     setMessage("");
@@ -50,9 +52,9 @@ export function DictationButton({
       session.finish();
       setListening(false);
     }
-  }, [preferences.answerBySpeaking, caregiver, listening, disabled, provider, speechLanguage, transform, t, onText, value]);
+  }, [preferences.answerBySpeaking, caregiver, listening, disabled, alwaysVisible, provider, speechLanguage, transform, t, onText, value]);
 
-  if (!preferences.answerBySpeaking && !caregiver) return null;
+  if (!preferences.answerBySpeaking && !caregiver && !alwaysVisible) return null;
   return <div className="my-2 flex flex-wrap items-center gap-2">
     <Button type="button" variant="outline" className="min-h-12 max-w-full whitespace-normal text-base" onClick={() => void listen()} disabled={disabled || listening}>
       <Mic className="mr-2 h-5 w-5" />{t(listening ? "Listening…" : "Dictate answer")}

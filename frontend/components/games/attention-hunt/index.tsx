@@ -6,13 +6,15 @@ import { Check, RotateCcw } from "lucide-react";
 import GameShell from "../_shared/GameShell";
 import { GameProps } from "../_shared/types";
 import { Button } from "@/components/ui/button";
-import { attentionRounds, BoardItem } from "./data";
+import { attentionRounds, BoardItem, roundsForKnob } from "./data";
 import {
   initialSession,
   newSession,
   pluralize,
 } from "./logic";
 import ReadAloud from "@/components/interaction/ReadAloud";
+import { readSkill } from "@/lib/interaction/events";
+import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 
 function computeScore(foundTotal: number, totalTargets: number, wrongTaps: number): number {
   if (totalTargets === 0) return 0;
@@ -22,19 +24,23 @@ function computeScore(foundTotal: number, totalTargets: number, wrongTaps: numbe
 }
 
 function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
-  const [boards, setBoards] = useState<BoardItem[][]>(() => initialSession());
+  const [knob] = useState(() => readSkill("attention-hunt").knob);
+  const rounds = roundsForKnob(knob);
+  const [boards, setBoards] = useState<BoardItem[][]>(() => initialSession(knob));
   const [roundIndex, setRoundIndex] = useState(0);
   const [foundIds, setFoundIds] = useState<number[]>([]);
   const [wrongIds, setWrongIds] = useState<number[]>([]);
   const [foundTotal, setFoundTotal] = useState(0);
   const [wrongTaps, setWrongTaps] = useState(0);
   const [feedback, setFeedback] = useState("");
-  const [timeLeft, setTimeLeft] = useState(60);
+  const [timeLeft, setTimeLeft] = useState(knob === 1 ? 90 : knob === 3 ? 60 : knob === 4 ? 50 : 60);
   const [started, setStarted] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
+  const log = useAnswerLog("attention-hunt", "Attention", `${roundIndex}-${foundIds.length}`, knob, true);
   const doneCalledRef = useRef(false);
 
   const board = boards[roundIndex];
-  const config = attentionRounds[roundIndex];
+  const config = rounds[roundIndex];
   const target = board.find((item) => item.isTarget)!;
   const targetCount = board.filter((item) => item.isTarget).length;
   const foundInRound = foundIds.length;
@@ -51,8 +57,8 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
   };
 
   useEffect(() => {
-    setBoards(newSession());
-  }, []);
+    setBoards(newSession(knob));
+  }, [knob]);
 
   // 60-second timer per round (paused when not started)
   useEffect(() => {
@@ -66,21 +72,16 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
   // Round timeout handling
   useEffect(() => {
     if (!started || timeLeft > 0) return;
-    if (roundIndex < attentionRounds.length - 1) {
-      setFeedback("Time's up for this round! Moving to the next round.");
-      setRoundIndex((r) => r + 1);
-      setFoundIds([]);
-      setWrongIds([]);
-      setTimeLeft(60);
-      setStarted(false);
-    } else {
-      handleFinishSession(foundTotal, wrongTaps);
-    }
+    setFeedback(roundIndex < rounds.length - 1
+      ? "Time's up. The remaining targets are highlighted. Start the next round when you are ready."
+      : "Time's up. The remaining targets are highlighted. Finish when you are ready.");
+    setTimedOut(true);
+    setStarted(false);
   }, [started, timeLeft, roundIndex, foundTotal, wrongTaps]);
 
   const reset = () => {
     doneCalledRef.current = false;
-    const nextBoards = newSession();
+    const nextBoards = newSession(knob);
     setBoards(nextBoards);
     setRoundIndex(0);
     setFoundIds([]);
@@ -88,13 +89,15 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
     setFoundTotal(0);
     setWrongTaps(0);
     setFeedback("");
-    setTimeLeft(60);
+    setTimeLeft(knob === 1 ? 90 : knob === 3 ? 60 : knob === 4 ? 50 : 60);
     setStarted(false);
+    setTimedOut(false);
   };
 
   const select = (item: BoardItem) => {
     if (!started || foundIds.includes(item.id)) return;
     if (!item.isTarget) {
+      log(false, { method: "tap", responseMs: null });
       const nextWrong = wrongTaps + 1;
       setWrongTaps(nextWrong);
       setWrongIds((value) => [...value, item.id]);
@@ -103,12 +106,13 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
       return;
     }
     const nextFound = [...foundIds, item.id];
+    log(true, { method: "tap", responseMs: null });
     setFoundIds(nextFound);
     const nextFoundTotal = foundTotal + 1;
     setFoundTotal(nextFoundTotal);
     setFeedback("Correct! Target found.");
     if (nextFound.length === targetCount) {
-      if (roundIndex === attentionRounds.length - 1) {
+      if (roundIndex === rounds.length - 1) {
         handleFinishSession(nextFoundTotal, wrongTaps);
       } else {
         setFeedback("All targets found! Continue to the next round.");
@@ -121,8 +125,9 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
     setFoundIds([]);
     setWrongIds([]);
     setFeedback("");
-    setTimeLeft(60);
+    setTimeLeft(knob === 1 ? 90 : knob === 3 ? 60 : knob === 4 ? 50 : 60);
     setStarted(false);
+    setTimedOut(false);
   };
 
   return (
@@ -130,7 +135,7 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-primary">
-            Round {roundIndex + 1} of {attentionRounds.length} · Level 3
+            Round {roundIndex + 1} of {rounds.length}
           </p>
           <h2 className="mt-1 text-2xl font-semibold">Find all the {pluralize(target.label)}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -182,18 +187,21 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
         {board.map((item) => {
           const found = foundIds.includes(item.id);
           const wrong = wrongIds.includes(item.id);
+          const remaining = timedOut && item.isTarget && !found;
           return (
             <button
               key={item.id}
               type="button"
-              aria-label={`${item.label}${found ? ", found" : ""}`}
+              aria-label={`${item.label}${found ? ", found" : remaining ? ", remaining target" : ""}`}
               disabled={!started || found || foundInRound === targetCount}
               onClick={() => select(item)}
               className={`flex aspect-square min-w-0 items-center justify-center rounded-xl border-2 bg-background text-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-4xl ${
                 found
                   ? "border-green-600 bg-green-50 text-green-800"
                   : wrong
-                  ? "border-destructive/50 bg-destructive/10"
+                  ? "border-amber-500/60 bg-amber-100/60 dark:bg-amber-950/40"
+                  : remaining
+                  ? "border-amber-400 bg-amber-50 shadow-[0_0_0_4px_rgba(251,191,36,0.2)] dark:bg-amber-950/50"
                   : "border-border"
               }`}
             >
@@ -209,9 +217,14 @@ function AttentionHuntSession({ onDone }: { onDone: (score: number) => void }) {
             <Check className="mr-2 h-4 w-4" /> Start round {roundIndex + 1}
           </Button>
         ) : null}
-        {foundInRound === targetCount && roundIndex < attentionRounds.length - 1 && (
+        {(timedOut || foundInRound === targetCount) && roundIndex < rounds.length - 1 && (
           <Button className="min-h-12" onClick={nextRound}>
             Next round <Check className="ml-2 h-4 w-4" />
+          </Button>
+        )}
+        {timedOut && roundIndex === rounds.length - 1 && (
+          <Button className="min-h-12" onClick={() => handleFinishSession(foundTotal, wrongTaps)}>
+            Finish <Check className="ml-2 h-4 w-4" />
           </Button>
         )}
         <p className="text-sm text-muted-foreground">

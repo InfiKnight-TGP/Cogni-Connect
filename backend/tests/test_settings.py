@@ -1,3 +1,4 @@
+from tests.auth_support import setup_auth, make_client
 import json
 from datetime import date, timedelta
 from pathlib import Path
@@ -11,13 +12,14 @@ import app
 
 class SettingsTests(unittest.TestCase):
     def setUp(self):
+        setup_auth(self, 'caregiver')
         self.temp_dir = tempfile.TemporaryDirectory()
         root = Path(self.temp_dir.name)
         self.settings_path = root / "settings.json"
         self.plans_path = root / "daily_plans.json"
         self.perf_path = root / "performance_data.json"
         self.games_path = root / "games.json"
-        self.settings_path.write_text(json.dumps({"pin": "1234", "patient_name": "Lakshmi"}), encoding="utf-8")
+        self.settings_path.write_text(json.dumps({"patient_name": "Lakshmi"}), encoding="utf-8")
         self.plans_path.write_text("{}", encoding="utf-8")
         self.perf_path.write_text(json.dumps({"scores": [], "game_scores": []}), encoding="utf-8")
         self.games_path.write_text(json.dumps({"games": [
@@ -34,7 +36,7 @@ class SettingsTests(unittest.TestCase):
         ]
         for item in self.patches:
             item.start()
-        self.client = app.api.test_client()
+        self.client = self.auth_client
 
     def tearDown(self):
         for item in reversed(self.patches):
@@ -46,31 +48,31 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"patient_name": "Lakshmi", "language": "en", "pins": []})
         self.assertNotIn("pin", response.get_json())
-        stored = json.loads(self.settings_path.read_text(encoding="utf-8"))["pin"]
-        self.assertNotEqual(stored, "1234")
-        self.assertTrue(check_password_hash(stored, "1234"))
+        self.assertNotIn("pin", json.loads(self.settings_path.read_text(encoding="utf-8")))
 
     def test_valid_language_is_saved_and_patient_name_handling_remains(self):
         response = self.client.post("/settings", json={"language": "hi", "patient_name": " Meera "})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"patient_name": "Meera", "language": "hi", "pins": []})
         self.assertEqual(self.client.get("/settings").get_json()["language"], "hi")
-        stored = json.loads(self.settings_path.read_text(encoding="utf-8"))["pin"]
-        self.assertTrue(check_password_hash(stored, "1234"))
+        self.assertNotIn("pin", json.loads(self.settings_path.read_text(encoding="utf-8")))
 
     def test_invalid_language_is_rejected_without_saving(self):
+        before = self.settings_path.read_text(encoding="utf-8")
         response = self.client.post("/settings", json={"language": "xx"})
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(json.loads(self.settings_path.read_text(encoding="utf-8"))["language"], "en")
+        self.assertEqual(self.settings_path.read_text(encoding="utf-8"), before)
 
     def test_pin_migration_unlock_and_change_require_current_pin(self):
+        self.client = make_client("patient_device")
         self.assertEqual(self.client.post("/caregiver/unlock", json={"pin": "1234"}).status_code, 200)
         self.assertEqual(self.client.post("/caregiver/change-pin", json={"current_pin": "9999", "new_pin": "5678"}).status_code, 400)
         self.assertEqual(self.client.post("/caregiver/change-pin", json={"current_pin": "1234", "new_pin": "56x8"}).status_code, 400)
         self.assertEqual(self.client.post("/caregiver/change-pin", json={"current_pin": "1234", "new_pin": "5678"}).status_code, 200)
         self.assertEqual(self.client.post("/caregiver/unlock", json={"pin": "1234"}).status_code, 403)
-        self.assertEqual(self.client.post("/caregiver/unlock", json={"pin": "5678"}).status_code, 200)
-        stored = json.loads(self.settings_path.read_text(encoding="utf-8"))["pin"]
+        import db
+        with app.api.app_context():
+            stored = db.fetchone("SELECT pin_hash FROM patients WHERE id='test-patient'")[0]
         self.assertTrue(check_password_hash(stored, "5678"))
 
     def test_pins_validate_and_invalidate_unplayed_plans(self):

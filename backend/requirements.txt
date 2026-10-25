@@ -6,3 +6,4 @@ SpeechRecognition
 numpy
 python-dotenv
 opencv-python
+pillow

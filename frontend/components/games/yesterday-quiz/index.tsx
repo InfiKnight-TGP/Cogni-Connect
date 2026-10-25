@@ -3,7 +3,7 @@ import { useContext, useEffect, useState } from "react";
 import GameShell, { PreviewContext } from "../_shared/GameShell";
 import ChoiceSession from "../_shared/ChoiceSession";
 import type { GameProps } from "../_shared/types";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { buildYesterdayChoices, validMemoryDay, type YesterdayMemory } from "@/lib/interaction/yesterday-quiz";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 
@@ -23,7 +23,7 @@ function Yesterday({ date, finish }: { date: string; finish: (score: number) => 
     let cancelled = false;
     const load = async () => {
       try {
-        const response = await fetch(API_URL + "/journals", { cache: "no-store" });
+        const response = await apiFetch(API_URL + "/journals", { cache: "no-store" });
         if (!response.ok) throw new Error("journals unavailable");
         const journals = await response.json() as Record<string, Journal>;
         const targetDay = new Date(date + "T12:00:00");
@@ -38,7 +38,7 @@ function Yesterday({ date, finish }: { date: string; finish: (score: number) => 
           const videoName = filename.replace(/\.[^.]+$/, "");
           try {
             const transcriptUrl = API_URL + "/video_chunks/" + encodeURIComponent(videoName + "_chunks") + "/full_transcript.json";
-            const transcriptResponse = await fetch(transcriptUrl, { cache: "no-store" });
+            const transcriptResponse = await apiFetch(transcriptUrl, { cache: "no-store" });
             if (!transcriptResponse.ok) return;
             const transcripts = await transcriptResponse.json() as Record<string, unknown>;
             const summary = Object.values(transcripts).filter((value): value is string => typeof value === "string" && value.trim().length > 12).join(" ").trim();

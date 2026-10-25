@@ -1,14 +1,16 @@
+from tests.auth_support import setup_auth, make_client
 import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import app
 
 
 class CrosswordTests(unittest.TestCase):
     def setUp(self):
+        setup_auth(self, 'caregiver')
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.people_path = self.root / "people.json"
@@ -33,7 +35,7 @@ class CrosswordTests(unittest.TestCase):
         ]
         for item in self.patches:
             item.start()
-        self.client = app.api.test_client()
+        self.client = self.auth_client
 
     def tearDown(self):
         for item in reversed(self.patches):
@@ -59,7 +61,7 @@ class CrosswordTests(unittest.TestCase):
         self.assertEqual([item["word"] for item in valid], ["ELEPHANTS", "CAMERA", "ZOO"])
 
     def test_fallback_without_key_uses_people_and_routine_words(self):
-        with patch.object(app.client, "api_key", "not_configured"):
+        with patch.object(app, "client", MagicMock(api_key="not_configured")):
             response = self.client.get("/crossword?date=2026-10-14")
         self.assertEqual(response.status_code, 200)
         puzzle = response.get_json()
@@ -69,7 +71,7 @@ class CrosswordTests(unittest.TestCase):
         self.assertTrue(all(entry["clue"].startswith(("Your ", "Something you do")) for entry in puzzle["entries"]))
 
     def test_same_date_returns_the_cached_puzzle(self):
-        with patch.object(app.client, "api_key", "not_configured"):
+        with patch.object(app, "client", MagicMock(api_key="not_configured")):
             first = self.client.get("/crossword?date=2026-10-14").get_json()
             self._write(self.people_path, [{"id": "new", "name": "Newname", "relation": "Friend"}])
             second = self.client.get("/crossword?date=2026-10-14").get_json()

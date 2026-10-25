@@ -15,7 +15,7 @@ function Session({ finish }: { finish: (score: number) => void }) {
   const [round, setRound] = useState(0);
   const [correct, setCorrect] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
-  const [knob, setKnob] = useState(() => readSkill("Attention").knob);
+  const [knob] = useState(() => readSkill("odd-one-out").knob);
   const { t } = useTranslate();
   const question = questions.rounds[round];
   const similar = question.similar.slice(0, Math.min(question.similar.length, knob + 1));
@@ -32,7 +32,7 @@ function Session({ finish }: { finish: (score: number) => void }) {
   };
   const next = () => {
     if (round === questions.rounds.length - 1) finish(Math.round(correct / questions.rounds.length * 100));
-    else { setRound(value => value + 1); setPicked(null); setKnob(readSkill("Attention").knob); }
+    else { setRound(value => value + 1); setPicked(null); }
   };
   return <section className="space-y-5">
     <h2 className="text-3xl font-bold">{t(questions.prompt)}</h2>

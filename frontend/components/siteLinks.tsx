@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Check, ChevronDown, Globe, Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { useTranslate, type LanguageCode as SupportedLanguage } from "@/components/interaction/InteractionProvider";
 
 export const LANGUAGES = [
@@ -40,6 +40,7 @@ function languageLabel(code: LanguageItemCode) {
 }
 
 function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column" }) {
+  const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const { t, language, ready: languageLoaded, setLanguage, caregiver } = useTranslate();
   const [mounted, setMounted] = useState(false);
@@ -113,8 +114,9 @@ function SiteLinks({ placement = "page" }: { placement?: "page" | "right-column"
 
   const saveLanguage = async (code: SupportedLanguage) => {
     setSaveError(false);
+    if (!caregiver || ["/welcome", "/login", "/signup", "/verify", "/forgot", "/reset", "/pair", "/about", "/terms", "/privacy"].includes(pathname)) { setLanguage(code); return; }
     try {
-      const response = await fetch(`${API_URL}/settings`, {
+      const response = await apiFetch(`${API_URL}/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ language: code }),

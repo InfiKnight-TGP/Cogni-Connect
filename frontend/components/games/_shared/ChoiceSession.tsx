@@ -26,7 +26,7 @@ export default function ChoiceSession({ game, domain, makeRound, finish, count =
   const [index, setIndex] = useState(0);
   const [correct, setCorrect] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
-  const [knob, setKnob] = useState(() => readSkill(domain).knob);
+  const [knob] = useState(() => readSkill(game).knob);
   const { t } = useTranslate();
   const round = makeRound(index, knob);
   const log = useAnswerLog(game, domain, String(index), knob, true);
@@ -43,7 +43,6 @@ export default function ChoiceSession({ game, domain, makeRound, finish, count =
     else {
       setIndex(value => value + 1);
       setPicked(null);
-      setKnob(readSkill(domain).knob);
     }
   };
 

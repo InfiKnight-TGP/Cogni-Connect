@@ -1,4 +1,4 @@
-﻿# CogniConnect – agent instructions
+# CogniConnect – agent instructions
 
 Dementia memory-support platform (SIH26003, MDoNER). Flask backend in /backend (port 5000), Next.js 14 frontend in /frontend (port 3000). Windows + PowerShell. `npm run dev` in the root starts both.
 
@@ -16,6 +16,6 @@ Dementia memory-support platform (SIH26003, MDoNER). Flask backend in /backend (
 ## Rules
 - Read files before editing; minimal edits; keep existing logic and routes.
 - Don't run `npm run build` or start another dev server while `npm run dev` runs.
-- Checks: `npx tsc --noEmit` and `node lib/progress.check.mjs` (in frontend); `.venv\Scripts\python.exe -m unittest tests/test_cognitive_reports.py` and `.venv\Scripts\python.exe -c "import app"` (in backend).
+- Checks: `npx tsc --noEmit`, `node lib/progress.check.mjs`, `node lib/self-progress.check.mjs`, `node lib/word-association.check.mjs`, `node lib/whack-a-mole.check.mjs`, and `node lib/pill-box-planner.check.mjs` (in frontend); `.venv\Scripts\python.exe -m unittest tests/test_cognitive_reports.py` and `.venv\Scripts\python.exe -c "import app"` (in backend).
 - Open JSON files with encoding="utf-8".
 - Show the real git diff and commit after each part.

@@ -88,10 +88,10 @@ A full-stack AI-powered memory support application designed to help individuals 
   - MoviePy 2.x for video manipulation
   - OpenCV (cv2) for frame extraction
   - ORB keypoint detection for unique frame filtering
-- **Data Storage**: JSON-based file storage
-  - `qas.json`: Quiz questions and answers
-  - `video_journals.json`: Video metadata
-  - `performance_data.json`: Quiz performance history
+- **Data Storage**:
+  - `backend/auth.db`: SQLite database (WAL mode, foreign keys, 5-second busy timeout) storing caregiver accounts, patient profiles, device/caregiver sessions, pairing codes, and OTPs (gitignored, managed via `backend/db.py` and `backend/schema.sql` for easy migration to Supabase/PostgreSQL).
+  - **Video Media**: Uploaded video journals, video chunks, and extracted frames stay on the backend disk under patient-scoped directories (`backend/data/<patient_id>/content/`, `video_chunks/`, `frames/`, `known_faces/`).
+  - **JSON Data**: Performance records, quiz Q&As, daily plans, routines, and settings stay on the backend disk as JSON files within patient-scoped storage (`backend/data/<patient_id>/`).
 - **Utilities**: 
   - python-dotenv for environment variables
   - NumPy for numerical operations
@@ -201,6 +201,30 @@ Expected output:
 ### Access the Application
 - **Main App**: http://localhost:3000
 - **API Server**: http://localhost:5000
+
+### Development shortcuts
+
+For local-only UI testing, enable both flags in the backend/frontend environments:
+
+```env
+COGNI_DEV_LOGIN=1
+NEXT_PUBLIC_DEV_LOGIN=1
+DEV_DEMO_PASSWORD=demo1234
+```
+
+This seeds `caregiver@demo.local` and `owner@demo.local`, adds a demo patient with PIN `1234`, and shows shortcut sign-in roles. A Patient Device shortcut creates a patient-device session without a pairing code. These routes are restricted to requests whose socket address is `127.0.0.1` or `::1`; keep the flags off outside local development.
+
+### Demo access
+
+For a local shared demo, enable `COGNI_DEMO=1` and `NEXT_PUBLIC_DEMO=1`. The seeded credentials are:
+
+- Caregiver: `demo@cogniconnect.com` / `Demo@1234`
+- Patient account: `patient@cogniconnect.com` / `Patient@1234`
+- OTP: `123456`
+- Pairing code: `DEMA-2345`
+- Patient PIN: `1234`
+
+Demo mode is local-only unless `COGNI_DEMO_PUBLIC=1` is explicitly set. Demo data can be reset from caregiver Settings or with `backend/reset_demo.py`. The included “Me at the zoo” frames and team sample photos are fixtures only; replace them with consented photos before any public hosting, and never host demo mode alongside real data.
 
 ## 📁 Project Structure
 

@@ -11,10 +11,11 @@ import { Textarea } from "../ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import VideoModal from "../videoModal";
 import { format } from "date-fns";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import { isCaregiverUnlocked } from "@/lib/mode";
 import { ReadAloud } from "@/components/interaction/ReadAloud";
 import { DictationButton } from "@/components/interaction/DictationButton";
+import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 
 export default function ContextQuestions({
   setProgress,
@@ -24,6 +25,7 @@ export default function ContextQuestions({
   activityScores,
   setActivityScore,
   onComplete,
+  difficulty = 2,
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
@@ -36,6 +38,7 @@ export default function ContextQuestions({
   };
   setActivityScore?: (score: number) => void;
   onComplete?: (score: number) => void;
+  difficulty?: number;
 }) {
   const [tab, setTab] = useState("1");
   const [feedback, setFeedback] = useState<{submitted: boolean; feedback: number}[]>([]);
@@ -51,19 +54,20 @@ export default function ContextQuestions({
   const [loading, setLoading] = useState(true);
 
   const [open, setOpen] = useState(false);
+  const log = useAnswerLog("context-recall", "Memory", tab, difficulty, true);
 
   // Fetch questions from backend
   useEffect(() => {
     const fetchQuestions = async () => {
       try {
-        const response = await fetch(`${API_URL}/questions`);
+        const response = await apiFetch(`${API_URL}/questions`);
         if (response.ok) {
           const result = await response.json();
           const questions = result.questions || [];
           if (questions.length === 0) {
             console.log("No questions found in qas.json");
           }
-          setData(questions);
+          setData(difficulty === 1 ? questions.slice(0, 3) : questions);
           // Initialize feedback array based on number of questions
           setFeedback(questions.map(() => ({ submitted: false, feedback: -1 })));
         } else {
@@ -120,7 +124,7 @@ export default function ContextQuestions({
         const combinedScore = Math.round(validScores.reduce((sum, score) => sum + score, 0) / validScores.length);
         
         // Save combined performance to backend
-        fetch(`${API_URL}/performance`, {
+        apiFetch(`${API_URL}/performance`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -131,6 +135,7 @@ export default function ContextQuestions({
             date: format(date, "yyyy-MM-dd"),
             game_id: "daily_recall",
             level: 1,
+            difficulty: 2,
             skill: "personal memory",
             breakdown: {
               activity1_faceRecognition: activityScores?.activity1,
@@ -147,7 +152,7 @@ export default function ContextQuestions({
   /*
   useEffect(() => {
     const getData = async () => {
-      const res = await fetch("/api/questions", {
+      const res = await apiFetch("/api/questions", {
         headers: {
           "Content-Type": "application/json",
         },
@@ -252,6 +257,8 @@ export default function ContextQuestions({
               setOpen={setOpen}
               totalQuestions={data.length}
               setTab={setTab}
+              logAnswer={log}
+              difficulty={difficulty}
             />
           ) : null}
           
@@ -280,6 +287,8 @@ function Question({
   setOpen,
   totalQuestions,
   setTab,
+  logAnswer,
+  difficulty,
 }: {
   n: string;
   feedback: {
@@ -298,13 +307,15 @@ function Question({
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
   totalQuestions: number;
   setTab: React.Dispatch<React.SetStateAction<string>>;
+  logAnswer: (correct: boolean, input?: { method: "tap" | "typed" | "voice"; responseMs: number | null }) => void;
+  difficulty: number;
 }) {
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
 
   const onSubmit = async () => {
     try {
-      const res = await fetch("/api/accuracy", {
+      const res = await apiFetch("/api/accuracy", {
         method: "POST",
         body: JSON.stringify({
           given: value,
@@ -324,6 +335,7 @@ function Question({
       }
 
       const newFeedback = [...feedback];
+      logAnswer(scoreValue >= 5, { method: "typed", responseMs: null });
       newFeedback[parseInt(n) - 1].submitted = true;
       newFeedback[parseInt(n) - 1].feedback = scoreValue;
       setFeedback(newFeedback);

@@ -6,6 +6,8 @@ import { GameProps } from "../_shared/types";
 import { cn } from "@/lib/utils";
 import ReadAloud from "@/components/interaction/ReadAloud";
 import { Button } from "@/components/ui/button";
+import { readSkill } from "@/lib/interaction/events";
+import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 import {
   JUNCTIONS,
   LANDMARK_POOL,
@@ -15,7 +17,6 @@ import {
   getBFSDistance,
 } from "./data";
 
-const MEMORISE_SECONDS = 15;
 const HINT_FLASH_MS = 2000;
 const GOAL_REACHED_MS = 1200;
 
@@ -43,9 +44,10 @@ interface MapNavigatorGameProps {
 }
 
 function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
+  const [knob] = useState(() => readSkill("map-navigator").knob);
   const [roundIdx, setRoundIdx] = useState(0); // 0, 1, 2, 3 (Rounds 1 to 4)
   const [phase, setPhase] = useState<"memorise" | "navigate" | "round_end">("memorise");
-  const [timer, setTimer] = useState(MEMORISE_SECONDS);
+  const [timer, setTimer] = useState(15);
 
   const [setup, setSetup] = useState<RoundSetup | null>(null);
   const [targetSequence, setTargetSequence] = useState<string[]>([]);
@@ -62,6 +64,7 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
   const [goalReachedMsg, setGoalReachedMsg] = useState<string | null>(null);
 
   const [roundEfficiencies, setRoundEfficiencies] = useState<number[]>([]);
+  const log = useAnswerLog("map-navigator", "Recognition & Orientation", `${roundIdx}-${activeGoalIdx}-${pathWalked.length}`, knob, true);
 
   const onDoneRef = useRef(onDone);
   useEffect(() => {
@@ -71,8 +74,8 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
   // Initialise round setup
   useEffect(() => {
     const isR4 = roundIdx === 3;
-    const goalCount = roundIdx < 2 ? 2 : 3;
-    const newSetup = buildRoundSetup(goalCount, isR4);
+    const goalCount = knob === 1 ? (roundIdx === 0 ? 1 : 2) : knob === 2 ? 2 : knob === 3 ? (roundIdx === 0 ? 2 : 3) : (roundIdx === 3 ? 4 : 3);
+    const newSetup = buildRoundSetup(goalCount as 1 | 2 | 3 | 4, isR4, undefined, knob);
 
     setSetup(newSetup);
     const homePos = newSetup.landmarkPos["home"];
@@ -86,12 +89,12 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
     setActiveGoalIdx(0);
 
     setPhase("memorise");
-    setTimer(MEMORISE_SECONDS);
+    setTimer(knob === 1 ? 20 : knob === 2 ? 15 : knob === 3 ? 12 : 10);
     setOffTrackMoves(0);
     setRoundHints(0);
     setHintingLandmarkKey(null);
     setGoalReachedMsg(null);
-  }, [roundIdx]);
+  }, [roundIdx, knob]);
 
   // Countdown timer for memorise phase
   useEffect(() => {
@@ -101,7 +104,7 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
       return;
     }
     const interval = setInterval(() => {
-      setTimer((prev) => prev - 1);
+      setTimer((prev: number) => prev - 1);
     }, 1000);
     return () => clearInterval(interval);
   }, [phase, timer]);
@@ -133,8 +136,9 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
 
     // Check hint logic: off-track if distance doesn't decrease
     if (newDist >= prevDist) {
+      log(false, { method: "tap", responseMs: null });
       const newOffTrack = offTrackMoves + 1;
-      if (newOffTrack >= 3) {
+      if (newOffTrack >= (knob === 1 ? 2 : knob === 2 ? 2 : knob === 3 ? 3 : 4)) {
         // Trigger hint
         setSessionHints((h) => h + 1);
         setRoundHints((h) => h + 1);
@@ -148,6 +152,7 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
         setOffTrackMoves(newOffTrack);
       }
     } else {
+      log(true, { method: "tap", responseMs: null });
       setOffTrackMoves(0);
     }
 
@@ -196,7 +201,7 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
       } else {
         // Session complete
         const avgEff = newEffs.reduce((a, b) => a + b, 0) / newEffs.length;
-        const totalHints = sessionHints + roundHints;
+        const totalHints = sessionHints;
         const finalScore = Math.max(0, Math.min(100, Math.round(avgEff - 10 * totalHints)));
 
         console.log("[map-navigator] session complete", {
@@ -345,7 +350,7 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
             if (!lm) return null;
 
             // Round 4 requirement: hide Home marker when asking to find way back home
-            if (isGoingHomeStep && lm.key === "home") {
+            if (isGoingHomeStep && lm.key === "home" && knob >= 3) {
               return null;
             }
 
@@ -370,7 +375,7 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
                   className={cn(
                     "fill-card stroke-2 transition-colors",
                     lm.isHome
-                      ? "stroke-blue-500 fill-blue-50 dark:fill-blue-950"
+                      ? cn("stroke-blue-500 fill-blue-50 dark:fill-blue-950", isGoingHomeStep && knob <= 2 && "opacity-40")
                       : isGoal
                       ? "stroke-primary fill-primary/10"
                       : "stroke-border"

@@ -1,3 +1,4 @@
+from tests.auth_support import setup_auth, make_client
 import json
 from pathlib import Path
 import tempfile
@@ -10,12 +11,13 @@ import app
 
 class PerformanceTests(unittest.TestCase):
     def setUp(self):
+        setup_auth(self, 'patient_device')
         self.temp_dir = tempfile.TemporaryDirectory()
         self.path = Path(self.temp_dir.name) / "performance_data.json"
         self.path.write_text(json.dumps({"scores": [], "game_scores": []}), encoding="utf-8")
         self.path_patch = patch.object(app, "PERFORMANCE_PATH", str(self.path))
         self.path_patch.start()
-        self.client = app.api.test_client()
+        self.client = self.auth_client
 
     def tearDown(self):
         self.path_patch.stop()
@@ -24,13 +26,13 @@ class PerformanceTests(unittest.TestCase):
     def read_data(self):
         return json.loads(self.path.read_text(encoding="utf-8"))
 
-    def test_caregiver_source_is_rejected(self):
+    def test_client_source_cannot_override_authenticated_device(self):
         response = self.client.post("/performance", json={
             "date": "2026-10-13", "game_id": "story-builder", "level": 1,
             "skill": "Memory", "score": 80, "source": "caregiver",
         })
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(self.read_data(), {"scores": [], "game_scores": []})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.read_data()["game_scores"][0]["source"], "patient")
 
     def test_new_records_have_ids_and_delete_removes_exactly_one(self):
         for game_id in ("story-builder", "plan-the-day"):
@@ -44,12 +46,24 @@ class PerformanceTests(unittest.TestCase):
         self.assertTrue(all(uuid.UUID(row["id"]) for row in rows))
         self.assertTrue(all(row["source"] == "patient" for row in rows))
 
+        self.client = make_client("caregiver")
         response = self.client.delete(f"/performance/{rows[0]['id']}")
         self.assertEqual(response.status_code, 200)
         remaining = self.read_data()["game_scores"]
         self.assertEqual(len(remaining), 1)
         self.assertEqual(remaining[0]["id"], rows[1]["id"])
         self.assertEqual(self.client.delete(f"/performance/{rows[0]['id']}").status_code, 404)
+
+    def test_difficulty_is_optional_but_validated_and_saved(self):
+        response = self.client.post("/performance", json={
+            "game_id": "mole-path", "level": 2, "skill": "working memory",
+            "score": 80, "date": "2026-10-22", "difficulty": 4,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.read_data()["game_scores"][0]["difficulty"], 4)
+        for invalid in (0, 5, "2", True):
+            response = self.client.post("/performance", json={"game_id": "mole-path", "score": 80, "difficulty": invalid})
+            self.assertEqual(response.status_code, 400)
 
     def test_old_records_receive_ids_once_and_backup_only_on_change(self):
         old = {

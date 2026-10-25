@@ -1,4 +1,4 @@
-import { attentionRounds, objectSets, BoardItem } from "./data";
+import { attentionRounds, objectSets, BoardItem, roundsForKnob } from "./data";
 
 export function shuffle<T>(items: T[]): T[] {
   const shuffled = [...items];
@@ -9,8 +9,8 @@ export function shuffle<T>(items: T[]): T[] {
   return shuffled;
 }
 
-export function makeBoard(roundIndex: number, configIndex: number, randomized = true): BoardItem[] {
-  const round = attentionRounds[roundIndex];
+export function makeBoard(roundIndex: number, configIndex: number, randomized = true, knob = 2): BoardItem[] {
+  const round = roundsForKnob(knob)[roundIndex] || attentionRounds[roundIndex];
   const config = objectSets[configIndex];
   const total = round.rows * round.columns;
   const targetCount = randomized
@@ -47,11 +47,12 @@ export function pluralize(label: string): string {
   return `${label}s`;
 }
 
-export function newSession(): BoardItem[][] {
-  const configOrder = shuffle(objectSets.map((_, index) => index)).slice(0, attentionRounds.length);
-  return configOrder.map((configIndex, roundIndex) => makeBoard(roundIndex, configIndex));
+export function newSession(knob = 2): BoardItem[][] {
+  const configs = roundsForKnob(knob);
+  const configOrder = shuffle(objectSets.map((_, index) => index)).slice(0, configs.length);
+  return configOrder.map((configIndex, roundIndex) => makeBoard(roundIndex, configIndex, true, knob));
 }
 
-export function initialSession(): BoardItem[][] {
-  return attentionRounds.map((_, roundIndex) => makeBoard(roundIndex, roundIndex, false));
+export function initialSession(knob = 2): BoardItem[][] {
+  return roundsForKnob(knob).map((_, roundIndex) => makeBoard(roundIndex, roundIndex, false, knob));
 }

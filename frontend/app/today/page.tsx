@@ -5,18 +5,19 @@ import Nav from "@/components/nav";
 import RightColumn from "@/components/rightColumn";
 import TodayPath from "@/components/todayPath";
 import { Button } from "@/components/ui/button";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import {
   BookOpen,
   Brain,
   CalendarDays,
   Footprints,
-  Hand,
   Link as LinkIcon,
   Map,
   Package,
+  Pill,
   Search,
   Sparkles,
+  Sprout,
   Target,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -43,7 +44,8 @@ const ACTIVITY_MAP: Record<string, ActivityMeta> = {
   "odd-one-out": { name: "Spot the Odd One", icon: Search },
   "mole-path": { name: "Path Memory", icon: Footprints },
   "sorting-station": { name: "Sorting", icon: Package },
-  "whack-a-mole": { name: "Quick Tap", icon: Hand },
+  "pill-box-planner": { name: "Pill Box Planner", icon: Pill },
+  "whack-a-mole": { name: "Garden Taps", icon: Sprout },
   "attention-hunt": { name: "Find It", icon: Target },
   "map-navigator": { name: "Find the Way", icon: Map },
 };
@@ -77,8 +79,8 @@ export default function TodayPage() {
   const load = useCallback(async (day: string) => {
     try {
       const [planRes, perfRes] = await Promise.all([
-        fetch(`${API_URL}/daily-plan?date=${day}`),
-        fetch(`${API_URL}/performance`),
+        apiFetch(`${API_URL}/daily-plan?date=${day}`),
+        apiFetch(`${API_URL}/performance`),
       ]);
       if (!planRes.ok) throw new Error();
       const p = await planRes.json();

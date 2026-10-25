@@ -17,6 +17,7 @@ import PatternCompletion from "./pattern-completion";
 import ObjectNaming from "./object-naming";
 import YesterdayQuiz from "./yesterday-quiz";
 import MemoryCrossword from "./memory-crossword";
+import PillBoxPlanner from "./pill-box-planner";
 import { GameProps } from "./_shared/types";
 import { Area } from "@/lib/progress";
 
@@ -90,7 +91,7 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     area: "Memory",
     levels: [1],
     component: WordAssociation,
-    comingSoon: true,
+    comingSoon: false,
     emoji: "🔗",
     description: "Connect related words and concepts together.",
     trains: "Semantic memory: link related things",
@@ -145,22 +146,23 @@ export const GAME_REGISTRY: GameRegistryEntry[] = [
     skill: "rule switching",
     area: "Executive Function",
     levels: [2],
-    comingSoon: true,
+    component: PillBoxPlanner,
+    comingSoon: false,
     emoji: "💊",
-    description: "Follow a weekly medication schedule with multiple rules.",
-    trains: "Following several rules at once (a weekly medication schedule)",
+    description: "Follow several rules at once (a weekly pill-box practice)",
+    trains: "Follow several rules at once (a weekly pill-box practice)",
   },
   {
     id: "whack-a-mole",
-    name: "Whack-a-Mole",
+    name: "Garden Taps",
     skill: "inhibition",
     area: "Attention",
     levels: [2],
     component: WhackAMole,
-    comingSoon: true,
-    emoji: "🔨",
-    description: "Tap target moles while suppressing impulses for distractors.",
-    trains: "Impulse control: tap targets, ignore distractors",
+    comingSoon: false,
+    emoji: "🌱",
+    description: "Tap target moles while letting resting visitors stay undisturbed.",
+    trains: "Attention and impulse control: tap targets, let visitors rest",
   },
   {
     id: "attention-hunt",

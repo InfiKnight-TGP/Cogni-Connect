@@ -4,8 +4,11 @@ import GameShell from "../_shared/GameShell";
 import { dateFromLocalKey, localDateKey } from "../_shared/date";
 import type { GameProps } from "../_shared/types";
 import ContextQuestions from "@/components/quiz/contextQuestions";
+import { useState } from "react";
+import { readSkill } from "@/lib/interaction/events";
 
 export default function ContextRecall({ date = localDateKey(), onFinish }: GameProps) {
+  const [knob] = useState(() => readSkill("context-recall").knob);
   return (
     <GameShell
       gameId="context-recall"
@@ -22,6 +25,7 @@ export default function ContextRecall({ date = localDateKey(), onFinish }: GameP
           setProgress={() => {}}
           standalone
           onComplete={handleFinish}
+          difficulty={knob}
         />
       )}
     </GameShell>

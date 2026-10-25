@@ -54,4 +54,11 @@ export const attentionRounds = [
   { rows: 5, columns: 5, minTargets: 6, maxTargets: 8 },
 ] as const;
 
+export function roundsForKnob(knob: number) {
+  if (knob <= 1) return attentionRounds.slice(0, 4).map((round, index) => ({ ...round, rows: index < 2 ? 3 : 4, columns: index < 2 ? 3 : 4, minTargets: index + 2, maxTargets: index + 2 }));
+  if (knob === 2) return attentionRounds.slice(0, 4);
+  if (knob === 3) return [{ rows: 3, columns: 4, minTargets: 3, maxTargets: 4 }, { rows: 4, columns: 4, minTargets: 4, maxTargets: 5 }, { rows: 4, columns: 5, minTargets: 5, maxTargets: 6 }, { rows: 5, columns: 5, minTargets: 6, maxTargets: 7 }, { rows: 5, columns: 5, minTargets: 7, maxTargets: 8 }] as const;
+  return [{ rows: 4, columns: 4, minTargets: 4, maxTargets: 5 }, { rows: 4, columns: 5, minTargets: 5, maxTargets: 6 }, { rows: 5, columns: 5, minTargets: 6, maxTargets: 8 }, { rows: 5, columns: 5, minTargets: 7, maxTargets: 8 }, { rows: 5, columns: 6, minTargets: 8, maxTargets: 9 }] as const;
+}
+
 export type BoardItem = { id: number; label: string; representation: string; isTarget: boolean };

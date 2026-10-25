@@ -15,9 +15,10 @@ import { format } from "date-fns";
 
 import { Separator } from "../ui/separator";
 import { Badge } from "../ui/badge";
-import { API_URL } from "@/lib/api";
+import { mediaUrl, apiFetch, API_URL } from "@/lib/api";
 import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 import ReadAloud from "@/components/interaction/ReadAloud";
+import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 
 interface KnownFace {
   name: string;
@@ -32,6 +33,7 @@ export default function PersonSelect({
   standalone = false,
   setActivityScore,
   onComplete,
+  difficulty = 2,
 }: {
   setProgress: React.Dispatch<React.SetStateAction<number>>;
   date: Date;
@@ -39,6 +41,7 @@ export default function PersonSelect({
   standalone?: boolean;
   setActivityScore?: (score: number) => void;
   onComplete?: (score: number) => void;
+  difficulty?: number;
 }) {
   const [selected, setSelected] = useState<number[]>([]);
   const [knownFaces, setKnownFaces] = useState<KnownFace[]>([]);
@@ -54,6 +57,7 @@ export default function PersonSelect({
     correct: boolean;
   } | null>(null);
   const [finalScore, setFinalScore] = useState(0);
+  const log = useAnswerLog("face-recognition", "Recognition & Orientation", "face-selection", difficulty, true);
 
   // Fetch data on date change
   useEffect(() => {
@@ -63,7 +67,7 @@ export default function PersonSelect({
         const formattedDate = format(date, "yyyy-MM-dd");
 
         // Get known faces
-        const facesResponse = await fetch(`${API_URL}/known-faces`);
+        const facesResponse = await apiFetch(`${API_URL}/known-faces`);
         let kFaces: KnownFace[] = [];
         if (facesResponse.ok) {
           const facesData = await facesResponse.json();
@@ -72,7 +76,7 @@ export default function PersonSelect({
         }
 
         // Get faces detected in videos from the selected date
-        const facesForDateRes = await fetch(
+        const facesForDateRes = await apiFetch(
           `${API_URL}/faces-for-date?date=${formattedDate}`
         );
         let dNames: string[] = [];
@@ -94,7 +98,7 @@ export default function PersonSelect({
           (kf) => !dNames.some((d) => d.toLowerCase() === kf.name.toLowerCase())
         );
 
-        const distractors = otherFaces.slice(0, 3);
+        const distractors = otherFaces.slice(0, Math.max(1, Math.min(5, difficulty - 1)));
 
         const seen = new Set<string>();
         const combined: KnownFace[] = [];
@@ -115,7 +119,7 @@ export default function PersonSelect({
     };
 
     fetchData();
-  }, [date]);
+  }, [date, difficulty]);
 
   // Calculate correct indices based on allFacesForQuiz
   const correctIndices = allFacesForQuiz
@@ -128,6 +132,7 @@ export default function PersonSelect({
 
   const onSubmit = () => {
     if (selected.length === 0) {
+      log(false);
       setSubmitted({ correct: false });
       setFinalScore(0);
       if (setActivityScore) setActivityScore(0);
@@ -149,6 +154,7 @@ export default function PersonSelect({
       const finalScore = Math.max(0, Math.min(100, rawScore));
 
       const roundedScore = Math.round(finalScore);
+      log(res);
       setFinalScore(roundedScore);
       if (setActivityScore) setActivityScore(roundedScore);
     }
@@ -365,7 +371,8 @@ function PersonCard({
     >
       {person.path ? (
         <Image
-          src={`${API_URL}/known-faces/${person.path}`}
+          unoptimized
+          src={mediaUrl(`/known-faces/${person.path}`)}
           alt={person.name}
           className="h-full w-full rounded-md object-cover"
           width={208}

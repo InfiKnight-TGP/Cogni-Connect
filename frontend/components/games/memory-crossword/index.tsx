@@ -7,7 +7,7 @@ import { DictationButton } from "@/components/interaction/DictationButton";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 import { readSkill } from "@/lib/interaction/events";
 import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import type { GameProps } from "../_shared/types";
 
 type CrosswordEntry = { number: number; direction: "across" | "down"; clue: string; word: string; row: number; col: number };
@@ -36,11 +36,12 @@ function Crossword({ date, finish }: { date: string; finish: (score: number) => 
   const [selected, setSelected] = useState(0);
   const [guess, setGuess] = useState("");
   const [hinted, setHinted] = useState<number[]>([]);
+  const [paidHints, setPaidHints] = useState<number[]>([]);
   const [revealed, setRevealed] = useState<number[]>([]);
   const [solved, setSolved] = useState<number[]>([]);
   const [notice, setNotice] = useState("");
   const [inputMethod, setInputMethod] = useState<"typed" | "voice">("typed");
-  const [knob] = useState(() => readSkill("Memory").knob);
+  const [knob] = useState(() => readSkill("memory-crossword").knob);
   const [listShown, setListShown] = useState(() => knob === 1);
   const { t, caregiver } = useTranslate();
   const preview = useContext(PreviewContext);
@@ -52,7 +53,7 @@ function Crossword({ date, finish }: { date: string; finish: (score: number) => 
       let puzzleDate = date;
       if (preview) {
         try {
-          const response = await fetch(API_URL + "/journals", { cache: "no-store" });
+          const response = await apiFetch(API_URL + "/journals", { cache: "no-store" });
           if (response.ok) {
             const journals = await response.json() as Record<string, { date?: string }>;
             const savedDays = Object.values(journals).map(journal => journal.date?.slice(0, 10) ?? "").filter(day => /^\d{4}-\d{2}-\d{2}$/.test(day) && day <= date).sort();
@@ -61,7 +62,7 @@ function Crossword({ date, finish }: { date: string; finish: (score: number) => 
         } catch { /* The selected date and sample preview remain available offline. */ }
       }
       try {
-        const response = await fetch(API_URL + "/crossword?date=" + encodeURIComponent(puzzleDate), { cache: "no-store" });
+        const response = await apiFetch(API_URL + "/crossword?date=" + encodeURIComponent(puzzleDate), { cache: "no-store" });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Crossword unavailable");
         if (!cancelled) {
@@ -92,8 +93,7 @@ function Crossword({ date, finish }: { date: string; finish: (score: number) => 
       setNotice(t("Well done!"));
       log(true, { method: inputMethod, responseMs: null });
       if (solved.length + revealed.length + 1 === entries.length) {
-        const points = entries.reduce((sum, _, index) => sum + (revealed.includes(index) ? 0 : hinted.includes(index) ? 0.5 : index === selected ? (hinted.includes(index) ? 0.5 : 1) : solved.includes(index) ? (hinted.includes(index) ? 0.5 : 1) : 0), 0);
-        finish(Math.round(points / entries.length * 100));
+        finish(scoreFor([...solved, selected], revealed, paidHints));
       }
     } else {
       setNotice(t("Try again. You can use the letters as a clue."));
@@ -102,15 +102,19 @@ function Crossword({ date, finish }: { date: string; finish: (score: number) => 
   };
   const showLetter = () => {
     if (!hinted.includes(selected)) setHinted(value => [...value, selected]);
+    if (!paidHints.includes(selected)) setPaidHints(value => [...value, selected]);
     setNotice(t("A familiar word beginning with {letter}", { letter: current?.word[0] ?? "" }));
+  };
+  const scoreFor = (solvedIndexes: number[], revealedIndexes: number[], paidHintIndexes: number[]) => {
+    const points = entries.reduce((sum, _, index) => sum + (revealedIndexes.includes(index) ? 0 : solvedIndexes.includes(index) ? (paidHintIndexes.includes(index) ? 0.5 : 1) : 0), 0);
+    return Math.round(points / entries.length * 100);
   };
   const showAnswer = () => {
     if (!current || revealed.includes(selected)) return;
     setRevealed(value => [...value, selected]);
     setNotice(current.word);
     if (solved.length + revealed.length + 1 === entries.length) {
-      const points = entries.reduce((sum, _, index) => sum + (revealed.includes(index) || index === selected ? 0 : hinted.includes(index) ? 0.5 : solved.includes(index) ? 1 : 0), 0);
-      finish(Math.round(points / entries.length * 100));
+      finish(scoreFor(solved, [...revealed, selected], paidHints));
     }
   };
   const acceptDictation = (transcript: string) => {

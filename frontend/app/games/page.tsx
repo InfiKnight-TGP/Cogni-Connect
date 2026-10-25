@@ -1,24 +1,121 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Nav from "@/components/nav";
 import { CaregiverOnly } from "@/components/caregiver";
 import { GAME_REGISTRY, getGameById, GameRegistryEntry } from "@/components/games/registry";
 import { PreviewContext } from "@/components/games/_shared/GameShell";
 import { Button } from "@/components/ui/button";
-import { LEVEL_NAMES, Level } from "@/lib/progress";
+import { dayKey, LEVEL_NAMES, Level, toEntries } from "@/lib/progress";
 import { ArrowLeft } from "lucide-react";
 import CaregiverPageLabel from "@/components/caregiver/pageLabel";
+import { apiFetch, API_URL } from "@/lib/api";
+import { localDateKey } from "@/components/games/_shared/date";
+import ReadAloud from "@/components/interaction/ReadAloud";
+import { useAuth } from "@/lib/auth-context";
+import { useTranslate } from "@/components/interaction/InteractionProvider";
 
 export default function AllGamesPage() {
+  const { session, ready } = useAuth();
   return (
     <>
       <Nav />
-      <CaregiverOnly>
-        <AllGames />
-      </CaregiverOnly>
+      {ready && session?.role === "self" ? <SelfGames /> : <CaregiverOnly><AllGames /></CaregiverOnly>}
     </>
   );
+}
+
+const SELF_AREA_ORDER = ["Memory", "Attention", "Executive Function", "Recognition & Orientation"] as const;
+
+function SelfGames() {
+  const { t } = useTranslate();
+  const searchParams = useSearchParams();
+  const [active, setActive] = useState<{ game: GameRegistryEntry; level: Level } | null>(null);
+  const [todayPlan, setTodayPlan] = useState<Set<string>>(new Set());
+  const [playedToday, setPlayedToday] = useState<Set<string>>(new Set());
+  const [gameDate, setGameDate] = useState(localDateKey());
+  const [dateOpen, setDateOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const Game = active?.game.component;
+
+  useEffect(() => {
+    let cancelled = false;
+    const today = dayKey(new Date());
+    Promise.all([
+      apiFetch(`${API_URL}/daily-plan?date=${today}`),
+      apiFetch(`${API_URL}/performance`),
+      apiFetch(`${API_URL}/videos`),
+    ]).then(async ([planResponse, performanceResponse, videosResponse]) => {
+      const plan = planResponse.ok ? await planResponse.json() : {};
+      const planIds = [1, 2, 3].flatMap(level => Array.isArray(plan[`level${level}`]) ? plan[`level${level}`] : []);
+      const performance = performanceResponse.ok ? await performanceResponse.json() : {};
+      const played = new Set(toEntries(performance).filter(entry => entry.day === today && entry.gameId).map(entry => entry.gameId));
+      let newest = "";
+      if (videosResponse.ok) {
+        const videos = await videosResponse.json();
+        const dates = (Array.isArray(videos) ? videos : []).map((video: { date?: string }) => video.date?.slice(0, 10) ?? "").filter((date: string) => /^\\d{4}-\\d{2}-\\d{2}$/.test(date)).sort();
+        newest = dates.at(-1) ?? "";
+      }
+      if (!cancelled) {
+        setTodayPlan(new Set(planIds));
+        setPlayedToday(played);
+        if (newest) setGameDate(newest);
+        setLoading(false);
+      }
+    }).catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    const requested = searchParams.get("game");
+    const game = requested ? getGameById(requested) : undefined;
+    if (game?.component && !game.comingSoon) setActive({ game, level: game.levels[0] });
+  }, [searchParams]);
+
+  if (active && Game) {
+    return <main className="mx-auto max-w-screen-lg space-y-6 px-4 pb-16 pt-24 lg:pt-8">
+      <Button variant="outline" className="min-h-12 text-lg" onClick={() => setActive(null)}><ArrowLeft className="mr-2 h-5 w-5" /> {t("Back to all games")}</Button>
+      <div className="flex flex-wrap items-center gap-3 text-base text-muted-foreground">
+        <button type="button" className="min-h-11 text-primary underline" onClick={() => setDateOpen(value => !value)}>{t("Change day")}</button>
+        {dateOpen && <label className="flex items-center gap-2"><span>{t("Game day")}</span><input type="date" value={gameDate} onChange={event => setGameDate(event.target.value)} className="min-h-11 rounded-md border border-input bg-background px-3 text-base text-foreground" /></label>}
+      </div>
+      <Game level={active.level} date={gameDate} />
+    </main>;
+  }
+
+  const readyCount = GAME_REGISTRY.filter(game => !game.comingSoon && !!game.component).length;
+  return <main className="mx-auto max-w-screen-lg space-y-10 px-4 pb-16 pt-24 lg:pt-8">
+    <header className="space-y-2">
+      <h1 className="text-4xl font-bold">{t("All Games")}</h1>
+      <p className="text-xl text-muted-foreground">{t("Playing here counts toward your progress.")}</p>
+      <p className="text-lg font-semibold text-primary">{t("{count} games ready", { count: readyCount })}</p>
+      <ReadAloud autoRead={false} text={`${t("All Games")}. ${t("Playing here counts toward your progress.")}`} />
+    </header>
+    {SELF_AREA_ORDER.map(area => {
+      const games = GAME_REGISTRY.filter(game => game.area === area);
+      return <section key={area} className="space-y-4" aria-labelledby={`self-games-${area}`}>
+        <h2 id={`self-games-${area}`} className="text-2xl font-bold">{t(area)}</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {games.map(game => <SelfGameCard key={game.id} game={game} inPlan={todayPlan.has(game.id)} played={playedToday.has(game.id)} onPlay={() => setActive({ game, level: game.levels[0] })} />)}
+        </div>
+      </section>;
+    })}
+    {loading && <p className="text-lg text-muted-foreground" role="status">{t("Loading…")}</p>}
+  </main>;
+}
+
+function SelfGameCard({ game, inPlan, played, onPlay }: { game: GameRegistryEntry; inPlan: boolean; played: boolean; onPlay: () => void }) {
+  const { t } = useTranslate();
+  const unavailable = game.comingSoon || !game.component;
+  return <article className="flex min-h-64 flex-col justify-between gap-4 rounded-2xl border bg-card p-5 shadow-sm">
+    <div className="space-y-3">
+      <div className="flex items-start justify-between gap-3"><span className="text-4xl" aria-hidden>{game.emoji}</span><div className="flex flex-wrap justify-end gap-2">{inPlan && <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">{t("In today’s plan")}</span>}{played && <span className="rounded-full border border-green-600/30 bg-green-600/10 px-3 py-1 text-sm font-semibold text-green-700 dark:text-green-400">✓ {t("Played today")}</span>}</div></div>
+      <h3 className="text-xl font-bold">{t(game.name)}</h3>
+      <p className="text-base text-muted-foreground">{t(game.description)}</p>
+      <ReadAloud autoRead={false} text={`${t(game.name)}. ${t(game.description)}`} />
+    </div>
+    {unavailable ? <p className="text-base font-semibold text-muted-foreground">{t("Coming soon")}</p> : <Button className="min-h-12 w-full text-lg" onClick={onPlay}>{t("Play")}</Button>}
+  </article>;
 }
 
 function AllGames() {

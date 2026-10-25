@@ -17,11 +17,11 @@ function Sounds({ finish }: { finish: (score: number) => void }) {
   const [ready, setReady] = useState(false);
   const [visual, setVisual] = useState(false);
   const [notice, setNotice] = useState("");
-  const [knob, setKnob] = useState(() => readSkill("Attention").knob);
+  const [knob] = useState(() => readSkill("sound-tap").knob);
   const audio = useRef<AudioContext | null>(null);
   const active = useRef(true);
   const { t } = useTranslate();
-  const beats = 1 + (round % Math.min(4, knob + 1));
+  const beats = 1 + (round % Math.min(5, knob + 1));
   const log = useAnswerLog("sound-tap", "Attention", `${round}:${ready}`, knob, true);
   useEffect(() => { active.current = true; return () => { active.current = false; void audio.current?.close(); }; }, []);
 
@@ -48,15 +48,15 @@ function Sounds({ finish }: { finish: (score: number) => void }) {
   };
   const next = () => {
     if (round === 5) finish(Math.round(correct / 6 * 100));
-    else { setRound(value => value + 1); setPicked(false); setReady(false); setVisual(false); setKnob(readSkill("Attention").knob); }
+    else { setRound(value => value + 1); setPicked(false); setReady(false); setVisual(false); }
   };
-  const options = [1, 2, 3, 4].map(value => ({ id: String(value), label: String(value), synonyms: [`${value} beats`] }));
+  const options = [1, 2, 3, 4, 5].map(value => ({ id: String(value), label: String(value), synonyms: [`${value} beats`] }));
   return <section className="space-y-5">
     <h2 className="text-3xl font-bold">{t("How many beats?")}</h2>
     <div className="flex flex-wrap gap-3"><Button variant="outline" className="min-h-14 px-5 text-lg" disabled={picked} onClick={() => void play()}>{t("Play the sound")}</Button><Button variant="outline" className="min-h-14 px-5 text-lg" disabled={picked} onClick={() => { setVisual(true); setReady(true); }}>{t("Show the beats")}</Button></div>
     {visual && <p className="text-5xl" aria-label={t("{count} beats", { count: beats })}>{Array(beats).fill("●").join(" ")}</p>}
     <VoiceQuestion question="How many beats?" options={options} disabled={!ready || picked} onMatched={(option, input) => choose(option.id, input)} />
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[1, 2, 3, 4].map(value => <BigTile key={value} label={String(value)} disabled={!ready || picked} onClick={() => choose(String(value))} className="min-h-20 min-w-20 text-3xl" />)}</div>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">{[1, 2, 3, 4, 5].map(value => <BigTile key={value} label={String(value)} disabled={!ready || picked} onClick={() => choose(String(value))} className="min-h-20 min-w-20 text-3xl" />)}</div>
     <p role="status" className="text-lg">{t(notice)}</p>
     {notice && <ReadAloud kind="feedback" text={t(notice)} />}
     {picked && <Button className="min-h-14 px-8 text-xl" onClick={next}>{round === 5 ? t("Finish") : t("Next")}</Button>}

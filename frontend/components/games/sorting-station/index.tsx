@@ -4,29 +4,31 @@ import React, { useEffect, useRef, useState } from "react";
 import GameShell from "../_shared/GameShell";
 import { GameProps } from "../_shared/types";
 import { BigTile, BigTileProps } from "../_shared/BigTile";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Bin, BinIndex } from "./data";
 import {
-  ITEMS_PER_ROUND,
-  ITEMS_PER_RULE,
   ROUNDS,
   Round,
   RuleKey,
-  TOTAL_ITEMS,
   buildSession,
   computeScore,
   correctBin,
+  getSortingKnobConfig,
   isSwitchTrial,
   ruleOf,
 } from "./logic";
-import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
+import { VoiceQuestion, type AnswerInput } from "@/components/interaction/VoiceQuestion";
 import ReadAloud from "@/components/interaction/ReadAloud";
+import { usePreferences, useTranslate } from "@/components/interaction/InteractionProvider";
+import { readSkill } from "@/lib/interaction/events";
+import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 
-const CUE_MS = 3000; // full-screen rule cue
+const CUE_MS = 3000; // minimum rule cue display time
 const CORRECT_MS = 700; // green flash + item drops into bin
-const WRONG_MS = 1000; // red flash + correct bin glows
+const WRONG_MS = 1000; // gentle amber highlight + correct bin glows
 
-/** Sorting Station is a single Level 2 game. */
+/** Sorting Station is a single game. */
 export default function SortingStation({
   date = new Date().toISOString().split("T")[0],
   onFinish,
@@ -65,13 +67,23 @@ function makeCue(round: Round, key: RuleKey, heading: string, lead: string): Cue
 }
 
 function SortingGame({ onDone }: { onDone: (score: number) => void }) {
-  const [rounds] = useState<Round[]>(() => buildSession());
+  const { t, caregiver } = useTranslate();
+  const { preferences } = usePreferences();
+  const [knob] = useState<1 | 2 | 3 | 4>(() => {
+    const raw = readSkill("sorting-station").knob;
+    return (raw >= 1 && raw <= 4 ? raw : 2) as 1 | 2 | 3 | 4;
+  });
+  const knobConfig = getSortingKnobConfig(knob);
+
+  const [rounds] = useState<Round[]>(() => buildSession(Math.random, knob));
   const [roundIdx, setRoundIdx] = useState(0);
   const [trialIdx, setTrialIdx] = useState(0);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [cue, setCue] = useState<Cue | null>(() =>
-    makeCue(rounds[0], "a", `Round 1 of ${ROUNDS}`, "Sort by")
+    makeCue(rounds[0], "a", t("Round {current} of {total}", { current: 1, total: ROUNDS }), t("Sort by"))
   );
+  const [minCueElapsed, setMinCueElapsed] = useState(false);
+  const [cueReadDone, setCueReadDone] = useState(false);
 
   const correctRef = useRef(0);
   const switchErrorsRef = useRef(0);
@@ -83,26 +95,49 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
   const round = rounds[roundIdx];
   const trial = round.trials[trialIdx];
   const rule = ruleOf(round.pair, trial.rule);
+  const log = useAnswerLog(
+    "sorting-station",
+    "sorting-station",
+    `${roundIdx}:${trialIdx}`,
+    knob,
+    true
+  );
 
-  // Hide the full-screen cue after 3 seconds.
+  // Track minimum cue display time and narration completion so cue never closes while speaking.
   useEffect(() => {
     if (!cue) return;
-    const t = setTimeout(() => setCue(null), CUE_MS);
-    return () => clearTimeout(t);
-  }, [cue]);
+    setMinCueElapsed(false);
+    const narrationActive = preferences.readAloud || caregiver;
+    setCueReadDone(!narrationActive);
+    const minMs = knob === 1 ? 4500 : CUE_MS;
+    const timer = setTimeout(() => setMinCueElapsed(true), minMs);
+    return () => clearTimeout(timer);
+  }, [cue, knob, preferences.readAloud, caregiver]);
+
+  useEffect(() => {
+    if (!cue || knob === 1) return;
+    if (minCueElapsed && cueReadDone) {
+      const timer = setTimeout(() => setCue(null), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [cue, knob, minCueElapsed, cueReadDone]);
 
   // After feedback, move to the next item / rule / round, or finish.
   useEffect(() => {
     if (!feedback) return;
-    const t = setTimeout(
+    const timer = setTimeout(
       () => {
         const nextTrial = trialIdx + 1;
 
-        if (nextTrial < ITEMS_PER_ROUND) {
+        if (nextTrial < knobConfig.itemsPerRound) {
           setFeedback(null);
           setTrialIdx(nextTrial);
-          if (nextTrial === ITEMS_PER_RULE) {
-            setCue(makeCue(round, "b", "New rule!", "Now sort by"));
+          if (
+            nextTrial > 0 &&
+            nextTrial % knobConfig.itemsPerRule === 0
+          ) {
+            const nextRule = round.trials[nextTrial].rule;
+            setCue(makeCue(round, nextRule, t("New rule!"), t("Now sort by")));
           }
           return;
         }
@@ -113,16 +148,21 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
           setRoundIdx(nextRound);
           setTrialIdx(0);
           setCue(
-            makeCue(rounds[nextRound], "a", `Round ${nextRound + 1} of ${ROUNDS}`, "Now sort by")
+            makeCue(
+              rounds[nextRound],
+              "a",
+              t("Round {current} of {total}", { current: nextRound + 1, total: ROUNDS }),
+              t("Now sort by")
+            )
           );
           return;
         }
 
-        const score = computeScore(correctRef.current);
-        // The shared saveScore type has no extra fields, so switchErrors is logged here.
+        const score = computeScore(correctRef.current, knobConfig.totalItems);
+        // Keep session-level switch errors available for later adaptive evaluation.
         console.log("[sorting-station] session complete", {
           correct: correctRef.current,
-          total: TOTAL_ITEMS,
+          total: knobConfig.totalItems,
           score,
           switchErrors: switchErrorsRef.current,
           pairs: rounds.map((r) => r.pair.id),
@@ -131,21 +171,22 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
       },
       feedback.ok ? CORRECT_MS : WRONG_MS
     );
-    return () => clearTimeout(t);
-  }, [feedback, trialIdx, roundIdx, round, rounds]);
+    return () => clearTimeout(timer);
+  }, [feedback, trialIdx, roundIdx, round, rounds, knobConfig, t]);
 
-  const handlePick = (bin: BinIndex) => {
+  const handlePick = (bin: BinIndex, input?: AnswerInput) => {
     if (cue || feedback) return;
     const answer = correctBin(trial);
     const ok = bin === answer;
+    log(ok, input);
     if (ok) correctRef.current += 1;
-    else if (isSwitchTrial(trialIdx)) switchErrorsRef.current += 1;
+    else if (isSwitchTrial(trialIdx, knob)) switchErrorsRef.current += 1;
     setFeedback({ chosen: bin, answer, ok });
   };
 
   const binState = (i: BinIndex): BigTileProps["state"] => {
     if (!feedback) return "default";
-    if (i === feedback.chosen) return feedback.ok ? "correct" : "wrong";
+    if (i === feedback.chosen) return feedback.ok ? "correct" : "selected";
     if (!feedback.ok && i === feedback.answer) return "correct";
     return "default";
   };
@@ -153,7 +194,8 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
   const binExtra = (i: BinIndex): string => {
     if (!feedback) return "";
     if (i === feedback.chosen && feedback.ok) return "scale-105";
-    if (i === feedback.chosen && !feedback.ok) return "animate-[ss-shake_0.4s_ease-in-out]";
+    if (i === feedback.chosen && !feedback.ok)
+      return "border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200";
     if (!feedback.ok && i === feedback.answer)
       return "ring-4 ring-green-400 ring-offset-2 ring-offset-background animate-pulse";
     return "";
@@ -170,11 +212,6 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
   return (
     <div className="flex flex-col items-center gap-6 select-none">
       <style>{`
-        @keyframes ss-shake {
-          0%, 100% { transform: translateX(0); }
-          20%, 60% { transform: translateX(-8px); }
-          40%, 80% { transform: translateX(8px); }
-        }
         @keyframes ss-shrink {
           from { width: 100%; }
           to { width: 0%; }
@@ -184,12 +221,19 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
       {/* Progress */}
       <div className="w-full flex flex-col items-center gap-2">
         <p className="text-base md:text-lg font-semibold text-muted-foreground">
-          Round {roundIdx + 1} of {ROUNDS} · Item {trialIdx + 1} of {ITEMS_PER_ROUND}
+          {t("Round {round} of {totalRounds} · Item {item} of {totalItems}", {
+            round: roundIdx + 1,
+            totalRounds: ROUNDS,
+            item: trialIdx + 1,
+            totalItems: knobConfig.itemsPerRound,
+          })}
         </p>
         <div className="flex items-center gap-1.5" aria-hidden="true">
           {round.trials.map((_, i) => (
             <React.Fragment key={i}>
-              {i === ITEMS_PER_RULE && <span className="w-px h-4 bg-border mx-1" />}
+              {i > 0 && i % knobConfig.itemsPerRule === 0 && (
+                <span className="w-px h-4 bg-border mx-1" />
+              )}
               <span
                 className={cn(
                   "h-2.5 w-2.5 rounded-full transition-colors",
@@ -211,24 +255,50 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
             dropClass
           )}
         >
-          <span className="text-[96px] md:text-[112px] leading-none drop-shadow-sm" role="img" aria-label={trial.item.label}>
+          <span
+            className="text-[96px] md:text-[112px] leading-none drop-shadow-sm"
+            role="img"
+            aria-label={t(trial.item.label)}
+          >
             {trial.item.emoji}
           </span>
-          <span className="text-2xl md:text-3xl font-bold text-center">{trial.item.label}</span>
+          <span className="text-2xl md:text-3xl font-bold text-center">
+            {t(trial.item.label)}
+          </span>
         </div>
       </div>
-      {!cue && <VoiceQuestion question={`Sort ${trial.item.label}. ${rule.sortBy}. Tap the bin that matches.`} options={rule.bins.map((bin, index) => ({ id: String(index), label: bin.label }))} onMatched={option => handlePick(Number(option.id) as BinIndex)} disabled={Boolean(feedback)} />}
+      {!cue && (
+        <VoiceQuestion
+          question={`${t("Sort {item}.", { item: t(trial.item.label) })} ${t(rule.sortBy)}. ${t(
+            "Tap the bin that matches."
+          )}`}
+          options={rule.bins.map((bin, index) => ({ id: String(index), label: t(bin.label) }))}
+          onMatched={(option, input) => handlePick(Number(option.id) as BinIndex, input)}
+          disabled={Boolean(feedback)}
+        />
+      )}
 
       {/* Current rule */}
       <div className="text-center" aria-live="polite">
         <p className="text-sm md:text-base uppercase tracking-wider font-semibold text-muted-foreground">
-          Sort by
+          {t("Sort by")}
         </p>
         <p className="text-2xl md:text-4xl font-extrabold text-primary leading-tight">
-          {rule.sortBy}
+          {t(rule.sortBy)}
         </p>
       </div>
-      {feedback && <ReadAloud kind="feedback" text={feedback.ok ? "Well done! That is the right bin." : `Try again. This belongs in the ${rule.bins[feedback.answer].label} bin.`} />}
+      {feedback && (
+        <ReadAloud
+          kind="feedback"
+          text={
+            feedback.ok
+              ? t("Well done! That is the right bin.")
+              : t("This one belongs in the {bin} bin.", {
+                  bin: t(rule.bins[feedback.answer].label),
+                })
+          }
+        />
+      )}
 
       {/* Bins */}
       <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -238,7 +308,7 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
             <div key={`${roundIdx}-${trial.rule}-${i}`} id={`sorting-bin-${i}`} className="flex">
               <BigTile
                 emoji={bin.emoji}
-                label={bin.label}
+                label={t(bin.label)}
                 state={binState(i)}
                 onClick={() => handlePick(i)}
                 className={cn(
@@ -261,11 +331,15 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
           aria-live="assertive"
           className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 backdrop-blur-sm p-6 animate-in fade-in duration-300"
         >
-          <ReadAloud text={`${cue.heading}. ${cue.lead} ${cue.sortBy}.`} options={cue.bins.map(bin => bin.label)} />
+          <ReadAloud
+            text={`${cue.heading}. ${cue.lead} ${t(cue.sortBy)}.`}
+            options={cue.bins.map((bin) => t(bin.label))}
+            onReadComplete={() => setCueReadDone(true)}
+          />
           <div className="w-full max-w-xl flex flex-col items-center text-center gap-5 animate-in zoom-in-95 duration-300">
             <p className="text-4xl md:text-6xl font-extrabold text-primary">{cue.heading}</p>
             <p className="text-2xl md:text-3xl font-semibold text-muted-foreground">{cue.lead}</p>
-            <p className="text-3xl md:text-5xl font-extrabold leading-tight">{cue.sortBy}</p>
+            <p className="text-3xl md:text-5xl font-extrabold leading-tight">{t(cue.sortBy)}</p>
             <div className="flex flex-wrap justify-center gap-4 mt-2">
               {cue.bins.map((b) => (
                 <div
@@ -273,17 +347,26 @@ function SortingGame({ onDone }: { onDone: (score: number) => void }) {
                   className="flex flex-col items-center gap-2 min-w-[140px] rounded-2xl border-2 border-border bg-card px-6 py-4"
                 >
                   <span className="text-5xl leading-none">{b.emoji}</span>
-                  <span className="text-xl font-bold">{b.label}</span>
+                  <span className="text-xl font-bold">{t(b.label)}</span>
                 </div>
               ))}
             </div>
-            <div className="w-full max-w-xs h-2 rounded-full bg-muted overflow-hidden mt-4">
-              <div
-                key={cue.heading + cue.sortBy}
-                className="h-full bg-primary"
-                style={{ animation: `ss-shrink ${CUE_MS}ms linear forwards` }}
-              />
-            </div>
+            <Button
+              size="lg"
+              className="mt-2 min-h-14 px-8 text-xl font-bold"
+              onClick={() => setCue(null)}
+            >
+              {t("Start sorting")}
+            </Button>
+            {knob !== 1 && (
+              <div className="w-full max-w-xs h-2 rounded-full bg-muted overflow-hidden mt-2">
+                <div
+                  key={cue.heading + cue.sortBy}
+                  className="h-full bg-primary"
+                  style={{ animation: `ss-shrink ${CUE_MS}ms linear forwards` }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}

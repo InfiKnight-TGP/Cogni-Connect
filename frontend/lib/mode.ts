@@ -1,61 +1,21 @@
 "use client";
-
-import { useEffect, useState } from "react";
-import { API_URL } from "@/lib/api";
-
-const KEY = "caregiver";
-const EVENT = "caregiver-change"; // keeps every useCaregiver() on the page in sync
-
-function read() {
-  try {
-    return sessionStorage.getItem(KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-/** Synchronous mode check for shared request helpers outside React components. */
-export function isCaregiverUnlocked() {
-  return read();
-}
-
-function write(on: boolean) {
-  try {
-    if (on) sessionStorage.setItem(KEY, "1");
-    else sessionStorage.removeItem(KEY);
-  } catch {}
-  window.dispatchEvent(new Event(EVENT));
-}
-
-/** Caregiver mode for this browser session: [on, ready]. `ready` is false until sessionStorage was read. */
+import { apiJSON, AUTH_CHANGED, jsonBody, ApiError } from "./api";
+import { useAuth } from "./auth-context";
+import { canSaveScores } from "./auth-session";
+/** Device caregiver access is retained in the code but hidden until the device flow is ready. */
+export const SHOW_DEVICE_CAREGIVER_ACCESS = false;
+export function isCaregiverUnlocked() { return !canSaveScores(); }
 export function useCaregiver(): [boolean, boolean] {
-  const [on, setOn] = useState(false);
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    const sync = () => setOn(read());
-    sync();
-    setReady(true);
-    window.addEventListener(EVENT, sync);
-    return () => window.removeEventListener(EVENT, sync);
-  }, []);
-  return [on, ready];
+  const { session, ready } = useAuth();
+  const deviceCaregiver = SHOW_DEVICE_CAREGIVER_ACCESS && session?.role === "patient_device" && !!session?.elevated;
+  return [session?.role === "caregiver" || deviceCaregiver, ready];
 }
-
-/** Checks the PIN with the backend; on success caregiver mode stays on for this browser session. */
 export async function unlockCaregiver(pin: string): Promise<"ok" | "wrong" | "offline"> {
   try {
-    const res = await fetch(`${API_URL}/caregiver/unlock`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pin }),
-    });
-    if (res.ok) write(true);
-    return res.ok ? "ok" : "wrong";
-  } catch {
-    return "offline";
-  }
+    await apiJSON("/caregiver/unlock", jsonBody({ pin }));
+    window.dispatchEvent(new Event(AUTH_CHANGED)); return "ok";
+  } catch (error) { return error instanceof ApiError ? "wrong" : "offline"; }
 }
-
-export function lockCaregiver() {
-  write(false);
+export async function lockCaregiver() {
+  await apiJSON("/caregiver/lock", jsonBody({})); window.location.assign("/");
 }

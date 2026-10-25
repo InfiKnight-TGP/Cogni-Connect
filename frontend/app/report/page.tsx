@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { CaregiverOnly } from "@/components/caregiver";
 import { Button } from "@/components/ui/button";
-import { API_URL } from "@/lib/api";
+import { apiFetch, API_URL } from "@/lib/api";
 import {
   AREAS, Area, Entry, LEVEL_NAMES, Week, dayKey, declines, lastFourWeeks, shortDate, toEntries, trend,
   weeklyAverages,
@@ -11,6 +11,7 @@ import {
 import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import Nav from "@/components/nav";
+import { useAuth } from "@/lib/auth-context";
 
 const ReportRadar = dynamic(() => import("./RadarChart"), {
   ssr: false,
@@ -143,11 +144,12 @@ function exportCsv(report: DayReport, date: string) {
 }
 
 export default function ReportPage() {
+  const { session } = useAuth();
   return (
-    <><Nav /><CaregiverOnly>
+    <><Nav />{session?.role === "self" ? <Report /> : <CaregiverOnly>
       <div className="mx-auto max-w-3xl px-8 pt-24 lg:ml-[260px] lg:pt-8 print:hidden"><p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Caregiver portal</p><h2 className="mt-1 text-3xl font-bold">Doctor&apos;s Report</h2></div>
       <Report />
-    </CaregiverOnly>
+    </CaregiverOnly>}
     </>
   );
 }
@@ -167,9 +169,9 @@ function Report() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${API_URL}/performance`),
-      fetch(`${API_URL}/settings`),
-      fetch(`${API_URL}/reports/days`),
+      apiFetch(`${API_URL}/performance`),
+      apiFetch(`${API_URL}/settings`),
+      apiFetch(`${API_URL}/reports/days`),
     ])
       .then(async ([perf, settings, daysRes]) => {
         if (!perf.ok) throw new Error();
@@ -185,14 +187,14 @@ function Report() {
 
   useEffect(() => {
     if (!selectedDay) return;
-    fetch(`${API_URL}/reports/day?date=${encodeURIComponent(selectedDay)}`)
+    apiFetch(`${API_URL}/reports/day?date=${encodeURIComponent(selectedDay)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => setDayReport(data))
       .catch(() => setDayReport(null));
   }, [selectedDay]);
 
   const saveName = () =>
-    fetch(`${API_URL}/settings`, {
+    apiFetch(`${API_URL}/settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ patient_name: name }),
