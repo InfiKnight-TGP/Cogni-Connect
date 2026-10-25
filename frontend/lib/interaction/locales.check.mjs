@@ -196,7 +196,13 @@ required.push(
   'Great practice following multi-step rules and schedule planning.',
   'Overall Score',
   'Out of 100 points',
-  'Row Hints'
+  'Row Hints',
+  'Subah · Early day',
+  'Dopahar · After lunch',
+  'Raat · Before sleep',
+  'Check this',
+  'Yellow pill: Monday to Friday morning, but skip Wednesday.',
+  "Compartments with a dashed outline and 'Check this' label can be adjusted. You have one chance to make a fix (corrections count half)."
 );
 for (const phrase of required) {
   assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing UI phrase: ${phrase}`);

@@ -26,7 +26,7 @@ import {
   calculatePillBoxSessionScore,
   getScenariosForKnob,
 } from "./logic";
-import { CheckCircle2, AlertTriangle, ArrowRight, RotateCcw, Check, Sparkles } from "lucide-react";
+import { CheckCircle2, AlertTriangle, ArrowRight, RotateCcw, Check } from "lucide-react";
 
 interface PillBoxPlannerProps {
   level?: 1 | 2 | 3;
@@ -60,7 +60,7 @@ export default function PillBoxPlanner({
 
   const scenario: PlannerScenario = scenarios[currentRoundIdx] ?? scenarios[0];
 
-  // Adaptive logging hook
+  // Adaptive logging hook: gameId="pill-box-planner", area="Executive Function", knob
   const logAnswer = useAnswerLog(
     "pill-box-planner",
     "Executive Function",
@@ -82,11 +82,6 @@ export default function PillBoxPlanner({
       setSelectedColor(roundColors[0].id);
     }
   }, [roundColors, selectedColor]);
-
-  // Read aloud permanent banner on first load
-  useEffect(() => {
-    // Component mounted
-  }, []);
 
   // Helper: check if a pill is in a compartment
   const hasPillInSlot = (day: WeekDay, time: DayTime, pill: PillColorId): boolean => {
@@ -144,7 +139,7 @@ export default function PillBoxPlanner({
     setPhase("fixing");
   };
 
-  // Confirm fix handler
+  // Confirm fix handler (one fix per round, corrected compartments count half)
   const handleConfirmFix = () => {
     if (!initialPlacementsSnapshot) return;
     const finalResult = evaluateRoundPlacements(
@@ -209,7 +204,7 @@ export default function PillBoxPlanner({
     >
       {(handleFinish) => (
         <div className="w-full max-w-5xl mx-auto space-y-6 pb-8">
-          {/* Permanent Safety Banner */}
+          {/* Permanent Safety Banner - Rendered unconditionally and read aloud at start */}
           <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/60 shadow-sm text-amber-900 dark:text-amber-200">
             <div className="flex items-center gap-2.5">
               <span className="text-xl" aria-hidden="true">🛡️</span>
@@ -217,7 +212,7 @@ export default function PillBoxPlanner({
                 {t("Practice only. This is not medical advice.")}
               </span>
             </div>
-            <ReadAloud text="Practice only. This is not medical advice." />
+            <ReadAloud text="Practice only. This is not medical advice." autoRead forceAutoRead />
           </div>
 
           {!sessionFinished ? (
@@ -364,7 +359,7 @@ export default function PillBoxPlanner({
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700">
-                        <th className="p-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-28">
+                        <th className="p-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-32">
                           {t("Time")}
                         </th>
                         {WEEK_DAYS.map((day) => (
@@ -383,9 +378,14 @@ export default function PillBoxPlanner({
                         return (
                           <tr key={time}>
                             <td className="p-3 bg-slate-50/70 dark:bg-slate-800/40">
-                              <div className="flex items-center gap-1.5 font-bold text-sm text-slate-800 dark:text-slate-200">
-                                <span>{timeMeta.icon}</span>
-                                <span>{t(timeMeta.name)}</span>
+                              <div className="flex flex-col">
+                                <div className="flex items-center gap-1.5 font-bold text-sm text-slate-800 dark:text-slate-200">
+                                  <span>{timeMeta.icon}</span>
+                                  <span>{t(timeMeta.name)}</span>
+                                </div>
+                                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
+                                  {t(timeMeta.subLabel)}
+                                </span>
                               </div>
                             </td>
                             {WEEK_DAYS.map((day) => {
@@ -397,10 +397,16 @@ export default function PillBoxPlanner({
                                   onClick={() => handleTogglePill(day, time)}
                                   className={`p-2.5 text-center border-l border-slate-200 dark:border-slate-700 cursor-pointer transition-colors min-h-[70px] ${
                                     flagged
-                                      ? "bg-amber-50/80 dark:bg-amber-950/40 ring-2 ring-inset ring-amber-400"
+                                      ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/60 dark:bg-slate-800/40"
                                       : "hover:bg-blue-50/50 dark:hover:bg-slate-800/50"
                                   }`}
                                 >
+                                  {flagged && (
+                                    <div className="inline-flex items-center gap-1 px-1.5 py-0.5 mb-1 rounded text-[10px] font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600">
+                                      <span aria-hidden="true">🔍</span>
+                                      <span>{t("Check this")}</span>
+                                    </div>
+                                  )}
                                   <div className="flex flex-wrap items-center justify-center gap-1.5 min-h-[46px]">
                                     {pills.length === 0 ? (
                                       <span className="text-slate-300 dark:text-slate-600 text-sm font-semibold select-none">
@@ -476,7 +482,7 @@ export default function PillBoxPlanner({
                           onClick={() => handleTogglePill(activeDayTab, time)}
                           className={`p-4 rounded-2xl border-2 transition-all cursor-pointer ${
                             flagged
-                              ? "border-amber-400 bg-amber-50/80 dark:bg-amber-950/40 shadow-sm"
+                              ? "border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/60 dark:bg-slate-800/40"
                               : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
                           }`}
                         >
@@ -484,10 +490,21 @@ export default function PillBoxPlanner({
                             <div className="flex items-center gap-2 font-bold text-sm text-slate-800 dark:text-slate-200">
                               <span>{timeMeta.icon}</span>
                               <span>{t(timeMeta.name)}</span>
+                              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                                ({t(timeMeta.subLabel)})
+                              </span>
                             </div>
-                            <span className="text-xs text-slate-500 dark:text-slate-400">
-                              {t("Tap to place/remove")}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              {flagged && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600">
+                                  <span aria-hidden="true">🔍</span>
+                                  <span>{t("Check this")}</span>
+                                </span>
+                              )}
+                              <span className="text-xs text-slate-500 dark:text-slate-400">
+                                {t("Tap to place/remove")}
+                              </span>
+                            </div>
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2 min-h-[38px] p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50">
@@ -530,7 +547,7 @@ export default function PillBoxPlanner({
                     <span>{t("Check complete. A few compartments need attention.")}</span>
                   </div>
                   <p className="text-xs sm:text-sm text-amber-800 dark:text-amber-300">
-                    {t("Compartments outlined in calm amber can be adjusted. You have one chance to make a fix (corrections count half).")}
+                    {t("Compartments with a dashed outline and 'Check this' label can be adjusted. You have one chance to make a fix (corrections count half).")}
                   </p>
                 </div>
               )}

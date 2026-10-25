@@ -403,10 +403,10 @@ export const KNOB_SCENARIOS: Record<number, PlannerScenario[]> = {
         },
         {
           pillColor: "yellow",
-          days: ["Monday", "Wednesday", "Friday"],
+          days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
           times: ["morning"],
           exceptionDay: "Wednesday",
-          instruction: "Yellow pill: Monday and Friday morning (skip Wednesday).",
+          instruction: "Yellow pill: Monday to Friday morning, but skip Wednesday.",
           exceptionInstruction: "Skip the yellow pill on Wednesday.",
         },
         {

@@ -1,15 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
 console.log("Running Pill Box Planner safety and invariant checks...");
-
-// Files to audit for safety compliance
-const filesToAudit = [
-  { name: "data.ts", url: new URL("../components/games/pill-box-planner/data.ts", import.meta.url) },
-  { name: "logic.ts", url: new URL("../components/games/pill-box-planner/logic.ts", import.meta.url) },
-  { name: "index.tsx", url: new URL("../components/games/pill-box-planner/index.tsx", import.meta.url) },
-  { name: "README.md", url: new URL("../components/games/pill-box-planner/README.md", import.meta.url) },
-];
 
 // Safety Blocklist Definitions
 const FORBIDDEN_WORDS = [
@@ -92,17 +84,71 @@ assert(
 );
 console.log(`Verified safety check fails against old data (${oldViolations.length} violations detected).`);
 
-// 2. Audit current active files
+// 2. Scan entire frontend/components/games/pill-box-planner folder
+const plannerDir = new URL("../components/games/pill-box-planner/", import.meta.url);
+const dirFiles = await readdir(plannerDir);
 const violations = [];
-for (const f of filesToAudit) {
-  let content = "";
-  try {
-    content = await readFile(f.url, "utf8");
-  } catch {
-    continue;
-  }
-  const fileViolations = auditContent(f.name, content);
+
+for (const fileName of dirFiles) {
+  const fileUrl = new URL(fileName, plannerDir);
+  const content = await readFile(fileUrl, "utf8");
+  const fileViolations = auditContent(`pill-box-planner/${fileName}`, content);
   violations.push(...fileViolations);
+}
+
+// 3. Scan hi/as strings for the game's phrases
+const hi = JSON.parse(await readFile(new URL("./interaction/locales/hi.json", import.meta.url), "utf8"));
+const as = JSON.parse(await readFile(new URL("./interaction/locales/as.json", import.meta.url), "utf8"));
+
+const gameKeyPhrases = [
+  "Pill Box Planner",
+  "Practice only. This is not medical advice.",
+  "Doctor's Note",
+  "Pill",
+  "Select Colour to Place",
+  "Tap a compartment to place or remove",
+  "Weekly Pill Box (7 Days)",
+  "Check Placements",
+  "Try a Fix",
+  "Finish Round",
+  "Confirm Fix",
+  "Round Score",
+  "Check complete. A few compartments need attention.",
+  "Compartments with a dashed outline and 'Check this' label can be adjusted. You have one chance to make a fix (corrections count half).",
+  "Follow several rules at once (a weekly pill-box practice)",
+  "Organize your weekly pill box by following the rules on the practice card.",
+  "Subah · Early day",
+  "Dopahar · After lunch",
+  "Raat · Before sleep",
+  "Check this",
+  "Yellow pill: Monday to Friday morning, but skip Wednesday.",
+];
+
+for (const phrase of gameKeyPhrases) {
+  const hiTrans = hi.ui?.[phrase] ?? "";
+  const asTrans = as.ui?.[phrase] ?? "";
+  violations.push(...auditContent(`hi.json[${phrase}]`, `${phrase} ${hiTrans}`));
+  violations.push(...auditContent(`as.json[${phrase}]`, `${phrase} ${asTrans}`));
+}
+
+// 4. Scan registry entry, games.json, and cognitive_reports.py
+const registryRaw = await readFile(new URL("../components/games/registry.ts", import.meta.url), "utf8");
+const regMatch = registryRaw.match(/id:\s*"pill-box-planner"[\s\S]*?\}(?=,\s*\{|\s*\];)/);
+if (regMatch) {
+  violations.push(...auditContent("registry.ts(pill-box-planner)", regMatch[0]));
+}
+
+const gamesJsonRaw = JSON.parse(await readFile(new URL("../../backend/games.json", import.meta.url), "utf8"));
+const gamesList = gamesJsonRaw.games || gamesJsonRaw;
+const pillGameJson = gamesList.find((g) => g.id === "pill-box-planner");
+if (pillGameJson) {
+  violations.push(...auditContent("games.json(pill-box-planner)", JSON.stringify(pillGameJson)));
+}
+
+const reportsRaw = await readFile(new URL("../../backend/cognitive_reports.py", import.meta.url), "utf8");
+const reportsMatch = reportsRaw.match(/"pill-box-planner":\s*\{[\s\S]*?\}(?=,\s*"\w)/);
+if (reportsMatch) {
+  violations.push(...auditContent("cognitive_reports.py(pill-box-planner)", reportsMatch[0]));
 }
 
 if (violations.length > 0) {
@@ -111,13 +157,14 @@ if (violations.length > 0) {
   throw new Error(`Safety audit failed with ${violations.length} violations.`);
 }
 
-console.log("Safety audit passed: 0 forbidden words, dose units, or drug names found across all files.");
+console.log("Safety audit passed: 0 forbidden words, dose units, or drug names found across all project files, locales, and registries.");
 
 // Dynamic import of safe data and logic
 const {
   PILL_COLORS,
   WEEK_DAYS,
   DAY_TIMES,
+  TIME_SLOT_META,
   KNOB_SCENARIOS,
   EXPAND_RULE,
 } = await import("../components/games/pill-box-planner/data.ts");
@@ -150,17 +197,33 @@ assert.deepEqual(
 );
 assert.deepEqual(DAY_TIMES, ["morning", "afternoon", "night"]);
 
-// 3. Permanent Safety Banner Verification
+// Time sublabels exist
+assert.equal(TIME_SLOT_META.morning.subLabel, "Subah · Early day");
+assert.equal(TIME_SLOT_META.afternoon.subLabel, "Dopahar · After lunch");
+assert.equal(TIME_SLOT_META.night.subLabel, "Raat · Before sleep");
+
+// 3. Permanent Safety Banner Verification inside JSX (not in comment)
 const indexContent = await readFile(
   new URL("../components/games/pill-box-planner/index.tsx", import.meta.url),
   "utf8"
 );
+// Strip all comments
+const strippedCode = indexContent
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/\/\/.*/g, "");
+
+// Banner text must be rendered inside active JSX
 assert(
-  indexContent.includes("Practice only. This is not medical advice."),
-  'Permanent banner "Practice only. This is not medical advice." missing in index.tsx'
+  strippedCode.includes('t("Practice only. This is not medical advice.")') ||
+    strippedCode.includes("Practice only. This is not medical advice."),
+  'Permanent banner "Practice only. This is not medical advice." missing in active JSX element'
+);
+assert(
+  strippedCode.includes('text="Practice only. This is not medical advice."'),
+  'Permanent banner must include ReadAloud speech rendered in active JSX'
 );
 
-// 4. Knobs & Rule Scenarios Validation
+// 4. Knobs & Rule Scenarios Validation + Rule Instruction vs Expansion comparison
 for (const knob of [1, 2, 3, 4]) {
   const scenarios = getScenariosForKnob(knob, KNOB_SCENARIOS);
   assert.equal(scenarios.length, 3, `Knob ${knob} must have exactly 3 rounds`);
@@ -183,6 +246,51 @@ for (const knob of [1, 2, 3, 4]) {
       // Rule must expand to at least 1 valid compartment
       const targets = EXPAND_RULE(rule);
       assert(targets.size > 0, `Rule expanded to 0 target compartments: ${rule.instruction}`);
+
+      // Rule Text vs Expansion Integrity Check:
+      const instLower = rule.instruction.toLowerCase();
+      // Check colour match
+      assert(
+        instLower.includes(rule.pillColor),
+        `Instruction "${rule.instruction}" does not mention colour ${rule.pillColor}`
+      );
+
+      // Check times match
+      for (const time of rule.times) {
+        if (time === "afternoon") {
+          assert(
+            instLower.includes("afternoon") || instLower.includes("lunch"),
+            `Instruction "${rule.instruction}" missing afternoon/lunch timing`
+          );
+        } else {
+          assert(
+            instLower.includes(time),
+            `Instruction "${rule.instruction}" missing ${time} timing`
+          );
+        }
+      }
+
+      // Check days and exception match
+      if (rule.exceptionDay) {
+        assert(
+          instLower.includes(`skip`) && instLower.includes(rule.exceptionDay.toLowerCase()),
+          `Instruction "${rule.instruction}" missing exception for ${rule.exceptionDay}`
+        );
+        // Expanded compartments must NOT have exception day
+        for (const target of targets) {
+          assert(
+            !target.startsWith(`${rule.exceptionDay}:`),
+            `Expanded compartments contains exception day ${rule.exceptionDay}`
+          );
+        }
+      }
+
+      if (rule.days.length === 7 && !rule.exceptionDay) {
+        assert(
+          instLower.includes("every day") || instLower.includes("daily"),
+          `Instruction "${rule.instruction}" should state every day`
+        );
+      }
     }
   }
 
@@ -190,6 +298,7 @@ for (const knob of [1, 2, 3, 4]) {
     // Knob 1: 2 pills with row hints
     for (const sc of scenarios) {
       assert(sc.rules.length <= 2, "Knob 1 must have at most 2 pills");
+      assert(sc.rowHints, "Knob 1 must have rowHints defined");
     }
   } else if (knob === 3) {
     // Knob 3: 3 pills with day rules in all rounds
@@ -200,6 +309,15 @@ for (const knob of [1, 2, 3, 4]) {
     // Knob 4: 4 pills and an exception rule in rounds 2 and 3
     assert(scenarios[1].hasException, "Knob 4 round 2 must have an exception rule");
     assert(scenarios[2].hasException, "Knob 4 round 3 must have an exception rule");
+    // Verify knob 4 round 2 yellow rule natural wording
+    const k4r2Yellow = scenarios[1].rules.find((r) => r.pillColor === "yellow");
+    assert(k4r2Yellow, "Knob 4 round 2 missing yellow pill rule");
+    assert.equal(
+      k4r2Yellow.instruction,
+      "Yellow pill: Monday to Friday morning, but skip Wednesday."
+    );
+    assert.equal(k4r2Yellow.exceptionDay, "Wednesday");
+    assert.equal(k4r2Yellow.days.length, 5);
   }
 }
 
@@ -333,19 +451,11 @@ for (const knob of [1, 2, 3, 4]) {
 console.log("Verified: all scenarios are possible, valid, non-empty, and free of duplicate rules.");
 
 // 7. Registry & Cognitive Reports Descriptions Audit
-const registryRaw = await readFile(
-  new URL("../components/games/registry.ts", import.meta.url),
-  "utf8"
-);
 assert(
   registryRaw.includes('Follow several rules at once (a weekly pill-box practice)'),
   "Registry description must match safe rewrite requirement"
 );
 
-const reportsRaw = await readFile(
-  new URL("../../backend/cognitive_reports.py", import.meta.url),
-  "utf8"
-);
 assert(
   reportsRaw.includes('Follow several rules at once (a weekly pill-box practice)'),
   "cognitive_reports.py description must match safe rewrite requirement"
