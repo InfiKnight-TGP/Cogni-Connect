@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiJSON, ApiError, jsonBody } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { CodeInput, Notice, PasswordField, actionClass, secondaryClass, fieldClass } from "./fields";
+import SignOutButton from "./SignOutButton";
+import { useTranslate } from "@/components/interaction/InteractionProvider";
 type Device = { id: string; device_label: string; last_seen: number };
 type PairCode = { code: string; expiresAt: number };
 type Member = { id: string; email: string; name?: string; role: string };
@@ -13,7 +15,7 @@ export function DeviceUnset() {
   const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
   if (session?.role !== "patient_device" || !session.activePatient) return null;
   const patientName = session.activePatient.name;
-  const patientLogin = !!session.user;
+  const patientLogin = Boolean(session.role === "patient_device" && session.user?.email);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true); setNotice("");
     try {
@@ -175,16 +177,61 @@ export function PatientsAndDevices() {
 }
 
 export function AccountSettings() {
-  const { session, logout } = useAuth(); const [password, setPassword] = useState(""); const [current, setCurrent] = useState("");
-  const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false);
+  const { session } = useAuth();
+  const { t } = useTranslate();
+  const [password, setPassword] = useState("");
+  const [current, setCurrent] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
   if (session?.role !== "caregiver" && session?.role !== "self") return null;
-  return <section className="space-y-5 rounded-2xl border bg-card p-5 sm:p-7"><h2 className="text-2xl font-bold">{session.role === "self" ? "Your account" : "Account"}</h2><p className="break-all text-xl">{session.user?.email}</p>
-    <form className="space-y-4" onSubmit={async event => {
-      event.preventDefault(); setBusy(true); setNotice("");
-      try { await apiJSON("/auth/password", jsonBody({ current_password: current, password })); setCurrent(""); setPassword(""); setNotice("Password changed. Other caregiver sessions have been signed out."); }
-      catch (error) { setNotice(error instanceof Error ? error.message : "Could not change password."); }
-      finally { setBusy(false); }
-    }}><PasswordField label="Current password" current value={current} onChange={setCurrent} /><PasswordField label="New password" value={password} onChange={setPassword} /><button className={secondaryClass} disabled={busy}>Change password</button></form>
-    <button className={secondaryClass} disabled={busy} onClick={() => { setBusy(true); void logout().catch(() => { setNotice("Could not sign out. Please try again."); setBusy(false); }); }}>Sign out</button><Notice>{notice}</Notice>
-  </section>;
+  return (
+    <section className="space-y-5 rounded-2xl border bg-card p-5 sm:p-7">
+      <h2 className="text-2xl font-bold">{t("Account")}</h2>
+      <p className="break-all text-xl">{session.user?.email}</p>
+      <form
+        className="space-y-4"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setBusy(true);
+          setNotice("");
+          try {
+            await apiJSON(
+              "/auth/password",
+              jsonBody({ current_password: current, password })
+            );
+            setCurrent("");
+            setPassword("");
+            setNotice(
+              "Password changed. Other caregiver sessions have been signed out."
+            );
+          } catch (error) {
+            setNotice(
+              error instanceof Error ? error.message : "Could not change password."
+            );
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <PasswordField
+          label="Current password"
+          current
+          value={current}
+          onChange={setCurrent}
+        />
+        <PasswordField
+          label="New password"
+          value={password}
+          onChange={setPassword}
+        />
+        <button className={secondaryClass} disabled={busy}>
+          Change password
+        </button>
+      </form>
+      <div>
+        <SignOutButton />
+      </div>
+      <Notice>{notice}</Notice>
+    </section>
+  );
 }

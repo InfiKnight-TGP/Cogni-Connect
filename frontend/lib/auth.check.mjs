@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { apiFetch, apiJSON, AUTH_EXPIRED, AUTH_CHANGED, mediaUrl, setRequestPatient } from "./api.ts";
 import { canSaveScores, setSessionSnapshot } from "./auth-session.ts";
@@ -32,6 +33,11 @@ try {
   setSessionSnapshot({ role: "caregiver", elevated: false }); assert.equal(canSaveScores(), false);
   setSessionSnapshot({ role: "patient_device", elevated: true }); assert.equal(canSaveScores(), false);
   setSessionSnapshot({ role: "patient_device", elevated: false }); assert.equal(canSaveScores(), true);
+  const pairedDevice = { role: "patient_device", user: null, activePatient: { id: "p1", name: "Patient" }, elevated: false };
+  const patientLogin = { role: "patient_device", user: { id: "u1", name: "Pat", email: "pat@example.com" }, activePatient: { id: "p1", name: "Patient" }, elevated: false };
+  const isPatientLogin = (session) => Boolean(session?.role === "patient_device" && session?.user?.email);
+  assert.equal(isPatientLogin(pairedDevice), false, "Paired device without user email must not be identified as patient-login");
+  assert.equal(isPatientLogin(patientLogin), true, "Patient account with its own email is identified as patient-login");
 } finally { globalThis.fetch = realFetch; delete globalThis.window; setSessionSnapshot(null); setRequestPatient(null); }
 
 const python = resolve("../backend/.venv/Scripts/python.exe");
@@ -109,6 +115,12 @@ try {
   assert.equal((await other("/people", { headers: { "X-Cogni-Patient": a } })).status, 200);
   assert.equal((await caregiver("/settings", { method: "POST", body: { language: "hi" }, headers: { origin: "https://untrusted.example" } })).status, 403);
   const id = (await caregiver(`/pair/devices?patient_id=${a}`)).data.devices[0].id;
+  assert.equal((await device("/device/unpair", { method: "POST", body: { pin: "0000" } })).status, 403);
+  assert.equal((await device("/auth/me")).status, 200);
+  const pcSource = await readFile(new URL("../components/auth/patient-controls.tsx", import.meta.url), "utf8");
+  assert.match(pcSource, /Boolean\(session\.role === "patient_device" && session\.user\?\.email\)/);
+  assert.match(pcSource, /patientLogin \? "Sign out" : "Unset this device"/);
+  assert.match(pcSource, /pattern="\[0-9\]\{4\}"/);
   assert.equal((await caregiver(`/pair/devices/${id}`, { method: "DELETE" })).status, 200);
   assert.equal((await device("/auth/me")).status, 401);
   console.log("Auth checks passed: credentials, session modes, OTP, pairing, media ranges, isolation, invites, CSRF, and unpairing.");

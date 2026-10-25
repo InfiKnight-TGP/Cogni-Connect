@@ -20,4 +20,5 @@ for (let i = 0; i < selfOrder.length - 1; i++) assert.ok(combined.indexOf(`href:
 assert.match(source, /aria-haspopup="dialog"/);
 assert.match(source, /event\.key === "Escape"/);
 assert.match(source, /event\.target === event\.currentTarget/);
+assert.doesNotMatch(source, /["']Sign out["']/, "Navigation must not contain any Sign out control for any account type");
 console.log("navigation checks passed");

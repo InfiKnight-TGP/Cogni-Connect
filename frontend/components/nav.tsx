@@ -78,7 +78,7 @@ export default function Nav() {
   const [pinOpen, setPinOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
-  const { session, selectPatient, logout } = useAuth();
+  const { session, selectPatient } = useAuth();
   const [notice, setNotice] = useState("");
   const [switching, setSwitching] = useState(false);
   const account: NavAccount = caregiver ? "caregiver" : session?.role === "self" ? "self" : "patient_device";
@@ -107,16 +107,17 @@ export default function Nav() {
   const isActive = (href: string) => pathname === href;
 
   const showDeviceCaregiver = session?.role === "patient_device" && SHOW_DEVICE_CAREGIVER_ACCESS;
-  const modeButton = caregiver
+  const isDeviceCaregiver = caregiver && session?.role === "patient_device";
+  const modeButton = isDeviceCaregiver
     ? {
-        label: t(session?.role === "caregiver" ? "Sign out" : "Exit caregiver"),
+        label: t("Exit caregiver"),
         short: t("Exit"),
         icon: LogOut,
         onClick: () => {
-          void (session?.role === "caregiver" ? logout() : lockCaregiver()).catch(() => setNotice("Could not sign out. Please try again."));
+          lockCaregiver();
         },
       }
-    : showDeviceCaregiver
+    : !caregiver && showDeviceCaregiver
       ? { label: t("Caregiver"), short: t("Caregiver"), icon: Lock, onClick: () => setPinOpen(true) }
       : null;
   const ModeIcon = modeButton?.icon;

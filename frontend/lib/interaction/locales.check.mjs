@@ -210,7 +210,9 @@ required.push(
   'Next Round',
   'When did this happen?',
   'The date shown on your memory.',
-  'We used the date this video was saved. You can change it.'
+  'We used the date this video was saved. You can change it.',
+  'Sign out of CogniConnect?',
+  'Account'
 );
 for (const phrase of required) {
   assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing UI phrase: ${phrase}`);

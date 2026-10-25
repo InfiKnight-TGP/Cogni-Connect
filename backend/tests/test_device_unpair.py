@@ -59,6 +59,24 @@ class DeviceUnpairTests(unittest.TestCase):
         with patch.dict(app.api.config, {'AUTH_DEMO': True}):
             self.assertEqual(self.device.post('/device/unpair', json={'pin': '1234'}).status_code, 200)
 
+    def test_patient_login_session_sign_out_requires_pin(self):
+        with app.api.app_context():
+            db.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo,role,patient_id,otp_target) VALUES (?,?,?,?,0,0,?,0,'patient',?,'patient')",
+                       ('patient-acc', 'patient-login@example.com', 'Patient Login', generate_password_hash('password1', method='scrypt'), auth.now(), 'test-patient'))
+            token, _ = auth.new_session('patient_device', user_id='patient-acc', patient_id='test-patient')
+        client = app.api.test_client()
+        client.set_cookie('cogni_device', token)
+        me = client.get('/auth/me')
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.json['role'], 'patient_device')
+        self.assertEqual(me.json['user']['email'], 'patient-login@example.com')
+        # Sign out without PIN or with wrong PIN must fail
+        self.assertEqual(client.post('/device/unpair', json={'pin': '0000'}).status_code, 403)
+        self.assertEqual(client.get('/auth/me').status_code, 200)
+        # Sign out with valid caregiver PIN succeeds
+        self.assertEqual(client.post('/device/unpair', json={'pin': '1234'}).status_code, 200)
+        self.assertEqual(client.get('/auth/me').status_code, 401)
+
 
 if __name__ == '__main__':
     unittest.main()
