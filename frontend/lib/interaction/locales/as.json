@@ -865,7 +865,8 @@
     "View Summary": "সাৰাংশ চাওক",
     "Next Round": "পৰৱৰ্তী ৰাউণ্ড",
     "When did this happen?": "এইটো কেতিয়া হৈছিল?",
-    "The date shown on your memory.": "আপোনাৰ স্মৃতিত দেখুওৱা তাৰিখ।"
+    "The date shown on your memory.": "আপোনাৰ স্মৃতিত দেখুওৱা তাৰিখ।",
+    "We used the date this video was saved. You can change it.": "আমি এই ভিডিঅ’ সাঁচি থোৱাৰ তাৰিখ ব্যৱহাৰ কৰিছোঁ। আপুনি ইয়াক সলনি কৰিব পাৰে।"
   },
   "reviewStatus": "Machine translation — needs native review",
   "Mole Path": "ম'ল পথ (পথটো মনত ৰাখক)",

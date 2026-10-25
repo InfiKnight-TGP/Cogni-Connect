@@ -867,7 +867,8 @@
     "View Summary": "सारांश देखें",
     "Next Round": "अगला राउंड",
     "When did this happen?": "यह कब हुआ था?",
-    "The date shown on your memory.": "आपकी याद पर दिखाई जाने वाली तारीख।"
+    "The date shown on your memory.": "आपकी याद पर दिखाई जाने वाली तारीख।",
+    "We used the date this video was saved. You can change it.": "हमने इस वीडियो के सहेजे जाने की तारीख इस्तेमाल की है। आप इसे बदल सकते हैं।"
   },
   "reviewStatus": "Machine translation — needs native review",
   "Mole Path": "मोल पथ (रास्ता याद रखें)",

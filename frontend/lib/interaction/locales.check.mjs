@@ -209,7 +209,8 @@ required.push(
   'View Summary',
   'Next Round',
   'When did this happen?',
-  'The date shown on your memory.'
+  'The date shown on your memory.',
+  'We used the date this video was saved. You can change it.'
 );
 for (const phrase of required) {
   assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing UI phrase: ${phrase}`);

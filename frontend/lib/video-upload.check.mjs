@@ -8,6 +8,8 @@ import {
   validateVideoFile,
   validateMemoryDate,
   validateMemoryNote,
+  resolveUploadDate,
+  formatLocalDate,
   shouldPoll,
   getNextPollDelay,
   getFriendlyErrorMessage,
@@ -100,6 +102,7 @@ const newPhrases = [
   "This is taking longer than usual. You can check back later.",
   "Memory updated",
   "Memory deleted",
+  "We used the date this video was saved. You can change it.",
 ];
 
 for (const phrase of newPhrases) {
@@ -107,4 +110,31 @@ for (const phrase of newPhrases) {
   assert.ok(as.ui[phrase], `Missing Assamese translation for: "${phrase}"`);
 }
 
-console.log("video-upload checks passed: validated form validation, polling backoff/stop rules, role permission checks, friendly errors, and hi/as translations.");
+// 8. Video upload date resolution: defaults to file's lastModified (local yyyy-MM-dd), never overwrites manual change
+const clientToday = new Date(2026, 9, 25, 12, 0, 0); // 2026-10-25 noon local
+const todayStr = formatLocalDate(clientToday);
+assert.equal(todayStr, "2026-10-25");
+
+// A. File saved yesterday formatted as local yyyy-MM-dd
+const yesterday = new Date(2026, 9, 24, 15, 30, 0);
+assert.equal(resolveUploadDate({ lastModified: yesterday.getTime() }, todayStr, false, clientToday), "2026-10-24");
+
+// B. "Never overwrite a date the person already changed by hand" rule
+assert.equal(resolveUploadDate({ lastModified: yesterday.getTime() }, "2026-10-18", true, clientToday), "2026-10-18");
+assert.equal(resolveUploadDate({ lastModified: yesterday.getTime() }, "2026-10-22", true, clientToday), "2026-10-22");
+
+// C. "If lastModified is missing or in the future, keep today"
+const futureDate = new Date(2026, 9, 26, 10, 0, 0);
+assert.equal(resolveUploadDate({ lastModified: futureDate.getTime() }, todayStr, false, clientToday), todayStr);
+assert.equal(resolveUploadDate({ lastModified: undefined }, todayStr, false, clientToday), todayStr);
+assert.equal(resolveUploadDate({ lastModified: null }, todayStr, false, clientToday), todayStr);
+assert.equal(resolveUploadDate({ lastModified: 0 }, todayStr, false, clientToday), todayStr);
+assert.equal(resolveUploadDate({ lastModified: NaN }, todayStr, false, clientToday), todayStr);
+assert.equal(resolveUploadDate(null, todayStr, false, clientToday), todayStr);
+assert.equal(resolveUploadDate(undefined, todayStr, false, clientToday), todayStr);
+
+// D. Local timezone check without UTC day shift (e.g. late evening 23:45 local)
+const lateEvening = new Date(2026, 9, 24, 23, 45, 0);
+assert.equal(resolveUploadDate({ lastModified: lateEvening.getTime() }, todayStr, false, clientToday), "2026-10-24");
+
+console.log("video-upload checks passed: validated form validation, polling backoff/stop rules, role permission checks, friendly errors, resolveUploadDate (file date default, manual change protection), and hi/as translations.");

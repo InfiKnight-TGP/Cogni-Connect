@@ -10,6 +10,7 @@ import {
   validateVideoFile,
   validateMemoryDate,
   validateMemoryNote,
+  resolveUploadDate,
   getFriendlyErrorMessage,
   MAX_UPLOAD_MB_REGULAR,
   MAX_VIDEO_SECONDS,
@@ -52,6 +53,7 @@ export default function UploadMemoryDialog({
 
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadDate, setUploadDate] = useState(() => dayKey(new Date()));
+  const [hasManualDate, setHasManualDate] = useState(false);
   const [uploadNote, setUploadNote] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
@@ -65,7 +67,14 @@ export default function UploadMemoryDialog({
 
   // Fetch limits from server, fallback to defaults
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setUploadFile(null);
+      setUploadNote("");
+      setUploadDate(dayKey(new Date()));
+      setHasManualDate(false);
+      setUploadError("");
+      return;
+    }
     let active = true;
     apiFetch(`${API_URL}/memories/limits`, { authRedirect: false })
       .then(async (res) => {
@@ -93,6 +102,9 @@ export default function UploadMemoryDialog({
     if (!file) return;
     setUploadFile(null);
     setUploadError("");
+
+    const newDate = resolveUploadDate(file, uploadDate, hasManualDate);
+    setUploadDate(newDate);
 
     const val = validateVideoFile(file, limits.demo);
     if (!val.valid) {
@@ -186,6 +198,7 @@ export default function UploadMemoryDialog({
         setUploadFile(null);
         setUploadNote("");
         setUploadDate(dayKey(new Date()));
+        setHasManualDate(false);
         onClose();
       } else {
         let msg = "";
@@ -225,6 +238,10 @@ export default function UploadMemoryDialog({
             onClick={() => {
               onClose();
               setUploadError("");
+              setUploadFile(null);
+              setUploadNote("");
+              setUploadDate(dayKey(new Date()));
+              setHasManualDate(false);
             }}
             className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl border-2 border-border hover:border-primary disabled:opacity-50"
             aria-label={t("Cancel")}
@@ -286,11 +303,19 @@ export default function UploadMemoryDialog({
               type="date"
               value={uploadDate}
               max={getMaxDateStr()}
-              onChange={(e) => setUploadDate(e.target.value)}
+              onChange={(e) => {
+                setHasManualDate(true);
+                setUploadDate(e.target.value);
+              }}
               disabled={uploading}
               className="min-h-12 w-full rounded-xl border-2 border-border bg-background px-3 text-base outline-none focus:border-primary"
               required
             />
+            {uploadFile && (
+              <p className="text-xs text-muted-foreground mt-1.5">
+                {t("We used the date this video was saved. You can change it.")}
+              </p>
+            )}
           </div>
 
           {/* Note ("What happened?") */}

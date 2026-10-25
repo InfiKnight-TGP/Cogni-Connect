@@ -51,6 +51,35 @@ export function validateMemoryDate(dateStr: string, clientToday: Date = new Date
   return { valid: true, cleaned: trimmed };
 }
 
+const pad = (n: number) => String(n).padStart(2, "0");
+export const formatLocalDate = (d: Date): string =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+/**
+ * Resolves the date string ("yyyy-MM-dd") when a file is selected for upload.
+ * - Formats the file's lastModified timestamp as local yyyy-MM-dd (never toISOString).
+ * - Never overwrites a date the user already changed by hand (hasManualDateChange = true).
+ * - If lastModified is missing, not a finite positive number, or in the future compared to clientToday, keeps clientToday.
+ */
+export function resolveUploadDate(
+  file: { lastModified?: number | null } | null | undefined,
+  currentDate: string,
+  hasManualDateChange: boolean,
+  clientToday: Date = new Date()
+): string {
+  if (hasManualDateChange) {
+    return currentDate;
+  }
+  const todayKey = formatLocalDate(clientToday);
+  if (!file || typeof file.lastModified !== "number" || isNaN(file.lastModified) || file.lastModified <= 0) {
+    return todayKey;
+  }
+  if (file.lastModified > clientToday.getTime()) {
+    return todayKey;
+  }
+  return formatLocalDate(new Date(file.lastModified));
+}
+
 export function validateMemoryNote(note: string | null | undefined): { valid: boolean; error?: string; cleaned: string } {
   if (!note) {
     return { valid: true, cleaned: "" };
