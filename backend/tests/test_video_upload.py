@@ -433,6 +433,76 @@ class VideoUploadBackendTests(unittest.TestCase):
         self.assertNotIn('2026-10-20', plans)
         self.assertNotIn('2026-10-22', plans)
 
+    def test_chosen_date_survives_processing_and_patch_in_every_store(self):
+        chosen_date = '2026-10-18'
+        with patch('process_video.process_uploaded_video', return_value={'success': True, 'chunks_folder': 'test_chunks'}), \
+             patch('app._generate_questions_for_video', return_value=[]):
+            with open(self.test_clip, 'rb') as f:
+                res = self.client_self.post('/memories', data={
+                    'file': (io.BytesIO(f.read()), 'date_survival.mp4'),
+                    'date': chosen_date,
+                    'note': 'Initial date test note'
+                }, content_type='multipart/form-data')
+            self.assertEqual(res.status_code, 201)
+            memory_id = res.get_json()['id']
+
+            # Check immediate storage before processing finishes
+            with open(self.base_a / 'memories.json', 'r', encoding='utf-8') as mf:
+                mems_init = json.load(mf)
+            self.assertEqual(mems_init[memory_id]['date'], chosen_date)
+
+            with open(self.base_a / 'video_journals.json', 'r', encoding='utf-8') as jf:
+                journals_init = json.load(jf)
+            stored_name = mems_init[memory_id]['filename']
+            self.assertEqual(journals_init[stored_name]['date'], chosen_date)
+
+            # Wait for background thread to complete
+            time.sleep(0.3)
+
+            # 1. Date survives processing in memories.json and video_journals.json
+            with open(self.base_a / 'memories.json', 'r', encoding='utf-8') as mf:
+                mems_processed = json.load(mf)
+            self.assertEqual(mems_processed[memory_id]['date'], chosen_date)
+            self.assertEqual(mems_processed[memory_id]['status'], 'ready')
+
+            with open(self.base_a / 'video_journals.json', 'r', encoding='utf-8') as jf:
+                journals_processed = json.load(jf)
+            self.assertEqual(journals_processed[stored_name]['date'], chosen_date)
+
+            # 2. GET /memories/<id> and GET /memories return the chosen date
+            get_id_res = self.client_self.get(f'/memories/{memory_id}')
+            self.assertEqual(get_id_res.status_code, 200)
+            self.assertEqual(get_id_res.get_json()['date'], chosen_date)
+
+            get_list_res = self.client_self.get('/memories')
+            self.assertEqual(get_list_res.status_code, 200)
+            list_item = next(m for m in get_list_res.get_json()['memories'] if m['id'] == memory_id)
+            self.assertEqual(list_item['date'], chosen_date)
+
+            # 3. PATCH updates date in every store
+            new_date = '2026-10-21'
+            patch_res = self.client_self.patch(f'/memories/{memory_id}', json={
+                'date': new_date,
+                'note': 'Patched date note'
+            })
+            self.assertEqual(patch_res.status_code, 200)
+            self.assertEqual(patch_res.get_json()['date'], new_date)
+
+            with open(self.base_a / 'memories.json', 'r', encoding='utf-8') as mf:
+                mems_patched = json.load(mf)
+            self.assertEqual(mems_patched[memory_id]['date'], new_date)
+
+            with open(self.base_a / 'video_journals.json', 'r', encoding='utf-8') as jf:
+                journals_patched = json.load(jf)
+            self.assertEqual(journals_patched[stored_name]['date'], new_date)
+
+            get_id_patched = self.client_self.get(f'/memories/{memory_id}')
+            self.assertEqual(get_id_patched.get_json()['date'], new_date)
+
+            get_list_patched = self.client_self.get('/memories')
+            list_item_patched = next(m for m in get_list_patched.get_json()['memories'] if m['id'] == memory_id)
+            self.assertEqual(list_item_patched['date'], new_date)
+
     def test_delete_memory_removes_only_own_questions_and_preserves_other_videos(self):
         fn_a = 'vid_a.mp4'
         id_a = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'

@@ -87,4 +87,64 @@ const todayOnlyGroups = groupMemoriesByDate(onlyToday, 'en', baseDate);
 assert.equal(todayOnlyGroups.length, 1);
 assert.equal(todayOnlyGroups[0].label, 'Today');
 
-console.log('explore date format and grouping checks passed');
+// 3. Multi-timezone checks with dates around midnight
+// TZ offsets to test: Asia/Kolkata (UTC+5:30), America/Los_Angeles (UTC-7/UTC-8), UTC
+import { parseLocalDate, getMemoryDateCategory } from './date-format.ts';
+const timezones = ['Asia/Kolkata', 'America/Los_Angeles', 'UTC'];
+for (const tz of timezones) {
+  process.env.TZ = tz;
+
+  // Verify parseLocalDate produces the same local year, month, day across all timezones
+  const parsed = parseLocalDate('2026-10-24');
+  assert.equal(parsed.getFullYear(), 2026, `${tz}: year should be 2026`);
+  assert.equal(parsed.getMonth(), 9, `${tz}: month should be October (9)`);
+  assert.equal(parsed.getDate(), 24, `${tz}: date should be 24`);
+
+  // Test with times around midnight:
+  // a) 1 second after midnight: 00:00:01
+  // b) 1 second before midnight: 23:59:59
+  // c) Noon: 12:00:00
+  const midnightCases = [
+    new Date(2026, 9, 24, 0, 0, 1),
+    new Date(2026, 9, 24, 23, 59, 59),
+    new Date(2026, 9, 24, 12, 0, 0),
+  ];
+
+  for (const refNow of midnightCases) {
+    // Today
+    assert.equal(formatFriendlyDate('2026-10-24', 'en', refNow), 'Today', `${tz}: today should be Today`);
+    assert.equal(getMemoryDateCategory('2026-10-24', refNow), 'today', `${tz}: category today`);
+
+    // Yesterday
+    assert.equal(formatFriendlyDate('2026-10-23', 'en', refNow), 'Yesterday', `${tz}: yesterday should be Yesterday`);
+    assert.equal(getMemoryDateCategory('2026-10-23', refNow), 'this_week', `${tz}: category this_week for yesterday`);
+
+    // Earlier this week (days 2 to 7)
+    assert.equal(formatFriendlyDate('2026-10-22', 'en', refNow), 'Thursday 22 October');
+    assert.equal(getMemoryDateCategory('2026-10-22', refNow), 'this_week');
+    assert.equal(getMemoryDateCategory('2026-10-17', refNow), 'this_week', `${tz}: boundary day 7 should be this_week`);
+
+    // Day 8 (Earlier)
+    assert.equal(getMemoryDateCategory('2026-10-16', refNow), 'earlier', `${tz}: boundary day 8 should be earlier`);
+    assert.equal(getMemoryDateCategory('2026-09-01', refNow), 'earlier');
+
+    // Test grouping into Today, This week, Earlier under this TZ and midnight case
+    const tzMemories = [
+      { id: 't1', date: '2026-10-24', title: 'T1' },
+      { id: 'w1', date: '2026-10-23', title: 'W1' },
+      { id: 'w2', date: '2026-10-17', title: 'W2' },
+      { id: 'e1', date: '2026-10-16', title: 'E1' },
+    ];
+    const tzGroups = groupMemoriesByDate(tzMemories, 'en', refNow);
+    assert.equal(tzGroups.length, 3, `${tz}: should have 3 groups`);
+    assert.equal(tzGroups[0].label, 'Today');
+    assert.deepEqual(tzGroups[0].items.map((m) => m.id), ['t1']);
+    assert.equal(tzGroups[1].label, 'This week');
+    assert.deepEqual(tzGroups[1].items.map((m) => m.id), ['w1', 'w2']);
+    assert.equal(tzGroups[2].label, 'Earlier');
+    assert.deepEqual(tzGroups[2].items.map((m) => m.id), ['e1']);
+  }
+}
+
+console.log('explore date format and grouping checks passed (including multi-TZ midnight tests)');
+

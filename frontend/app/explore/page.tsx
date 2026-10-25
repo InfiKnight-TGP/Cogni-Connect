@@ -18,7 +18,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { formatFriendlyDate, groupMemoriesByDate } from "@/lib/date-format";
+import { formatFriendlyDate, getMemoryDateCategory, groupMemoriesByDate } from "@/lib/date-format";
 import { canManageMemories, getFriendlyErrorMessage, shouldPoll, getNextPollDelay } from "@/lib/video-upload";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import UploadMemoryDialog, { UploadedMemory } from "@/components/memories/UploadMemoryDialog";
@@ -368,16 +368,8 @@ export default function ExplorePage() {
         }
       }
       if (filterDate !== "all") {
-        if (!memory.date) return filterDate === "earlier";
-        const parts = String(memory.date).slice(0, 10).split("-").map(Number);
-        if (parts.length !== 3 || parts.some(isNaN)) return filterDate === "earlier";
-        const targetDate = new Date(parts[0], parts[1] - 1, parts[2]);
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const diffDays = Math.round((today.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
-        if (filterDate === "today" && diffDays !== 0) return false;
-        if (filterDate === "this_week" && (diffDays <= 0 || diffDays > 7)) return false;
-        if (filterDate === "earlier" && diffDays <= 7) return false;
+        const cat = getMemoryDateCategory(memory.date);
+        if (filterDate !== cat) return false;
       }
       return true;
     });
@@ -404,7 +396,7 @@ export default function ExplorePage() {
   return (
     <>
       <Nav />
-      <main className="mx-auto max-w-6xl px-5 pb-20 pt-24 lg:ml-[260px] lg:pt-10">
+      <main className="mx-auto max-w-screen-lg px-4 pb-20 pt-24 lg:pt-8">
         <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -556,7 +548,7 @@ export default function ExplorePage() {
                 <h2 className="mb-4 text-2xl font-bold tracking-tight">
                   {group.label}
                 </h2>
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                   {group.items.map((memory) => {
                     const friendlyDate = formatFriendlyDate(memory.date, language);
                     const isReady = memory.status === "ready";

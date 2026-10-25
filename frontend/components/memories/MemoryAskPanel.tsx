@@ -6,6 +6,7 @@ import ReadAloud from "@/components/interaction/ReadAloud";
 import DictationButton from "@/components/interaction/DictationButton";
 import { usePreferences, useTranslate } from "@/components/interaction/InteractionProvider";
 import { API_URL, apiFetch } from "@/lib/api";
+import { formatFriendlyDate } from "@/lib/date-format";
 
 export type AnswerData = {
   answer: string;
@@ -29,7 +30,7 @@ function AnswerCard({
   onSource?: (id: string) => void;
   onClear?: () => void;
 }) {
-  const { t } = useTranslate();
+  const { t, language } = useTranslate();
   const { preferences } = usePreferences();
   const isGrounded = answer.grounded;
 
@@ -73,21 +74,24 @@ function AnswerCard({
 
       {isGrounded && answer.sources && answer.sources.length > 0 && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          {answer.sources.map((source) => (
-            <button
-              type="button"
-              key={source.memory_id}
-              onClick={() => onSource?.(source.memory_id)}
-              className="inline-flex min-h-10 items-center gap-2 rounded-full border-2 border-border bg-background px-4 py-1.5 text-sm font-semibold transition hover:border-primary hover:bg-muted"
-            >
-              <span>{source.title}</span>
-              {(source.dateLabel || source.label) && (
-                <span className="font-normal text-muted-foreground">
-                  • {source.dateLabel || source.label}
-                </span>
-              )}
-            </button>
-          ))}
+          {answer.sources.map((source) => {
+            const formattedDate = formatFriendlyDate(source.date, language) || source.dateLabel || source.label;
+            return (
+              <button
+                type="button"
+                key={source.memory_id}
+                onClick={() => onSource?.(source.memory_id)}
+                className="inline-flex min-h-10 items-center gap-2 rounded-full border-2 border-border bg-background px-4 py-1.5 text-sm font-semibold transition hover:border-primary hover:bg-muted"
+              >
+                <span>{source.title}</span>
+                {formattedDate && (
+                  <span className="font-normal text-muted-foreground">
+                    • {formattedDate}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
 

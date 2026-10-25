@@ -9,6 +9,40 @@ const MONTHS: Record<string, string[]> = {
   hi: ["जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"],
   as: ["জানুৱাৰী", "ফেব্ৰুৱাৰী", "মাৰ্চ", "এপ্ৰিল", "মে", "জুন", "জুলাই", "আগষ্ট", "ছেপ্টেম্বৰ", "অক্টোবৰ", "নৱেম্বৰ", "ডিচেম্বৰ"],
 };
+/**
+ * Parse a "yyyy-MM-dd" date string as a local Date (never UTC).
+ * Using `new Date("yyyy-MM-dd")` parses as UTC midnight, which in Western
+ * timezones shifts the date to the previous day. This helper prevents that.
+ */
+export function parseLocalDate(dateStr: string): Date {
+  const clean = String(dateStr).trim().slice(0, 10);
+  const parts = clean.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) {
+    return new Date();
+  }
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+/**
+ * Categorize a memory date into "today", "this_week" (days 1-7), or "earlier" (days 8+ or missing).
+ */
+export function getMemoryDateCategory(
+  dateStr?: string | null,
+  baseDate?: Date
+): "today" | "this_week" | "earlier" {
+  if (!dateStr) return "earlier";
+  const clean = String(dateStr).trim().slice(0, 10);
+  const parts = clean.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return "earlier";
+  const targetDate = new Date(parts[0], parts[1] - 1, parts[2]);
+  const now = baseDate ?? new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((today.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return "today";
+  if (diffDays > 0 && diffDays <= 7) return "this_week";
+  return "earlier";
+}
 
 export function formatFriendlyDate(dateStr?: string | null, lang: string = "en", baseDate?: Date): string {
   if (!dateStr) return "";
@@ -52,26 +86,11 @@ export function groupMemoriesByDate<T extends { date?: string | null }>(
   const thisWeekItems: T[] = [];
   const earlierItems: T[] = [];
 
-  const now = baseDate ?? new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
   for (const memory of memories) {
-    if (!memory.date) {
-      earlierItems.push(memory);
-      continue;
-    }
-    const parts = String(memory.date).slice(0, 10).split("-").map(Number);
-    if (parts.length !== 3 || parts.some(isNaN)) {
-      earlierItems.push(memory);
-      continue;
-    }
-    const [year, month, day] = parts;
-    const targetDate = new Date(year, month - 1, day);
-    const diffDays = Math.round((today.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) {
+    const category = getMemoryDateCategory(memory.date, baseDate);
+    if (category === "today") {
       todayItems.push(memory);
-    } else if (diffDays > 0 && diffDays <= 7) {
+    } else if (category === "this_week") {
       thisWeekItems.push(memory);
     } else {
       earlierItems.push(memory);

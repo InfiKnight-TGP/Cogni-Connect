@@ -276,8 +276,11 @@ export default function UploadMemoryDialog({
           {/* Date */}
           <div>
             <label htmlFor="upload-memory-date" className="block text-sm font-semibold text-muted-foreground mb-1">
-              {t("Date")}
+              {t("When did this happen?")}
             </label>
+            <p className="text-xs text-muted-foreground mb-1.5">
+              {t("The date shown on your memory.")}
+            </p>
             <input
               id="upload-memory-date"
               type="date"

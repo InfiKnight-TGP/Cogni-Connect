@@ -1442,7 +1442,14 @@ def get_memory(memory_id):
         message = SAFE_FAILURE_MESSAGE
         error_msg = SAFE_FAILURE_MESSAGE
 
-    d_info = _friendly_memory_date(row.get('date'))
+    journal = {}
+    try:
+        with open(JOURNALS_PATH, 'r', encoding='utf-8') as stream:
+            journal = json.load(stream).get(filename, {})
+    except (OSError, ValueError, TypeError):
+        pass
+    memory_date = row.get('date') or journal.get('date')
+    d_info = _friendly_memory_date(memory_date)
     return jsonify({
         'id': memory_id,
         'status': status,
@@ -1450,7 +1457,7 @@ def get_memory(memory_id):
         'message': message,
         'error': error_msg,
         'title': row.get('title') or filename.rsplit('.', 1)[0],
-        'date': row.get('date'),
+        'date': memory_date,
         'dateLabel': d_info.get('dateLabel', ''),
         'note': row.get('note', ''),
         'durationSeconds': row.get('durationSeconds'),
