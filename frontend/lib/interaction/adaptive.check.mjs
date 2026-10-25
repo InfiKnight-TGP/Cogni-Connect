@@ -14,6 +14,11 @@ state.baselines.tap = Array(8).fill(1000);
 state = evaluateSession(state, Array.from({ length: 8 }, () => event('c', true)));
 assert.equal(state.knob, 2);
 assert.equal(state.baselines.tap.length, 16);
+// Whole-session games (such as sorting-station and whack-a-mole) submit >8 events in a single session
+const whackSessionEvents = Array.from({ length: 14 }, () => event('session-whack-1', true, 800));
+const evaluatedWhack = evaluateSession(state, whackSessionEvents);
+assert.equal(evaluatedWhack.knob, 3);
+assert.equal(evaluatedWhack.decision, 'up');
 const before = state;
 assert.deepEqual(evaluateSession(state, [{ ...event('d', true), errorType: 'recognition', correct: null }]), before);
 state = evaluateSession(state, [{ ...event('d', true), method: 'voice', responseMs: 9000 }]);

@@ -73,6 +73,24 @@ class CognitiveReportTests(unittest.TestCase):
         self.assertEqual(GAME_REGISTRY["attention-hunt"]["primary_domain"], "Attention")
         self.assertEqual(GAME_REGISTRY["plan-the-day"]["primary_domain"], "Executive Function")
 
+    def test_game_registry_has_no_duplicate_keys_in_source(self):
+        import ast
+        source_path = Path(__file__).resolve().parent.parent / "cognitive_reports.py"
+        tree = ast.parse(source_path.read_text(encoding="utf-8"))
+        duplicates = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == "GAME_REGISTRY":
+                        if isinstance(node.value, ast.Dict):
+                            seen = set()
+                            for k in node.value.keys:
+                                if isinstance(k, ast.Constant):
+                                    if k.value in seen:
+                                        duplicates.append(k.value)
+                                    seen.add(k.value)
+        self.assertEqual(duplicates, [], f"Duplicate keys found in GAME_REGISTRY definition: {duplicates}")
+
     def test_every_playable_game_score_counts_in_its_report_area(self):
         date_str = "2026-10-21"
         scores = [

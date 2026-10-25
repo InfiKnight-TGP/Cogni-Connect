@@ -106,7 +106,7 @@ export const WORD_ASSOCIATION_PAIRS: AssociationPair[] = [
     target: { word: "Ticket", emoji: "🎟️", synonyms: ["ticket", "rail ticket", "pass", "train ticket"] },
     hint: "Think about what you show the ticket collector.",
     distractors: [
-      { word: "Luggage", emoji: "🧳", sameCategory: true, synonyms: ["bag", "luggage", "suitcase"] },
+      { word: "Boat", emoji: "⛵", sameCategory: true, synonyms: ["boat", "nao", "kishti"] },
       { word: "Bus", emoji: "🚌", sameCategory: true, synonyms: ["bus"] },
       { word: "Car", emoji: "🚗", sameCategory: true, synonyms: ["car", "gadi"] },
       { word: "Soap bar", emoji: "🧼", sameCategory: false, synonyms: ["soap", "sabun"] },
@@ -197,8 +197,8 @@ export const WORD_ASSOCIATION_PAIRS: AssociationPair[] = [
     hint: "Think about what helps you read small print clearly.",
     distractors: [
       { word: "Backpack", emoji: "🎒", sameCategory: true, synonyms: ["bag", "backpack", "basta"] },
-      { word: "Desk lamp", emoji: "💡", sameCategory: true, synonyms: ["lamp", "bulb", "light"] },
-      { word: "Flashlight", emoji: "🔦", sameCategory: true, synonyms: ["torch", "flashlight"] },
+      { word: "Globe", emoji: "🌐", sameCategory: true, synonyms: ["globe", "map"] },
+      { word: "Ruler", emoji: "📏", sameCategory: true, synonyms: ["ruler", "scale"] },
       { word: "Shoe", emoji: "👞", sameCategory: false, synonyms: ["shoe", "juta"] },
       { word: "Spoon", emoji: "🥄", sameCategory: false, synonyms: ["spoon", "chamach"] },
       { word: "Bicycle", emoji: "🚲", sameCategory: false, synonyms: ["bicycle"] },

@@ -11,7 +11,6 @@ import {
   Brain,
   CalendarDays,
   Footprints,
-  Hand,
   Link as LinkIcon,
   Map,
   Package,

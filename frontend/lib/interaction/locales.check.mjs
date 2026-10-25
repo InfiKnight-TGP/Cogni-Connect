@@ -147,7 +147,32 @@ required.push(
   'Think about what rings on a bicycle handlebar.',
   'Think about the warm glow burning on a candle.',
   'Think about the bowl of warm dal served with rice.',
-  'Think about what twinkles beside the moon at night.'
+  'Think about what twinkles beside the moon at night.',
+  'Garden Taps',
+  'Tap target moles while letting resting visitors stay undisturbed.',
+  'Tap the mole',
+  'Let it rest',
+  'Let it bloom',
+  'Tap the mole when it peeks out. Let the gentle visitors rest.',
+  'First round is a gentle warm-up.',
+  'Start when you are ready',
+  'Roles Swap!',
+  'Now tap the butterfly! Let the mole rest.',
+  'Tap now',
+  "I'm ready",
+  'Game Paused',
+  'Take your time. The garden will wait for you.',
+  'Resume',
+  'Practice warm-up',
+  'Visitor {current} of {total}',
+  'That is a friendly butterfly. Let it rest.',
+  'That is a garden marigold. Let it bloom.',
+  'Garden holes',
+  'Mole hole',
+  'Visitor hole',
+  'Garden hole {number}',
+  'You paid close attention to the garden visitors.',
+  'Good!'
 );
 for (const phrase of required) {
   assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing UI phrase: ${phrase}`);

@@ -70,14 +70,6 @@ GAME_REGISTRY: dict[str, dict[str, Any]] = {
         "playable": True,
         "domain_weights": {"Attention": 1.0},
     },
-    "whack-a-mole": {
-        "name": "Whack-a-Mole",
-        "description": "Tap target moles while suppressing impulses for distractors.",
-        "primary_domain": "Attention",
-        "secondary_domains": [],
-        "playable": False,
-        "domain_weights": {"Attention": 1.0},
-    },
     "attention-hunt": {
         "name": "Attention Hunt",
         "description": "Find target objects while ignoring similar distractors.",
