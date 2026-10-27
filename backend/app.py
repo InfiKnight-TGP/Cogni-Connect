@@ -18,7 +18,7 @@ import sys
 import uuid
 from io import BytesIO
 from urllib.parse import unquote
-from datetime import datetime
+from datetime import datetime, timezone
 
 # process_video prints "✓"; under `npm run dev` stdout is a pipe, which Windows encodes as cp1252
 sys.stdout.reconfigure(encoding="utf-8")
@@ -1685,6 +1685,11 @@ def get_journals():
 
 
 PEOPLE_FILE = scoped('people.json')
+PLACES_FILE = scoped('places.json')
+PLACE_PHOTOS_FOLDER = scoped('place_photos')
+PLACE_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+PLACE_ID_PATTERN = re.compile(r'^[0-9a-f]{32}$')
+PLACE_PHOTO_PATTERN = re.compile(r'^[0-9a-f]{32}\.(?:jpg|png|webp)$')
 
 
 def _load_people():
@@ -1973,6 +1978,229 @@ def serve_face_image(filename):
         return send_from_directory(folder, filename)
     except Exception:
         return jsonify(error="Photo not found"), 404
+
+
+def _load_places():
+    if not os.path.exists(PLACES_FILE):
+        return []
+    with open(PLACES_FILE, 'r', encoding='utf-8') as file:
+        places = json.load(file)
+    if not isinstance(places, list):
+        raise ValueError('Patient places data must be a list.')
+    return places
+
+
+def _save_places(places):
+    path = os.fspath(PLACES_FILE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temporary = f'{path}.{uuid.uuid4().hex}.tmp'
+    try:
+        with open(temporary, 'x', encoding='utf-8') as file:
+            json.dump(places, file, ensure_ascii=False, indent=2)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+
+
+def _places_access(write=False):
+    import auth
+
+    session = g.get('auth_session')
+    patient = g.get('active_patient')
+    if not session or not patient:
+        return None, (jsonify(error='No active patient.'), 403)
+    patient_id = patient['id']
+    if session.get('kind') == 'patient_device':
+        authorized = session.get('patient_id') == patient_id
+    else:
+        authorized = auth.authorized_patient(patient_id)
+    if not authorized:
+        return None, (jsonify(error='Patient not found.'), 404)
+    if write:
+        if session.get('kind') == 'patient_device':
+            return None, (jsonify(error='Only the patient or a caregiver can edit places.'), 403)
+        if auth.self_account():
+            user = auth.session_user()
+            if not user or user['patient_id'] != patient_id:
+                return None, (jsonify(error='You can only edit your own places.'), 403)
+        elif session.get('kind') != 'caregiver' or not auth.is_caregiver():
+            return None, (jsonify(error='Only the patient or a caregiver can edit places.'), 403)
+    return patient_id, None
+
+
+def _demo_places(patient_id):
+    import auth
+
+    patient = auth.db().execute('SELECT is_demo FROM patients WHERE id=?', (patient_id,)).fetchone()
+    return bool(patient and patient['is_demo'])
+
+
+def _limit_demo_places(patient_id):
+    import auth
+
+    session = g.auth_session
+    if not (_demo_places(patient_id) or auth.is_demo_session(session)):
+        return False
+    return not auth.limits().hit(('demo-places', session['id']), 60, 3600)
+
+
+@api.route('/places', methods=['GET'])
+def list_places():
+    _, denied = _places_access()
+    if denied:
+        return denied
+    return jsonify(_load_places())
+
+
+@api.route('/places', methods=['POST'])
+def add_place():
+    import auth
+    from places import validate_place_fields
+
+    patient_id, denied = _places_access(write=True)
+    if denied:
+        return denied
+    if _limit_demo_places(patient_id):
+        return jsonify(error='Demo place changes are limited to 60 per hour.'), 429
+    places = _load_places()
+    is_demo = _demo_places(patient_id) or auth.is_demo_session(g.auth_session)
+    maximum = 6 if is_demo else 12
+    if len(places) >= maximum:
+        return jsonify(error=f'You can save at most {maximum} places.'), 400
+    try:
+        place = validate_place_fields(request.get_json(silent=True))
+    except ValueError as error:
+        return jsonify(error=str(error)), 400
+    place.update(id=uuid.uuid4().hex,
+                 createdAt=datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z'),
+                 photo=None)
+    places.append(place)
+    _save_places(places)
+    return jsonify(place), 201
+
+
+@api.route('/places/<place_id>', methods=['PUT'])
+def update_place(place_id):
+    from places import validate_place_fields
+
+    patient_id, denied = _places_access(write=True)
+    if denied:
+        return denied
+    if _limit_demo_places(patient_id):
+        return jsonify(error='Demo place changes are limited to 60 per hour.'), 429
+    if not PLACE_ID_PATTERN.fullmatch(place_id):
+        return jsonify(error='Place not found.'), 404
+    places = _load_places()
+    place = next((item for item in places if item.get('id') == place_id), None)
+    if not place:
+        return jsonify(error='Place not found.'), 404
+    try:
+        updated = validate_place_fields(request.get_json(silent=True), existing=place)
+    except ValueError as error:
+        return jsonify(error=str(error)), 400
+    place.update(updated)
+    _save_places(places)
+    return jsonify(place)
+
+
+@api.route('/places/<place_id>', methods=['DELETE'])
+def delete_place(place_id):
+    patient_id, denied = _places_access(write=True)
+    if denied:
+        return denied
+    if _limit_demo_places(patient_id):
+        return jsonify(error='Demo place changes are limited to 60 per hour.'), 429
+    if not PLACE_ID_PATTERN.fullmatch(place_id):
+        return jsonify(error='Place not found.'), 404
+    places = _load_places()
+    place = next((item for item in places if item.get('id') == place_id), None)
+    if not place:
+        return jsonify(error='Place not found.'), 404
+    photo = place.get('photo')
+    places.remove(place)
+    _save_places(places)
+    if photo and PLACE_PHOTO_PATTERN.fullmatch(photo):
+        photo_path = os.path.join(os.fspath(PLACE_PHOTOS_FOLDER), photo)
+        if os.path.isfile(photo_path):
+            os.remove(photo_path)
+    return jsonify(success=True)
+
+
+@api.route('/places/<place_id>/photo', methods=['POST'])
+def upload_place_photo(place_id):
+    from PIL import Image, UnidentifiedImageError
+
+    patient_id, denied = _places_access(write=True)
+    if denied:
+        return denied
+    if _limit_demo_places(patient_id):
+        return jsonify(error='Demo place changes are limited to 60 per hour.'), 429
+    if request.content_length and request.content_length > PLACE_PHOTO_MAX_BYTES + 64 * 1024:
+        return jsonify(error='Photo must be at most 5 MB.'), 413
+    if not PLACE_ID_PATTERN.fullmatch(place_id):
+        return jsonify(error='Place not found.'), 404
+    places = _load_places()
+    place = next((item for item in places if item.get('id') == place_id), None)
+    if not place:
+        return jsonify(error='Place not found.'), 404
+    photo_file = request.files.get('photo')
+    if not photo_file or not photo_file.filename:
+        return jsonify(error='Please choose a photo.'), 400
+    content = photo_file.stream.read(PLACE_PHOTO_MAX_BYTES + 1)
+    if len(content) > PLACE_PHOTO_MAX_BYTES:
+        return jsonify(error='Photo must be at most 5 MB.'), 413
+    try:
+        with Image.open(BytesIO(content)) as image:
+            image_format = image.format
+            width, height = image.size
+            if width > 8000 or height > 8000 or width * height > 25_000_000:
+                return jsonify(error='Photo resolution is too large (maximum 8000x8000 and 25 megapixels).'), 400
+            image.load()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+        return jsonify(error='File is not a valid image.'), 400
+    extensions = {'JPEG': 'jpg', 'PNG': 'png', 'WEBP': 'webp'}
+    extension = extensions.get(image_format)
+    if not extension:
+        return jsonify(error='Photo must be JPEG, PNG, or WebP.'), 400
+    os.makedirs(PLACE_PHOTOS_FOLDER, exist_ok=True)
+    filename = f'{uuid.uuid4().hex}.{extension}'
+    photo_path = os.path.join(os.fspath(PLACE_PHOTOS_FOLDER), filename)
+    temporary = f'{photo_path}.tmp'
+    try:
+        with open(temporary, 'xb') as file:
+            file.write(content)
+        os.replace(temporary, photo_path)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+    old_photo = place.get('photo')
+    place['photo'] = filename
+    try:
+        _save_places(places)
+    except OSError:
+        os.remove(photo_path)
+        raise
+    if old_photo and PLACE_PHOTO_PATTERN.fullmatch(old_photo):
+        old_path = os.path.join(os.fspath(PLACE_PHOTOS_FOLDER), old_photo)
+        if os.path.isfile(old_path):
+            os.remove(old_path)
+    return jsonify(place)
+
+
+@api.route('/place-photos/<filename>', methods=['GET'])
+def serve_place_photo(filename):
+    _, denied = _places_access()
+    if denied:
+        return denied
+    if not PLACE_PHOTO_PATTERN.fullmatch(filename):
+        return jsonify(error='Photo not found.'), 404
+    if not any(place.get('photo') == filename for place in _load_places()):
+        return jsonify(error='Photo not found.'), 404
+    folder = os.fspath(PLACE_PHOTOS_FOLDER)
+    if not os.path.isfile(os.path.join(folder, filename)):
+        return jsonify(error='Photo not found.'), 404
+    return send_from_directory(folder, filename)
 
 
 def _run_rescan_worker(patient_id, base_dir, chunk_folders):

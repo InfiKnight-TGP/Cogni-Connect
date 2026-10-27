@@ -12,11 +12,11 @@ from flask import abort, current_app, g
 from werkzeug.security import generate_password_hash
 
 ROOT = Path(__file__).resolve().parent
-FILES = {'people.json': None, 'performance_data.json': {'scores': [], 'game_scores': []},
+FILES = {'people.json': None, 'places.json': [], 'performance_data.json': {'scores': [], 'game_scores': []},
          'video_journals.json': {}, 'qas.json': [], 'daily_plans.json': {},
          'routines.json': {'steps': []}, 'settings.json': {}, 'crosswords.json': {}, 'adaptive.json': {'games': {}},
          'memories.json': {}}
-FOLDERS = ('content', 'video_chunks', 'frames', 'known_faces', 'summary', 'memory_thumbnails')
+FOLDERS = ('content', 'video_chunks', 'frames', 'known_faces', 'place_photos', 'summary', 'memory_thumbnails')
 _migration_lock = threading.Lock()
 
 
