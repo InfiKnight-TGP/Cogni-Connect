@@ -20,10 +20,12 @@ export default function PrivacyPage() {
         <section className="space-y-4">
           <h2 className="text-2xl font-bold">{t("Information stored on this server")}</h2>
           <p>{t("Patient information is kept in separate folders on this server. Caregivers can access only the patients linked to their accounts. It can include:")}</p>
+          <p>{t("Saved place links stay in the person's profile and open in Google Maps only when the person taps Take me there. CogniConnect does not track location.")}</p>
           <ul className="list-disc space-y-2 pl-7">
             <li>{t("Videos, face photos, and transcripts.")}</li>
             <li>{t("Activity scores.")}</li>
             <li>{t("People’s names, their relations to the person using CogniConnect, and phone numbers.")}</li>
+            <li>{t("Saved places, notes, opening hours, and optional photos.")}</li>
           </ul>
         </section>
 

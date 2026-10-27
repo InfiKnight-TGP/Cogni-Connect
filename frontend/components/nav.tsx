@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   Lock,
   LogOut,
+  MapPin,
   Star,
   Settings,
   TrendingUp,
@@ -38,6 +39,7 @@ const PATIENT_LINKS: NavItem[] = [
   { href: "/explore", label: "My Memories", short: "Memories", icon: ImageIcon, color: "text-sky-500" },
   { href: "/my-progress", label: "My Progress", short: "Progress", icon: Star, color: "text-amber-500" },
   { href: "/people", label: "My People", short: "People", icon: Users2, color: "text-pink-500" },
+  { href: "/places", label: "My Places", short: "Places", icon: MapPin, color: "text-cyan-600" },
 ];
 
 const SELF_LINKS: NavItem[] = [
@@ -51,6 +53,7 @@ const CAREGIVER_LINKS: NavItem[] = [
   { href: "/progress", label: "Progress & Reports", short: "Progress", icon: TrendingUp, color: "text-green-600 dark:text-green-500" },
   { href: "/upload", label: "Add Videos", short: "Videos", icon: Upload, color: "text-violet-500" },
   { href: "/people", label: "People", short: "People", icon: Users2, color: "text-pink-500" },
+  { href: "/places", label: "Places", short: "Places", icon: MapPin, color: "text-cyan-600" },
   { href: "/routine", label: "Daily Routine", short: "Routine", icon: CalendarDays, color: "text-teal-500" },
   { href: "/games", label: "All Games", short: "Games", icon: Gamepad2, color: "text-amber-500" },
 ];
