@@ -12,7 +12,7 @@ from flask import abort, current_app, g
 from werkzeug.security import generate_password_hash
 
 ROOT = Path(__file__).resolve().parent
-FILES = {'people.json': None, 'places.json': [], 'performance_data.json': {'scores': [], 'game_scores': []},
+FILES = {'people.json': None, 'places.json': [], 'alerts.json': [], 'performance_data.json': {'scores': [], 'game_scores': []},
          'video_journals.json': {}, 'qas.json': [], 'daily_plans.json': {},
          'routines.json': {'steps': []}, 'settings.json': {}, 'crosswords.json': {}, 'adaptive.json': {'games': {}},
          'memories.json': {}}

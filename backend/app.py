@@ -542,6 +542,10 @@ def _memory_data():
             data.pop(memory_id, None); changed = True
         elif filename:
             seen_filenames.add(filename)
+    for row in data.values():
+        if isinstance(row, dict) and not isinstance(row.get('useInGames'), bool):
+            row['useInGames'] = True
+            changed = True
     if changed or not os.path.exists(MEMORIES_PATH):
         with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
             json.dump(data, stream, ensure_ascii=False, indent=2)
@@ -1170,6 +1174,7 @@ def list_memories():
             'note': journal.get('entry') or row.get('note', ''),
             'durationSeconds': row.get('durationSeconds'), 'thumbnailUrl': f'/memories/{memory_id}/thumbnail',
             'people': p_names, 'transcript': tr, 'status': status,
+            'useInGames': row.get('useInGames', True),
             'progress': status_info.get('progress', 0) if status == 'processing' else (100 if status == 'ready' else (row.get('progress') or 0)),
             'message': status_info.get('message') or row.get('message', ''),
             'error': status_info.get('error') or row.get('error'),
@@ -1461,7 +1466,8 @@ def get_memory(memory_id):
         'dateLabel': d_info.get('dateLabel', ''),
         'note': row.get('note', ''),
         'durationSeconds': row.get('durationSeconds'),
-        'thumbnailUrl': f"/memories/{memory_id}/thumbnail"
+        'thumbnailUrl': f"/memories/{memory_id}/thumbnail",
+        'useInGames': row.get('useInGames', True)
     }), 200
 
 
@@ -1473,8 +1479,10 @@ def update_memory(memory_id):
     if not row:
         return jsonify(error='Memory not found'), 404
     payload = request.get_json(silent=True) or {}
-    if set(payload) - {'title', 'note', 'date'}:
-        return jsonify(error='Only title, note, and date can be changed.'), 400
+    if set(payload) - {'title', 'note', 'date', 'useInGames'}:
+        return jsonify(error='Only title, note, date, and game use can be changed.'), 400
+    if 'useInGames' in payload and not isinstance(payload['useInGames'], bool):
+        return jsonify(error='Use in games must be true or false.'), 400
     if 'title' in payload and (not isinstance(payload['title'], str) or len(payload['title'].strip()) > 120):
         return jsonify(error='Title is invalid.'), 400
 
@@ -1518,6 +1526,8 @@ def update_memory(memory_id):
         if cleaned_date is not None:
             journal['date'] = cleaned_date
             memory_id_row['date'] = cleaned_date
+        if 'useInGames' in payload:
+            memory_id_row['useInGames'] = payload['useInGames']
 
         journals[old_filename] = journal
         with open(JOURNALS_PATH, 'w', encoding='utf-8') as stream:
@@ -1537,7 +1547,8 @@ def update_memory(memory_id):
         id=memory_id,
         title=memory_id_row.get('title') or old_filename.rsplit('.', 1)[0],
         note=memory_id_row.get('note', ''),
-        date=memory_id_row.get('date')
+        date=memory_id_row.get('date'),
+        useInGames=memory_id_row.get('useInGames', True)
     )
 
 
@@ -3430,6 +3441,80 @@ def _build_place_sentence(c):
         return act[0].upper() + act[1:] + '.'
     return None
 
+
+def _memory_fact_place(context, sentence):
+    source = (context.get('note') or context.get('title') or '').strip().rstrip('.!?')
+    patterns = (
+        r'^(?:a day at|day at|a visit to|visit to|a trip to|trip to|at|in|visiting)\s+(.+)$',
+        r'^(.+?)\s+(?:visit|trip)(?:\s|$)',
+    )
+    for pattern in patterns:
+        match = re.search(pattern, source, re.IGNORECASE)
+        if match:
+            place = re.split(r'\s+(?:with|on|during|for)\b', match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
+            return place.strip(' .,!?:;') or None
+    if sentence:
+        match = re.search(r'\b(?:at|visiting|in)\s+(.+?)[.!?]?$', sentence, re.IGNORECASE)
+        if match:
+            return match.group(1).strip(' .,!?:;') or None
+    return None
+
+
+def memory_facts(patient):
+    """Build deterministic, patient-scoped, game-eligible facts from ready uploads."""
+    active = g.get('active_patient')
+    if not patient or not active or patient.get('id') != active.get('id'):
+        return []
+    data = _memory_data()
+    contexts = _ask_context()
+    by_id = {item['id']: item for item in contexts or []}
+    facts = []
+    for memory_id, row in data.items():
+        if not isinstance(row, dict) or row.get('useInGames', True) is not True:
+            continue
+        status_info = processing_status.get((patient_path(''), row.get('filename')), {})
+        status = status_info.get('status') or row.get('status', 'ready')
+        if status == 'completed':
+            status = 'ready'
+        if status != 'ready':
+            continue
+        context = by_id.get(memory_id, {})
+        note = context.get('note') or row.get('note') or ''
+        title = context.get('title') or row.get('title') or ''
+        date_value = context.get('date') or row.get('date')
+        date_obj = None
+        try:
+            date_obj = datetime.fromisoformat(str(date_value)[:10]).date()
+        except (TypeError, ValueError):
+            created_at = row.get('createdAt')
+            if isinstance(created_at, (int, float)):
+                try:
+                    date_obj = datetime.fromtimestamp(created_at).date()
+                    date_value = date_obj.isoformat()
+                except (OverflowError, OSError, ValueError):
+                    pass
+        date_info = _friendly_memory_date(date_value)
+        activity = _build_place_sentence({'note': note, 'title': title}) or ''
+        facts.append({
+            'id': memory_id,
+            'friendlyDate': date_info.get('dateLabel', ''),
+            'weekday': date_obj.strftime('%A') if date_obj else '',
+            'title': title,
+            'people': list(dict.fromkeys(context.get('people') or [])),
+            'place': _memory_fact_place({'note': note, 'title': title}, activity) or '',
+            'activity': activity,
+            'note': note,
+        })
+    return facts
+
+
+@api.route('/memories/facts', methods=['GET'])
+def get_memory_facts():
+    patient = g.get('active_patient')
+    if not patient:
+        return jsonify(error='No active patient.'), 403
+    return jsonify(facts=memory_facts(patient))
+
 def _unanswered_response(scope, c, lang, is_picture=False):
     if is_picture and not AI_AVAILABLE:
         ans_text = "I can't look at the pictures right now."
@@ -3636,6 +3721,8 @@ from auth import init_auth
 
 configure(api)
 init_auth(api, lambda: _load_settings())
+from alerts import bp as alerts_bp
+api.register_blueprint(alerts_bp)
 _cleanup_stale_processing_jobs()
 CORS(api, origins=api.config['AUTH_ORIGINS'], supports_credentials=True)
 

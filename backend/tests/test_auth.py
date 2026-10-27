@@ -119,12 +119,14 @@ class AuthTests(unittest.TestCase):
             base = Path(app.api.config['PATIENT_DATA_ROOT']) / patient_id
             base.mkdir(parents=True, exist_ok=True)
             (base / 'routines.json').write_text(json.dumps({'steps': ['Temporary step', 'Another step', 'Walk']}), encoding='utf-8')
+            (base / 'alerts.json').write_text(json.dumps([{'id': 'temporary-alert'}]), encoding='utf-8')
             token, _ = auth.new_session('caregiver', user_id=user_id)
         demo_client = app.api.test_client(); demo_client.set_cookie('cogni_session', token)
         with patch.dict(app.api.config, {'AUTH_DEMO': True}):
             self.assertEqual(demo_client.post('/demo/reset').status_code, 200)
         restored = json.loads((Path(app.api.config['PATIENT_DATA_ROOT']) / patient_id / 'routines.json').read_text(encoding='utf-8'))
         self.assertEqual(restored['steps'], json.loads((Path(app.__file__).parent / 'sample_data' / 'routines.json').read_text(encoding='utf-8'))['steps'])
+        self.assertEqual(json.loads((Path(app.api.config['PATIENT_DATA_ROOT']) / patient_id / 'alerts.json').read_text(encoding='utf-8')), [])
 
     def test_otp_five_failures_expiry_reuse_and_purpose(self):
         challenge, code = self.signup()
