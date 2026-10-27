@@ -107,6 +107,11 @@ export default function PatientSettingsPage() {
             <Link className="min-h-12 py-2 text-primary underline underline-offset-4" href="/privacy">{t("Privacy")}</Link>
           </nav>
           <p className="mt-5 border-t border-border pt-4 text-lg">{t("Need help? Ask your caregiver.")}</p>
+          {session?.role === "patient_device" && <section aria-labelledby="emergency-help-heading" className="mt-6 space-y-3 border-t border-border pt-5">
+            <h3 id="emergency-help-heading" className="text-xl font-bold">{t("Emergency help")}</h3>
+            <p>{t("SOS alerts your caregiver. It does not call emergency services. In an emergency, call 112 yourself.")}</p>
+            <div className="grid gap-2">{["Call 112", "Call my contacts", "SOS for self-care accounts", "Text message alerts"].map(label => <button key={label} type="button" disabled className="min-h-14 cursor-not-allowed rounded-xl border-2 px-4 text-base font-semibold text-muted-foreground">{t(label)} · {t("Coming soon")}</button>)}</div>
+          </section>}
         </aside>
       </div>{session?.role === "patient_device" && <DeviceUnset />}</div>}
     </main>

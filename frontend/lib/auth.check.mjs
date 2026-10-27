@@ -46,7 +46,8 @@ let output = "";
 fixture.stderr.on("data", () => {});
 try {
   const port = await new Promise((resolvePort, reject) => {
-    const timer = setTimeout(() => reject(new Error("Fixture startup timed out")), 60000);
+    // Importing the video-processing stack can be slow on constrained Windows runners.
+    const timer = setTimeout(() => reject(new Error("Fixture startup timed out")), 180000);
     fixture.once("error", error => { clearTimeout(timer); reject(error); });
     fixture.once("exit", code => { clearTimeout(timer); reject(new Error(`Fixture exited: ${code}`)); });
     fixture.stdout.on("data", chunk => {

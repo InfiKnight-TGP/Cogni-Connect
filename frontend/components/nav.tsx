@@ -2,11 +2,13 @@
 
 import {
   BrainCircuit,
+  BellRing,
   CalendarCheck,
   CalendarDays,
   Gamepad2,
   Home,
   Image as ImageIcon,
+  LifeBuoy,
   Lock,
   LogOut,
   MapPin,
@@ -24,6 +26,7 @@ import { lockCaregiver, SHOW_DEVICE_CAREGIVER_ACCESS, useCaregiver } from "@/lib
 import { useTranslate } from "@/components/interaction/InteractionProvider";
 import { useAuth } from "@/lib/auth-context";
 import { PUBLIC_ROUTES } from "@/lib/auth-session";
+import SosAlertBanner from "@/components/caregiver/sosAlertBanner";
 
 interface NavItem {
   href: string;
@@ -40,6 +43,7 @@ const PATIENT_LINKS: NavItem[] = [
   { href: "/my-progress", label: "My Progress", short: "Progress", icon: Star, color: "text-amber-500" },
   { href: "/people", label: "My People", short: "People", icon: Users2, color: "text-pink-500" },
   { href: "/places", label: "My Places", short: "Places", icon: MapPin, color: "text-cyan-600" },
+  { href: "/sos", label: "Help", short: "Help", icon: LifeBuoy, color: "text-amber-600" },
 ];
 
 const SELF_LINKS: NavItem[] = [
@@ -50,6 +54,7 @@ const SELF_LINKS: NavItem[] = [
 
 const CAREGIVER_LINKS: NavItem[] = [
   { href: "/caregiver", label: "Home", short: "Home", icon: Home, color: "text-orange-500" },
+  { href: "/caregiver/alerts", label: "Alerts", short: "Alerts", icon: BellRing, color: "text-amber-600" },
   { href: "/progress", label: "Progress & Reports", short: "Progress", icon: TrendingUp, color: "text-green-600 dark:text-green-500" },
   { href: "/upload", label: "Add Videos", short: "Videos", icon: Upload, color: "text-violet-500" },
   { href: "/people", label: "People", short: "People", icon: Users2, color: "text-pink-500" },
@@ -131,6 +136,7 @@ export default function Nav() {
 
   return (
     <>
+      <SosAlertBanner />
       {/* Phone: slim top bar with the logo */}
       <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center border-b border-border bg-background px-4 print:hidden lg:hidden">
         <Link href={caregiver ? "/caregiver" : "/"} className="flex min-h-12 items-center text-xl font-bold">

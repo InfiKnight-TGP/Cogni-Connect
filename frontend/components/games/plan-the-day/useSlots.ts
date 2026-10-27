@@ -21,9 +21,10 @@ function unsolvedOrder(n: number): number[] {
  * Tap-to-place state for n cards: tapping a tray card fills the next empty slot,
  * tapping a placed card sends it back. Remount (via `key`) for a fresh round.
  */
-export function useSlots(n: number) {
-  const [tray, setTray] = useState(() => unsolvedOrder(n)); // unplaced card indices, in display order
-  const [slots, setSlots] = useState<(number | null)[]>(() => Array(n).fill(null));
+export function useSlots(n: number, preplacedCount = 0) {
+  const locked = Math.max(0, Math.min(n, preplacedCount));
+  const [tray, setTray] = useState(() => unsolvedOrder(n).filter(card => card >= locked)); // unplaced card indices, in display order
+  const [slots, setSlots] = useState<(number | null)[]>(() => Array.from({ length: n }, (_, i) => i < locked ? i : null));
 
   const place = (card: number) => {
     const slot = slots.indexOf(null);
@@ -33,6 +34,7 @@ export function useSlots(n: number) {
   };
 
   const sendBack = (slot: number) => {
+    if (slot < locked) return;
     const card = slots[slot];
     if (card === null) return;
     setSlots(slots.map((c, i) => (i === slot ? null : c)));

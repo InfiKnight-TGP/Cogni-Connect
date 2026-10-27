@@ -27,6 +27,8 @@
   $$\text{Session Score} = \max\left(0, \min\left(100, \text{Average Efficiency} - 10 \times \text{Total Hints}\right)\right)$$
 - `roundEfficiency` and `totalHints` are logged to the browser console via `console.log`.
 
+When a patient has at least three saved places, the game adds a short **Your places** section after the map rounds. The final session score is the average of the map score and the percentage of place questions answered correctly. If there are not enough places or opening-hour details to build unambiguous questions, the game uses the map score alone.
+
 ## References
 
 1. Coutrot, A., Silva, R., Manley, E., De Cothi, W., Sami, S., Bohbot, V. D., Wiener, J. M., Hölscher, C., Dalton, R. C., Hornberger, M., & Spiers, H. J. (2019). Virtual navigation tests in Sea Hero Quest provide global benchmarks for real-world wayfinding capability. *PLOS ONE*, 14(2), e0213272.

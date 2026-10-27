@@ -8,6 +8,10 @@ import ReadAloud from "@/components/interaction/ReadAloud";
 import { Button } from "@/components/ui/button";
 import { readSkill } from "@/lib/interaction/events";
 import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
+import { apiJSON, mediaUrl } from "@/lib/api";
+import { useTranslate } from "@/components/interaction/InteractionProvider";
+import { buildPlaceScenarioQuestions, type PlaceScenario } from "./scenarios";
+import type { Place } from "@/lib/places";
 import {
   JUNCTIONS,
   LANDMARK_POOL,
@@ -44,9 +48,10 @@ interface MapNavigatorGameProps {
 }
 
 function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
+  const { t } = useTranslate();
   const [knob] = useState(() => readSkill("map-navigator").knob);
   const [roundIdx, setRoundIdx] = useState(0); // 0, 1, 2, 3 (Rounds 1 to 4)
-  const [phase, setPhase] = useState<"memorise" | "navigate" | "round_end">("memorise");
+  const [phase, setPhase] = useState<"memorise" | "navigate" | "round_end" | "places">("memorise");
   const [timer, setTimer] = useState(15);
 
   const [setup, setSetup] = useState<RoundSetup | null>(null);
@@ -64,12 +69,24 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
   const [goalReachedMsg, setGoalReachedMsg] = useState<string | null>(null);
 
   const [roundEfficiencies, setRoundEfficiencies] = useState<number[]>([]);
+  const [placeQuestions, setPlaceQuestions] = useState<PlaceScenario[]>([]);
+  const [mapScore, setMapScore] = useState<number | null>(null);
   const log = useAnswerLog("map-navigator", "Recognition & Orientation", `${roundIdx}-${activeGoalIdx}-${pathWalked.length}`, knob, true);
 
   const onDoneRef = useRef(onDone);
   useEffect(() => {
     onDoneRef.current = onDone;
   }, [onDone]);
+
+  useEffect(() => {
+    let active = true;
+    apiJSON<Place[] | { places?: Place[] }>("/places", { authRedirect: false }).then(result => {
+      if (!active) return;
+      const places = Array.isArray(result) ? result : result.places ?? [];
+      setPlaceQuestions(buildPlaceScenarioQuestions(places, knob));
+    }).catch(() => { if (active) setPlaceQuestions([]); });
+    return () => { active = false; };
+  }, [knob]);
 
   // Initialise round setup
   useEffect(() => {
@@ -198,6 +215,11 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
     setTimeout(() => {
       if (roundIdx + 1 < 4) {
         setRoundIdx(roundIdx + 1);
+      } else if (placeQuestions.length > 0) {
+        const avgEff = newEffs.reduce((a, b) => a + b, 0) / newEffs.length;
+        const mapFinalScore = Math.max(0, Math.min(100, Math.round(avgEff - 10 * sessionHints)));
+        setMapScore(mapFinalScore);
+        setPhase("places");
       } else {
         // Session complete
         const avgEff = newEffs.reduce((a, b) => a + b, 0) / newEffs.length;
@@ -214,6 +236,8 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
       }
     }, 1200);
   };
+
+  if (phase === "places" && mapScore !== null) return <PlaceScenarioRound questions={placeQuestions} onDone={placesScore => onDoneRef.current(Math.round((mapScore + placesScore) / 2))} />;
 
   return (
     <div className="flex flex-col items-center gap-4 select-none w-full max-w-lg mx-auto">
@@ -475,4 +499,46 @@ function MapNavigatorGame({ onDone }: MapNavigatorGameProps) {
       )}
     </div>
   );
+}
+
+function PlaceScenarioRound({ questions, onDone }: { questions: PlaceScenario[]; onDone: (score: number) => void }) {
+  const { t } = useTranslate();
+  const [index, setIndex] = useState(0);
+  const [correct, setCorrect] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
+  const question = questions[index];
+  const prompt = question.kind === "open"
+    ? t(question.prompt, { time: question.time ?? "", weekday: t(question.weekday ?? "") })
+    : t(question.prompt);
+  const answer = question.options.find(place => place.id === question.answerId)!;
+  const choose = (place: Place) => {
+    if (selected !== null) return;
+    setSelected(place.id);
+    if (place.id === question.answerId) setCorrect(value => value + 1);
+  };
+  const next = () => {
+    if (index === questions.length - 1) onDone(Math.round((correct / questions.length) * 100));
+    else { setIndex(index + 1); setSelected(null); }
+  };
+  return <section className="mx-auto w-full max-w-3xl space-y-6 rounded-3xl border-2 border-border bg-card p-5 shadow-sm sm:p-8" aria-live="polite">
+    <header><h2 className="text-3xl font-bold">{t("Your places")}</h2><p className="mt-2 text-lg">{t("Question {number}", { number: index + 1 })} / {questions.length}</p></header>
+    <h3 className="text-2xl font-bold">{prompt}</h3>
+    <ReadAloud text={prompt} options={question.options.map(place => place.name)} />
+    <div className="grid gap-3 sm:grid-cols-2">{question.options.map(place => {
+      const isSelected = selected === place.id;
+      const isCorrect = selected !== null && place.id === question.answerId;
+      const isWrong = isSelected && place.id !== question.answerId;
+      return <button key={place.id} type="button" onClick={() => choose(place)} disabled={selected !== null} aria-pressed={isSelected}
+        className={`min-h-36 rounded-2xl border-2 p-4 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:cursor-default ${isCorrect ? "border-amber-600 bg-amber-50 dark:bg-amber-950/40" : isWrong ? "border-amber-600 bg-amber-50 dark:bg-amber-950/40" : "border-border bg-background hover:bg-muted"}`}>
+        {place.photo ? <img src={mediaUrl(`/place-photos/${encodeURIComponent(place.photo)}`)} alt={place.name} className="mb-3 h-24 w-full rounded-xl object-cover" /> : <span className="mb-2 block text-4xl" aria-hidden="true">📍</span>}
+        <span className="block text-xl font-bold">{place.name}</span>
+        {place.note && <span className="mt-1 block text-base">{place.note}</span>}
+      </button>;
+    })}</div>
+    {selected !== null && <div role="status" className="rounded-xl border-2 border-amber-600/60 bg-amber-50 p-4 text-lg text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
+      {selected === question.answerId ? t("That is right.") : t("The answer is {answer}.", { answer: answer.name })}
+    </div>}
+    {selected !== null && <ReadAloud kind="feedback" text={selected === question.answerId ? t("That is right.") : t("The answer is {answer}.", { answer: answer.name })} />}
+    {selected !== null && <Button size="lg" className="min-h-14 px-10 text-lg" onClick={next}>{t("Next")}</Button>}
+  </section>;
 }

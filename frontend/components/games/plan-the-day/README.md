@@ -6,7 +6,7 @@ One session has 5 rounds. Every round asks the same thing: put everyday things i
 
 ## Rules
 
-### Rounds 1–2: Steps of a task
+### With fewer than 3 distinct routine steps: Rounds 1–2, steps of a task
 
 - Shows 3 or 4 picture cards from a familiar Indian everyday task, such as making tea, a temple visit or cooking rice.
 - Tap the cards in order. Each tap fills the next numbered slot. Tap a placed card to send it back.
@@ -21,13 +21,16 @@ One session has 5 rounds. Every round asks the same thing: put everyday things i
 - If the second try also breaks the rule, a valid order is shown in green and the game moves on.
 - Any order that keeps the rule is correct. There isn't one fixed answer.
 
-### Round 5: Personal
+### Round 5 when no routine is available: Personal
 
 The first option that's available is used:
 
 1. **Photos of the user's day.** `GET /day-frames?date=YYYY-MM-DD` uses the date chosen on `/games`. If it returns 3 or more frames, the user puts them in order ("Put your day back in order"). Each photo's time appears after Check.
-2. **Caregiver routine.** If `GET /routine` returns 3 or more steps, the user orders those steps.
-3. **Another errand round.**
+2. **Another errand round.**
+
+### With 3–5 distinct routine steps
+
+The routine replaces the two built-in step-task rounds. The first routine round asks the person to order their steps; knob 1 places the first step for them, and knob 4 uses all five steps when available. The next round asks routine-based choice questions: knob 1 asks one “What comes after?” question with 2 options; knob 2 uses 3 options; knob 3 also asks what comes first; knob 4 also shows the routine with one step missing. Routine wording appears exactly as entered. The fifth round still prefers 3 or more photos from the selected day and otherwise uses another errand round. Sessions remain five rounds (four at knob 1), with 20 points per round.
 
 To set the routine (3–5 steps in order, each 1–40 characters; it is stored in `backend/routines.json`):
 
@@ -49,7 +52,7 @@ The total goes to `onFinish`. `GameShell` rounds it and saves it to `POST /perfo
 
 ## Content
 
-`data.ts` has 12 step tasks and 10 errand sets. Each session picks 2 tasks and 2–3 errand sets at random, so rounds rarely repeat. Rules are one of three kinds:
+`data.ts` has 12 step tasks and 10 errand sets. When there are fewer than 3 distinct routine steps, each session picks 2 tasks and 2–3 errand sets at random, so rounds rarely repeat. With 3 or more distinct routine steps, those replace the task rounds. Rules are one of three kinds:
 
 | Kind | Meaning | Example |
 |---|---|---|

@@ -262,6 +262,65 @@ required.push(
   "Deleting…",
   "Family",
 );
+required.push(
+  "SOS alert",
+  "SOS alerts your caregiver. It does not call emergency services. In an emergency, call 112 yourself.",
+  "SOS is not available for self-care accounts yet.",
+  "SOS is available from a paired patient device or patient login.",
+  "Press and hold for 3 seconds",
+  "Alert your caregiver?",
+  "Could not send the alert. Please try again.",
+  "Sending alert…",
+  "Getting your location…",
+  "Your caregiver has been alerted",
+  "Call 112",
+  "Call my contacts",
+  "SOS for self-care accounts",
+  "Text message alerts",
+  "Coming soon",
+  "Alerts",
+  "Open alert",
+  "Open alerts",
+  "Handled alerts",
+  "No open alerts.",
+  "No handled alerts.",
+  "Mark as handled",
+  "Send test alert",
+  "Enable browser notifications",
+  "Browser notifications require permission and the caregiver's app tab open.",
+  "Could not load alerts. Try again.",
+  "TEST",
+  "SOS alerts and optional location are saved only for linked caregivers. Location is optional and stored for 30 days. Alerts are removed after 90 days.",
+  "Emergency help",
+  "SOS alerts are shared only with linked caregivers. Location is optional for each alert, visible only to those caregivers, and removed after 30 days. Alerts are removed after 90 days.",
+  "SOS alert time, device name, status, and optional location.",
+  "Time",
+  "Device",
+  "SOS",
+  "Open map location",
+  "Handled",
+  "On",
+  "Off",
+);
+required.push(
+  "What comes after {step}?", "What do you do first in your day?", "Which step is missing?",
+  "Your daily routine", "Tap the steps in the order you do them.", "These are your daily routine steps.",
+  "That is right.", "Let's look together. {answer} is the right step.",
+  "Have a drink of water", "Rest for a little while", "Wash your hands",
+  "Sit in a comfortable chair", "Put on your shoes", "Open the curtains",
+  "A memory from your life", "On {weekday}, you went to {place}.", "You were with {person}.",
+  "This is a memory from your day.", "You saved this memory.", "Getting your story ready…",
+  "Use in games", "Turn off to keep this memory out of games.", "Choose the missing word:",
+  "a family member", "a friend", "a caregiver", "someone you know", "a shop", "a park", "a family home", "a familiar place",
+  "Your places", "It is {time} on {weekday}. Which place is open?",
+  "You need a doctor. Where do you go?", "Which place opens first?", "The answer is {answer}.",
+  "Map Navigator scores may include the Your places section; the final score averages route efficiency and place answers."
+);
+required.push(
+  "Story {number} of {total}", "Blanks completed: {done} / {total}",
+  "Blank {number} of {total} (Story {story})", "I'm ready to remember",
+  "That's right!", "The missing word is {answer}.", "Next blank", "Next story", "Start another session"
+);
 for (const phrase of required) {
   assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing UI phrase: ${phrase}`);
   assert.equal(typeof as.ui[phrase], 'string', `Assamese missing UI phrase: ${phrase}`);
