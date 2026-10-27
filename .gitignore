@@ -57,3 +57,8 @@ platform-data/
 
 docs/games_export.txt
 docs/auth_export.txt
+
+# Agent Instructions
+AGENTS.md
+PLAN.md
+claude.md
