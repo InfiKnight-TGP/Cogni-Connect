@@ -37,11 +37,12 @@ function Segmented<T extends string>({ label, value, options, onChange, disabled
 }
 
 export default function PatientSettingsPage() {
-  const { t, caregiver, caregiverReady } = useTranslate();
+  const { t, caregiver: caregiverMode, caregiverReady } = useTranslate();
   const { preferences, updatePreferences, effectiveAnimations, reducedMotion, lockedPreferences, preferenceNotice } = usePreferences();
   const { language, ready: languageReady, setLanguage } = useInteraction();
   const { theme, setTheme } = useTheme();
   const { session } = useAuth();
+  const caregiver = Boolean(caregiverMode || session?.role === "caregiver");
   const [languageError, setLanguageError] = useState(false);
   const [savingLanguage, setSavingLanguage] = useState(false);
   const set = <K extends keyof Preferences>(key: K, value: Preferences[K]) => updatePreferences({ [key]: value } as Pick<Preferences, K>);
@@ -65,7 +66,7 @@ export default function PatientSettingsPage() {
       {session?.role === "self" ? <div className="space-y-6"><AccountSettings /><FamilySharing /><SelfPreferencesCard /></div> : caregiverReady && caregiver ? <div className="rounded-2xl border border-border bg-card p-6 text-lg"><p>{t("Patient preferences are available in patient mode.")}</p><Link className="mt-4 inline-flex min-h-12 items-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground" href="/caregiver/settings">{t("Open caregiver settings")}</Link></div> : !caregiverReady ? <p className="text-lg">{t("Loading…")}</p> : <div className="space-y-6"><div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
           <h2 className="mb-5 text-2xl font-bold">{t("Preferences")}</h2>
-          <ReadAloud autoRead={false} text={`${t("Activity experience")}. ${t("Sound effects")}. ${t("Animations")}. ${t("Encouraging messages")}. ${t("Accessibility")}. ${t("Read questions aloud")}. ${t("Answer by speaking")}. ${t("Listen automatically")}. ${t("Speech speed")}. ${t("Text size")}. ${t("Appearance")}. ${t("Theme")}. ${t("Language")}. ${t("Help")}. ${t("About")}. ${t("Terms")}. ${t("Privacy")}. ${t("Need help? Ask your caregiver.")}`} />
+          {!caregiver && <ReadAloud autoRead={false} text={`${t("Activity experience")}. ${t("Sound effects")}. ${t("Animations")}. ${t("Encouraging messages")}. ${t("Accessibility")}. ${t("Read questions aloud")}. ${t("Answer by speaking")}. ${t("Listen automatically")}. ${t("Speech speed")}. ${t("Text size")}. ${t("Appearance")}. ${t("Theme")}. ${t("Language")}. ${t("Help")}. ${t("About")}. ${t("Terms")}. ${t("Privacy")}. ${t("Need help? Ask your caregiver.")}`} />}
           <section aria-labelledby="activity-heading" className="mb-8">
             <h3 id="activity-heading" className="text-xl font-bold">{t("Activity experience")}</h3><hr className="my-3 border-border" />
             <ToggleRow label={t("Sound effects")} checked={preferences.soundEffects} locked={locked.has("soundEffects")} disabled={locked.has("soundEffects")} onChange={value => set("soundEffects", value)} />
@@ -96,7 +97,7 @@ export default function PatientSettingsPage() {
                 {LANGUAGES.map(item => <option key={item.code} value={item.code} disabled={!item.selectable}>{item.code.toUpperCase()} – {item.name}{item.selectable ? "" : ` (${t("Coming soon")})`}</option>)}
               </select>
             </label>
-            {languageError && <><p role="alert" className="mt-2 text-sm text-destructive">{t("Could not save language. Try again.")}</p><ReadAloud autoRead={false} text={t("Could not save language. Try again.")} /></>}
+            {languageError && !caregiver && <><p role="alert" className="mt-2 text-sm text-destructive">{t("Could not save language. Try again.")}</p><ReadAloud autoRead={false} text={t("Could not save language. Try again.")} /></>}
           </section>
         </div>
         <aside className="h-fit rounded-2xl border border-border bg-card p-6 shadow-sm">

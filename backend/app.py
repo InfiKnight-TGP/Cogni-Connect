@@ -17,6 +17,7 @@ import threading
 import sys
 import uuid
 from io import BytesIO
+from jsonio import atomic_write_json
 from urllib.parse import unquote
 from datetime import datetime, timezone
 
@@ -172,8 +173,7 @@ def _cleanup_stale_processing_jobs(patient_data_root=None):
                             _cleanup_partial_files(base_dir, row.get('filename'), mid, keep_video=True)
                             changed = True
                 if changed:
-                    with open(memories_file, 'w', encoding='utf-8') as f:
-                        json.dump(memories, f, ensure_ascii=False, indent=2)
+                    atomic_write_json(memories_file, memories)
         except Exception:
             pass
 
@@ -189,8 +189,7 @@ def _invalidate_daily_plan_cache(date_val, base_dir=None):
                 plans = json.load(f)
             if isinstance(plans, dict) and date_str in plans:
                 plans.pop(date_str, None)
-                with open(plans_path, 'w', encoding='utf-8') as f:
-                    json.dump(plans, f, indent=2, ensure_ascii=False)
+                atomic_write_json(plans_path, plans)
         except Exception:
             pass
     try:
@@ -349,8 +348,7 @@ def _generate_questions_for_video(base_dir, filename, video_date, note):
 
     all_qas = existing_qas + questions_generated
     try:
-        with open(qas_path, 'w', encoding='utf-8') as f:
-            json.dump(all_qas, f, indent=2, ensure_ascii=False)
+        atomic_write_json(qas_path, all_qas)
     except Exception as e:
         print(f"Could not save qas.json: {e}")
 
@@ -382,8 +380,7 @@ def _process_video_job(patient_id, base_dir, memory_id, filename, video_date, no
                             data[memory_id]['error'] = error
                         elif 'error' in data[memory_id]:
                             data[memory_id].pop('error', None)
-                        with open(memories_path, 'w', encoding='utf-8') as f:
-                            json.dump(data, f, ensure_ascii=False, indent=2)
+                        atomic_write_json(memories_path, data)
         except Exception as exc:
             clean_exc = _sanitize_log_message(exc)
             api.logger.error("Error updating memories.json for patient %s: %s", patient_id, clean_exc)
@@ -474,8 +471,7 @@ def ensure_runtime_data():
         ROUTINES_PATH: {"steps": []},
     }.items():
         if not os.path.exists(path):
-            with open(path, 'w', encoding='utf-8') as stream:
-                json.dump(default, stream, indent=2)
+            atomic_write_json(path, default)
 
 
 VIDEO_CHUNKS_ROOT = scoped('video_chunks')  
@@ -547,8 +543,7 @@ def _memory_data():
             row['useInGames'] = True
             changed = True
     if changed or not os.path.exists(MEMORIES_PATH):
-        with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
-            json.dump(data, stream, ensure_ascii=False, indent=2)
+        atomic_write_json(MEMORIES_PATH, data)
     return data
 
 
@@ -987,12 +982,10 @@ def upload_video():
                 "date": video_date
             }
             
-            with open(journal_file, 'w', encoding='utf-8') as f:
-                json.dump(journals, f, indent=2, ensure_ascii=False)
+            atomic_write_json(journal_file, journals)
             invalidate_crossword_cache(video_date)
             memories[memory_id].update({"title": filename.rsplit('.', 1)[0], "date": video_date, "note": journal_entry})
-        with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
-            json.dump(memories, stream, ensure_ascii=False, indent=2)
+        atomic_write_json(MEMORIES_PATH, memories)
         
         # Initialize processing status
         status_key = (base_dir, filename)
@@ -1376,8 +1369,7 @@ def create_memory():
             'message': 'Video processing started'
         }
         os.replace(temp_path, final_path)
-        with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
-            json.dump(memories, stream, ensure_ascii=False, indent=2)
+        atomic_write_json(MEMORIES_PATH, memories)
 
     journals = {}
     try:
@@ -1392,8 +1384,7 @@ def create_memory():
         'video_path': f"/content/{stored_filename}",
         'date': cleaned_date
     }
-    with open(JOURNALS_PATH, 'w', encoding='utf-8') as stream:
-        json.dump(journals, stream, ensure_ascii=False, indent=2)
+    atomic_write_json(JOURNALS_PATH, journals)
 
     status_key = (base_dir, stored_filename)
     processing_status[status_key] = {
@@ -1530,10 +1521,8 @@ def update_memory(memory_id):
             memory_id_row['useInGames'] = payload['useInGames']
 
         journals[old_filename] = journal
-        with open(JOURNALS_PATH, 'w', encoding='utf-8') as stream:
-            json.dump(journals, stream, ensure_ascii=False, indent=2)
-        with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
-            json.dump(memories, stream, ensure_ascii=False, indent=2)
+        atomic_write_json(JOURNALS_PATH, journals)
+        atomic_write_json(MEMORIES_PATH, memories)
 
     if cleaned_date is not None and cleaned_date != old_date:
         invalidate_crossword_cache(old_date)
@@ -1593,8 +1582,7 @@ def delete_memory(memory_id):
         if not date_value:
             date_value = row.get('date')
 
-        with open(JOURNALS_PATH, 'w', encoding='utf-8') as stream:
-            json.dump(journals, stream, ensure_ascii=False, indent=2)
+        atomic_write_json(JOURNALS_PATH, journals)
 
         # Filter qas.json to only remove questions matching this video's chunk folder
         qas_path = os.path.join(base, 'qas.json')
@@ -1604,13 +1592,11 @@ def delete_memory(memory_id):
                     qas = json.load(stream)
                 if isinstance(qas, list):
                     filtered_qas = [q for q in qas if isinstance(q, dict) and chunk_folder not in str(q.get('video', ''))]
-                    with open(qas_path, 'w', encoding='utf-8') as stream:
-                        json.dump(filtered_qas, stream, indent=2, ensure_ascii=False)
+                    atomic_write_json(qas_path, filtered_qas)
             except Exception:
                 pass
 
-        with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
-            json.dump(memories, stream, ensure_ascii=False, indent=2)
+        atomic_write_json(MEMORIES_PATH, memories)
 
     if date_value:
         invalidate_crossword_cache(date_value)
@@ -1651,8 +1637,7 @@ def retry_memory(memory_id):
         row['progress'] = 0
         row['message'] = 'Video processing started'
         row.pop('error', None)
-        with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
-            json.dump(memories, stream, ensure_ascii=False, indent=2)
+        atomic_write_json(MEMORIES_PATH, memories)
 
     status_key = (base_dir, filename)
     processing_status[status_key] = {
@@ -1767,8 +1752,7 @@ def display_name(face_id, people, relation=False):
 
 
 def _save_people(people):
-    with open(PEOPLE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(people, f, indent=2, ensure_ascii=False)
+    atomic_write_json(PEOPLE_FILE, people)
 
 
 def _save_photo(file, old_photo=None):
@@ -2002,16 +1986,7 @@ def _load_places():
 
 
 def _save_places(places):
-    path = os.fspath(PLACES_FILE)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    temporary = f'{path}.{uuid.uuid4().hex}.tmp'
-    try:
-        with open(temporary, 'x', encoding='utf-8') as file:
-            json.dump(places, file, ensure_ascii=False, indent=2)
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.remove(temporary)
+    atomic_write_json(PLACES_FILE, places)
 
 
 def _places_access(write=False):
@@ -2064,10 +2039,23 @@ def list_places():
     return jsonify(_load_places())
 
 
+@api.route('/places/limits', methods=['GET'])
+def places_limits():
+    import auth
+    from places import DEMO_MAX_PLACES, MAX_PLACES
+
+    patient_id, denied = _places_access()
+    if denied:
+        return denied
+    is_demo = _demo_places(patient_id) or auth.is_demo_session(g.auth_session)
+    maximum = DEMO_MAX_PLACES if is_demo else MAX_PLACES
+    return jsonify(limit=maximum, demo=bool(is_demo))
+
+
 @api.route('/places', methods=['POST'])
 def add_place():
     import auth
-    from places import validate_place_fields
+    from places import DEMO_MAX_PLACES, MAX_PLACES, validate_place_fields
 
     patient_id, denied = _places_access(write=True)
     if denied:
@@ -2076,7 +2064,7 @@ def add_place():
         return jsonify(error='Demo place changes are limited to 60 per hour.'), 429
     places = _load_places()
     is_demo = _demo_places(patient_id) or auth.is_demo_session(g.auth_session)
-    maximum = 6 if is_demo else 12
+    maximum = DEMO_MAX_PLACES if is_demo else MAX_PLACES
     if len(places) >= maximum:
         return jsonify(error=f'You can save at most {maximum} places.'), 400
     try:
@@ -2559,8 +2547,7 @@ def invalidate_crossword_cache(date_value, cache_path=None):
         for key in affected:
             changed = cache.pop(key, None) is not None or changed
         if changed:
-            with open(cache_path, 'w', encoding='utf-8') as f:
-                json.dump(cache, f, indent=2, ensure_ascii=False)
+            atomic_write_json(cache_path, cache)
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return
 
@@ -2659,8 +2646,7 @@ def get_crossword():
     if not isinstance(cache, dict):
         cache = {}
     cache[date_str] = puzzle
-    with open(CROSSWORDS_PATH, 'w', encoding='utf-8') as f:
-        json.dump(cache, f, indent=2, ensure_ascii=False)
+    atomic_write_json(CROSSWORDS_PATH, cache)
     return jsonify(puzzle)
 
 
@@ -2763,8 +2749,7 @@ def _migrate_performance_record_ids():
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     backup_path = path.with_name(f'{path.stem}.backup-{timestamp}{path.suffix}')
     shutil.copy2(path, backup_path)
-    with path.open('w', encoding='utf-8') as f:
-        json.dump(performance_data, f, indent=2, ensure_ascii=False)
+    atomic_write_json(path, performance_data)
     return True
 
 
@@ -2777,8 +2762,7 @@ def _load_settings():
     if not os.path.exists(SETTINGS_PATH):
         from flask import g
         name = (g.get('active_patient') or {}).get('name', '')
-        with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
-            json.dump({'patient_name': name, 'language': 'en', 'pins': []}, f)
+        atomic_write_json(SETTINGS_PATH, {'patient_name': name, 'language': 'en', 'pins': []})
     with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
         settings = {'patient_name': '', 'language': 'en', 'pins': [], **json.load(f)}
     settings.pop('pin', None)
@@ -2860,8 +2844,7 @@ def save_settings():
         if pins != previous_pins:
             changed_dates = [p['start'] for p in [*previous_pins, *pins] if isinstance(p, dict) and isinstance(p.get('start'), str)]
             _invalidate_unplayed_plans(min(changed_dates, default=None))
-    with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
-        json.dump(settings, f, indent=2, ensure_ascii=False)
+    atomic_write_json(SETTINGS_PATH, settings)
     return jsonify({"patient_name": settings['patient_name'], "language": settings['language'], "pins": settings['pins']})
 
 
@@ -2882,8 +2865,7 @@ def _invalidate_unplayed_plans(start_date):
             if isinstance(row, dict)
         }
         plans = {day: plan for day, plan in plans.items() if day < start_date or day in active_days}
-        with open(DAILY_PLANS_PATH, 'w', encoding='utf-8') as f:
-            json.dump(plans, f, indent=2, ensure_ascii=False)
+        atomic_write_json(DAILY_PLANS_PATH, plans)
     except Exception as exc:
         print(f"Could not invalidate unplayed plans: {exc}")
 
@@ -2927,8 +2909,7 @@ def save_routine():
         return jsonify({"error": "each step must be 1 to 40 characters"}), 400
     from datetime import datetime
     try:
-        with open(ROUTINES_PATH, 'w', encoding='utf-8') as f:
-            json.dump({"steps": steps, "updated": datetime.now().isoformat()}, f, ensure_ascii=False, indent=2)
+        atomic_write_json(ROUTINES_PATH, {"steps": steps, "updated": datetime.now().isoformat()})
     except Exception as e:
         print(f"Save routine error: {e}")
         return jsonify({"error": str(e)}), 500
@@ -3013,8 +2994,7 @@ def save_performance():
             performance_data.setdefault("scores", []).append(record)
         
         # Save updated data
-        with open(performance_file, 'w', encoding='utf-8') as f:
-            json.dump(performance_data, f, indent=2)
+        atomic_write_json(performance_file, performance_data)
         
         return jsonify({"success": True, "message": "Performance saved"}), 200
     except Exception as e:
@@ -3054,8 +3034,7 @@ def delete_performance(record_id):
             index = next((i for i, row in enumerate(records) if isinstance(row, dict) and row.get('id') == record_id), None)
             if index is not None:
                 records.pop(index)
-                with open(PERFORMANCE_PATH, 'w', encoding='utf-8') as f:
-                    json.dump(performance_data, f, indent=2, ensure_ascii=False)
+                atomic_write_json(PERFORMANCE_PATH, performance_data)
                 return jsonify({"success": True}), 200
         return jsonify({"error": "Performance record not found"}), 404
     except Exception as e:
@@ -3186,8 +3165,7 @@ def generate_questions():
         if any(q.get('fallback') for q in questions_data):
             return jsonify({"questions": questions_data}), 200
 
-        with open(QAS_PATH, 'w', encoding='utf-8') as f:
-            json.dump(questions_data, f, indent=2)
+        atomic_write_json(QAS_PATH, questions_data)
 
         return jsonify({"questions": questions_data, "generated": True}), 200
         
@@ -3721,9 +3699,10 @@ from auth import init_auth
 
 configure(api)
 init_auth(api, lambda: _load_settings())
-from alerts import bp as alerts_bp
+from alerts import bp as alerts_bp, sweep_alerts_on_startup
 api.register_blueprint(alerts_bp)
 _cleanup_stale_processing_jobs()
+sweep_alerts_on_startup(api.config.get('PATIENT_DATA_ROOT', 'data'))
 CORS(api, origins=api.config['AUTH_ORIGINS'], supports_credentials=True)
 
 
@@ -3732,9 +3711,8 @@ def migrate_authenticated_data():
     # Authentication runs first. Never mutate data on an anonymous request.
     from flask import g
     if g.get('auth_session') and request.blueprint != 'auth':
-        from flask import abort
         if not g.get('active_patient'):
-            abort(403)
+            return jsonify(error='No active patient.'), 403
         ensure_runtime_data()
         _migrate_performance_record_ids()
 

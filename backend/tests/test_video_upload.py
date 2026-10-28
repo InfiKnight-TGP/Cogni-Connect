@@ -127,6 +127,8 @@ class VideoUploadBackendTests(unittest.TestCase):
             self.assertEqual(data['status'], 'processing')
             memory_id = data['id']
 
+            self.wait_for_processing()
+
             # Check memories.json was updated
             memories_file = self.base_a / 'memories.json'
             with open(memories_file, 'r', encoding='utf-8') as mf:
@@ -136,7 +138,6 @@ class VideoUploadBackendTests(unittest.TestCase):
             self.assertNotEqual(stored_name, 'my_holiday.mp4')
             self.assertTrue(stored_name.endswith('.mp4'))
 
-            self.wait_for_processing()
             st_res = self.client_self.get(f'/memories/{memory_id}')
             self.assertEqual(st_res.status_code, 200)
             st_data = st_res.get_json()
@@ -455,12 +456,12 @@ class VideoUploadBackendTests(unittest.TestCase):
             memory_id = res.get_json()['id']
 
             # Check immediate storage before processing finishes
-            with open(self.base_a / 'memories.json', 'r', encoding='utf-8') as mf:
-                mems_init = json.load(mf)
+            with open(self.base_a / 'memories.json', 'r', encoding='utf-8') as f:
+                mems_init = json.load(f)
             self.assertEqual(mems_init[memory_id]['date'], chosen_date)
 
-            with open(self.base_a / 'video_journals.json', 'r', encoding='utf-8') as jf:
-                journals_init = json.load(jf)
+            with open(self.base_a / 'video_journals.json', 'r', encoding='utf-8') as f:
+                journals_init = json.load(f)
             stored_name = mems_init[memory_id]['filename']
             self.assertEqual(journals_init[stored_name]['date'], chosen_date)
 

@@ -984,9 +984,10 @@ def unpair(device_id):
 
 def _adaptive_file():
     from patient_storage import patient_path
+    from jsonio import atomic_write_json
     path = Path(patient_path('adaptive.json'))
     path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists(): path.write_text(json.dumps({'games': {}}), encoding='utf-8')
+    if not path.exists(): atomic_write_json(path, {'games': {}})
     try: data = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError): data = {'games': {}}
     data.setdefault('games', {})
@@ -1025,43 +1026,47 @@ def get_adaptive():
 @bp.put('/adaptive/state')
 @login_required
 def save_adaptive_state():
+    from jsonio import atomic_write_json
     if g.auth_session['kind'] != 'patient_device' or is_elevated(): return error(403)
     payload = request.get_json(silent=True) or {}
     game_id = payload.get('game_id')
     if not _valid_game(game_id): return jsonify(error='Invalid game'), 400
     path, data = _adaptive_file(); state = _clean_adaptive(payload, data['games'].get(game_id))
     if state is None: return jsonify(error='Invalid adaptive state'), 400
-    data['games'][game_id] = state; path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    data['games'][game_id] = state; atomic_write_json(path, data)
     return jsonify(state=state)
 
 
 @bp.post('/adaptive/override')
 @account_required
 def override_adaptive():
+    from jsonio import atomic_write_json
     payload = request.get_json(silent=True) or {}; game_id, mode = payload.get('game_id'), payload.get('mode')
     if not _valid_game(game_id) or mode not in ('auto', 'fixed'): return jsonify(error='Invalid adaptive override'), 400
     if mode == 'fixed' and payload.get('knob') not in (1, 2, 3, 4): return jsonify(error='Invalid knob'), 400
     path, data = _adaptive_file(); state = data['games'].get(game_id) or {'rating': 1000, 'knob': 2, 'recent': [], 'baselines': {'tap': [], 'typed': [], 'voice': []}, 'decision': 'stay', 'reason': 'Getting to know your pace'}
     state['mode'] = mode; state['fixedKnob'] = payload.get('knob') if mode == 'fixed' else None
     if mode == 'fixed': state['knob'] = int(payload['knob'])
-    data['games'][game_id] = state; path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    data['games'][game_id] = state; atomic_write_json(path, data)
     return jsonify(state=state)
 
 
 @bp.post('/adaptive/reset')
 @account_required
 def reset_adaptive():
+    from jsonio import atomic_write_json
     payload = request.get_json(silent=True) or {}; game_id = payload.get('game_id'); path, data = _adaptive_file()
     if game_id is not None and not _valid_game(game_id): return jsonify(error='Invalid game'), 400
     if game_id: data['games'].pop(game_id, None)
     else: data['games'] = {}
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    atomic_write_json(path, data)
     return jsonify(ok=True, games=data['games'])
 
 
 CAREGIVER_ENDPOINTS = {
     'get_processing_status',
     'get_reports_days', 'get_report_for_day', 'save_settings',
+    'alerts.list_alerts', 'alerts.mark_handled', 'alerts.create_test_alert',
 }
 DEMO_BLOCKED_ENDPOINTS = {'pair_invite', 'unpair', 'create_patient_login', 'remove_patient_login', 'reset_patient_login_password', 'patient_pin', 'legacy_change_pin'}
 DEMO_AI_ENDPOINTS = {'accuracy', 'generate_questions', 'search', 'transcribe', 'speak', 'crossword'}
@@ -1106,10 +1111,9 @@ def _read_preferences():
 
 
 def _write_preferences(state):
+    from jsonio import atomic_write_json
     path = _preferences_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({key: state[key] for key in ('values', 'locked', 'updatedAt', 'updatedBy', 'version', 'imported')},
-                               ensure_ascii=False, indent=2), encoding='utf-8')
+    atomic_write_json(path, {key: state[key] for key in ('values', 'locked', 'updatedAt', 'updatedBy', 'version', 'imported')})
 
 
 def _preferences_result(state):

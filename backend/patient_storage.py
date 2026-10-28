@@ -61,8 +61,9 @@ def initialize_patient(base, name):
             continue
         path = base / filename
         if not path.exists():
+            from jsonio import atomic_write_json
             value = {'patient_name': name, 'language': 'en', 'pins': []} if filename == 'settings.json' else default
-            path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
+            atomic_write_json(path, value)
 
 
 def _copy_tree_missing(source, destination):
@@ -96,7 +97,8 @@ def migrate_legacy():
         if patient is None:
             manifest = backup / 'migration.json'
             patient_id = json.loads(manifest.read_text(encoding='utf-8'))['patient_id'] if manifest.exists() else uuid.uuid4().hex
-            manifest.write_text(json.dumps({'patient_id': patient_id}), encoding='utf-8')
+            from jsonio import atomic_write_json
+            atomic_write_json(manifest, {'patient_id': patient_id})
             pin = str(settings.get('pin', '1234'))
             pin_hash = pin if pin.startswith(('scrypt:', 'pbkdf2:')) else generate_password_hash(pin, method='scrypt')
             db.execute('INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,?,NULL,?,0)',
@@ -124,7 +126,8 @@ def migrate_legacy():
         settings.setdefault('patient_name', patient_name)
         settings.setdefault('language', 'en')
         settings.setdefault('pins', [])
-        (base / 'settings.json').write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding='utf-8')
+        from jsonio import atomic_write_json
+        atomic_write_json(base / 'settings.json', settings)
         # Old frontend copies must stop being publicly reachable.
         public = Path(current_app.config['LEGACY_PUBLIC_ROOT']).resolve()
         for name in ('video_chunks', 'frames', 'known_faces'):

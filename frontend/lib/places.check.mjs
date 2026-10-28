@@ -52,6 +52,8 @@ assert.match(page, /role="alertdialog"/);
 assert.match(page, /window\.open\(draft\.mapsUrl\.trim\(\), "_blank", "noopener,noreferrer"\)/);
 assert.match(page, /aria-modal="true"/);
 assert.doesNotMatch(page, /navigator\.geolocation/);
+assert.match(page, /\/places\/limits/);
+assert.match(page, /You have reached the limit of \{n\} places\. Remove one to add another\./);
 const requiredSource = await readFile(new URL("./interaction/locales.check.mjs", import.meta.url), "utf8");
 const required = runInNewContext(requiredSource.slice(requiredSource.indexOf("const required ="), requiredSource.indexOf("for (const phrase of required)")) + "\nrequired;");
 const phrases = [...page.matchAll(/\bt\("([^"\n]+)"/g)].map(match => match[1]);
@@ -66,5 +68,11 @@ for (const language of ["hi", "as"]) {
 const privacy = await readFile(new URL("../app/privacy/page.tsx", import.meta.url), "utf8");
 assert.match(privacy, /Saved place links stay in the person's profile/);
 assert.match(privacy, /does not track location/);
+
+const proxySource = await readFile(new URL("./backend-proxy.ts", import.meta.url), "utf8");
+const mediaRegex = /^\/(known-faces|frames|video_chunks|place-photos)\//;
+assert.match(proxySource, /place-photos/);
+assert.equal(mediaRegex.test("/place-photos/x.jpg"), true);
+assert.equal(mediaRegex.test("/known-faces/x.jpg"), true);
 
 console.log("Places checks passed: safe Maps links, categories, overnight hours, role gating, accessible UI, and privacy.");

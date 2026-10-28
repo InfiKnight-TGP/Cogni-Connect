@@ -62,17 +62,18 @@ def seed_demo_media(base_dir, backend_root=None):
     face_source = source_root / 'known_faces' / 'jawed_karim.jpg'
     destination_face = base / 'known_faces' / 'jawed_karim.jpg'
     if face_source.exists() and face_source.resolve() != destination_face.resolve(): shutil.copy2(face_source, destination_face)
+    from jsonio import atomic_write_json
     people_path = base / 'people.json'
     try: people = json.loads(people_path.read_text(encoding='utf-8-sig')) if people_path.exists() else []
     except (OSError, ValueError, TypeError): people = []
     if not any(person.get('id') == 'jawed_karim' for person in people):
         people.append({'id': 'jawed_karim', 'name': 'Jawed Karim', 'relation': 'Friend', 'phone': '', 'photo': 'jawed_karim.jpg'})
-        people_path.write_text(json.dumps(people, ensure_ascii=False, indent=2), encoding='utf-8')
+        atomic_write_json(people_path, people)
     today = datetime.now().astimezone().date().isoformat()
     journals_path = base / 'video_journals.json'
     journals = json.loads(journals_path.read_text(encoding='utf-8')) if journals_path.exists() else {}
     journals['Me_at_the_zoo.mp4'] = {'title': 'Me at the zoo', 'entry': 'A day at the zoo, looking at the elephants', 'note': 'A day at the zoo, looking at the elephants', 'timestamp': datetime.now().isoformat(), 'video_path': 'content/Me_at_the_zoo.mp4', 'date': today}
-    journals_path.write_text(json.dumps(journals, ensure_ascii=False, indent=2), encoding='utf-8')
+    atomic_write_json(journals_path, journals)
     sample_qas = backend / 'sample_data' / 'qas.json'
     if sample_qas.exists(): shutil.copy2(sample_qas, base / 'qas.json')
     memories_path = base / 'memories.json'
@@ -80,7 +81,7 @@ def seed_demo_media(base_dir, backend_root=None):
     memories = {key: row for key, row in memories.items() if not (isinstance(row, dict) and row.get('filename') != canonical and 'zoo' in str(row.get('filename', '')).lower())}
     memory_id = next((key for key, row in memories.items() if isinstance(row, dict) and row.get('filename') == 'Me_at_the_zoo.mp4'), uuid.uuid4().hex)
     memories[memory_id] = {'filename': 'Me_at_the_zoo.mp4', 'title': 'Me at the zoo', 'date': today, 'note': 'A day at the zoo, looking at the elephants', 'status': 'ready', 'createdAt': datetime.now().timestamp()}
-    memories_path.write_text(json.dumps(memories, ensure_ascii=False, indent=2), encoding='utf-8')
+    atomic_write_json(memories_path, memories)
     # Generate a cached thumbnail from the first processed chunk when OpenCV is available.
     try:
         import cv2

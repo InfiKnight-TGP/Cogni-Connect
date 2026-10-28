@@ -114,6 +114,7 @@ function SelfProgressView() {
   const tRef = useRef(t);
   tRef.current = t;
   const { session } = useAuth();
+  const caregiver = session?.role === "caregiver";
   const { effectiveAnimations, reducedMotion } = usePreferences();
   const [showTrendNotes, setShowTrendNotes] = useTrendNotes();
 
@@ -449,10 +450,12 @@ function SelfProgressView() {
               </div>
             </div>
           </div>
-          <ReadAloud
-            autoRead={false}
-            text={`${greeting.title}. ${t("Here is your week.")}. ${plural(streak, t("day in a row"), t("days in a row"))}.`}
-          />
+          {!caregiver && (
+            <ReadAloud
+              autoRead={false}
+              text={`${greeting.title}. ${t("Here is your week.")}. ${plural(streak, t("day in a row"), t("days in a row"))}.`}
+            />
+          )}
         </header>
 
         {loading ? (
@@ -854,6 +857,8 @@ function SelfProgressView() {
  */
 function PatientSimpleProgressView() {
   const { t } = useTranslate();
+  const { session } = useAuth();
+  const caregiver = session?.role === "caregiver";
   const [loading, setLoading] = useState(true);
   const [playedDays, setPlayedDays] = useState<boolean[]>([false, false, false, false, false, false, false]);
   const [daysCount, setDaysCount] = useState(0);
@@ -938,13 +943,15 @@ function PatientSimpleProgressView() {
           <p className="text-2xl font-medium text-muted-foreground">
             {t("A look at your activities this week")}
           </p>
-          <ReadAloud
-            autoRead={false}
-            text={`${t("My Progress")}. ${t("A look at your activities this week")}. ${t(
-              "You played {count} {days} this week!",
-              { count: daysCount, days: t(daysCount === 1 ? "day" : "days") }
-            )}. ${t(encouragingMessage())}`}
-          />
+          {!caregiver && (
+            <ReadAloud
+              autoRead={false}
+              text={`${t("My Progress")}. ${t("A look at your activities this week")}. ${t(
+                "You played {count} {days} this week!",
+                { count: daysCount, days: t(daysCount === 1 ? "day" : "days") }
+              )}. ${t(encouragingMessage())}`}
+            />
+          )}
         </header>
 
         {loading ? (

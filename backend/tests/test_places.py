@@ -331,15 +331,29 @@ class PlacesTests(unittest.TestCase):
         )
         self.assertEqual(oversized.status_code, 413)
 
+    def test_places_limits_endpoint(self):
+        self_res = self.clients['self'].get('/places/limits')
+        self.assertEqual(self_res.status_code, 200)
+        self.assertEqual(self_res.json, {'limit': 30, 'demo': False})
+
+        demo_res = self.clients['demo'].get('/places/limits')
+        self.assertEqual(demo_res.status_code, 200)
+        self.assertEqual(demo_res.json, {'limit': 12, 'demo': True})
+
     def test_normal_and_demo_place_caps(self):
-        for index in range(12):
+        for index in range(30):
             response = self.add_place(name=f'Place {index}')
             self.assertEqual(response.status_code, 201)
-        self.assertEqual(self.add_place(name='Place 13').status_code, 400)
-        for index in range(6):
+        exceeded = self.add_place(name='Place 31')
+        self.assertEqual(exceeded.status_code, 400)
+        self.assertEqual(exceeded.json, {'error': 'You can save at most 30 places.'})
+
+        for index in range(12):
             response = self.add_place(self.clients['demo'], name=f'Demo place {index}')
             self.assertEqual(response.status_code, 201)
-        self.assertEqual(self.add_place(self.clients['demo'], name='Demo place 7').status_code, 400)
+        demo_exceeded = self.add_place(self.clients['demo'], name='Demo place 13')
+        self.assertEqual(demo_exceeded.status_code, 400)
+        self.assertEqual(demo_exceeded.json, {'error': 'You can save at most 12 places.'})
 
     def test_demo_mutations_are_rate_limited(self):
         with patch.object(auth.RateLimits, 'hit', return_value=False):

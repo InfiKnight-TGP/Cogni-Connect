@@ -77,18 +77,19 @@ export default function PlacesPage() {
   const dialogTriggerRef = useRef<HTMLElement | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const wasModalOpen = useRef(false);
+  const [limit, setLimit] = useState(30);
   const [editMode, setEditMode] = useState(session?.role === "caregiver");
   const canEdit = canEditPlaces(session?.role);
   const caregiver = session?.role === "caregiver";
   const title = caregiver ? "Places" : "My Places";
-  const maximum = demo ? 6 : 12;
+  const maximum = limit;
 
   const load = useCallback(async () => {
     setError("");
     try {
       const [placesResponse, limitsResponse] = await Promise.all([
         apiFetch(`${API_URL}/places`),
-        apiFetch(`${API_URL}/memories/limits`),
+        apiFetch(`${API_URL}/places/limits`),
       ]);
       if (!placesResponse.ok) throw new Error(t("Could not load places. Please try again."));
       const data: unknown = await placesResponse.json();
@@ -96,6 +97,7 @@ export default function PlacesPage() {
       setPlaces(data as Place[]);
       if (limitsResponse.ok) {
         const limits = await limitsResponse.json();
+        if (typeof limits?.limit === "number") setLimit(limits.limit);
         setDemo(Boolean(limits.demo));
       }
     } catch (loadError) {
@@ -219,7 +221,7 @@ export default function PlacesPage() {
           <header className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 ref={headingRef} tabIndex={-1} className="text-4xl font-bold">{t(title)}</h1>
-              <ReadAloud className="[&_button]:min-h-[56px]" autoRead={false} text={headingText} />
+              {!caregiver && <ReadAloud className="[&_button]:min-h-[56px]" autoRead={false} text={headingText} />}
             </div>
             {canEdit && !caregiver && (
               <Button
@@ -237,9 +239,15 @@ export default function PlacesPage() {
               <Button onClick={openAdd} disabled={remaining === 0} className="min-h-[56px] gap-2 text-lg">
                 <Plus className="h-5 w-5" /> {t("Add a place")}
               </Button>
-              <p className="text-lg font-semibold" aria-live="polite">
-                {t("{count} of {total} places remaining", { count: remaining, total: maximum })}
-              </p>
+              {remaining === 0 ? (
+                <p className="text-lg font-semibold text-muted-foreground" aria-live="polite">
+                  {t("You have reached the limit of {n} places. Remove one to add another.", { n: maximum })}
+                </p>
+              ) : (
+                <p className="text-lg font-semibold" aria-live="polite">
+                  {t("{count} of {total} places remaining", { count: remaining, total: maximum })}
+                </p>
+              )}
             </section>
           )}
 
@@ -252,7 +260,7 @@ export default function PlacesPage() {
               <MapPin className="mx-auto h-12 w-12 text-primary" aria-hidden="true" />
               <p className="text-2xl font-semibold">{t("No places yet")}</p>
               {showEditControls && <Button onClick={openAdd} className="min-h-[56px] text-lg">{t("Add a place")}</Button>}
-              <ReadAloud className="[&_button]:min-h-[56px]" autoRead={false} text={t("No places yet")} />
+              {!caregiver && <ReadAloud className="[&_button]:min-h-[56px]" autoRead={false} text={t("No places yet")} />}
             </section>
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -283,7 +291,7 @@ export default function PlacesPage() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
           <section role="alertdialog" aria-modal="true" aria-labelledby="delete-place-title" aria-describedby="delete-place-description" onKeyDown={keepFocusInside} className="w-full max-w-lg space-y-5 rounded-2xl border bg-background p-6 shadow-xl">
             <h2 id="delete-place-title" className="text-2xl font-bold">{t("Delete {name}?", { name: deleting.name })}</h2>
-            <ReadAloud className="[&_button]:min-h-[56px]" autoRead={false} text={t("Delete {name}?", { name: deleting.name })} />
+            {!caregiver && <ReadAloud className="[&_button]:min-h-[56px]" autoRead={false} text={t("Delete {name}?", { name: deleting.name })} />}
             <p id="delete-place-description" className="text-lg">{t("Delete this saved place and its photo?")}</p>
             {actionError && <p role="alert" className="text-base text-destructive">{actionError}</p>}
             <div className="flex flex-wrap justify-end gap-3">
@@ -309,6 +317,8 @@ function PlaceCard({
   onDelete: () => void;
 }) {
   const { t, locale } = useTranslate();
+  const { session } = useAuth();
+  const caregiver = session?.role === "caregiver";
   const url = useMemo(() => {
     if (!isGoogleMapsUrl(place.mapsUrl)) return null;
     try { return new URL(place.mapsUrl); } catch { return null; }
@@ -329,7 +339,7 @@ function PlaceCard({
       <div className="flex flex-1 flex-col gap-4 p-5">
         <div>
           <h2 className="text-2xl font-bold">{place.name}</h2>
-          <ReadAloud className="[&_button]:min-h-[56px]" autoRead={false} text={place.name} />
+          {!caregiver && <ReadAloud className="[&_button]:min-h-[56px]" autoRead={false} text={place.name} />}
           <p className="mt-1 text-lg text-muted-foreground">{t(CATEGORY_LABEL[place.category])}</p>
           {place.note && <p className="mt-3 whitespace-pre-wrap text-lg">{place.note}</p>}
         </div>
@@ -394,6 +404,8 @@ function PlaceDialog({
   onSave: (draft: PlaceDraft) => Promise<void>;
 }) {
   const { t } = useTranslate();
+  const { session } = useAuth();
+  const caregiver = session?.role === "caregiver";
   const [draft, setDraft] = useState<PlaceDraft>(() => ({
     ...EMPTY_DRAFT,
     name: place?.name ?? "",
@@ -481,7 +493,7 @@ function PlaceDialog({
             <X className="h-5 w-5" />
           </Button>
         </div>
-        <ReadAloud className="[&_button]:min-h-[56px]" autoRead={false} text={heading} />
+        {!caregiver && <ReadAloud className="[&_button]:min-h-[56px]" autoRead={false} text={heading} />}
         <form onSubmit={submit} className="space-y-5">
           <fieldset disabled={busy} className="space-y-5">
           <section className="rounded-xl border bg-muted/30 p-4">

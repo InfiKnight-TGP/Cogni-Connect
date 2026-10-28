@@ -7,7 +7,7 @@ same branch, with additional URL, accessibility, and translation checks.
 
 Places and photos belong to the session's patient. Self accounts and caregiver
 members can edit; paired devices and patient logins can read only. Other patients'
-place IDs and photos return 404. The cap is 12 places, or 6 for demo accounts;
+place IDs and photos return 404. The cap is 30 places, or 12 for demo accounts;
 demo changes are limited to 60 per hour per session. Demo reset removes saved
 places and photos and restores the empty list.
 

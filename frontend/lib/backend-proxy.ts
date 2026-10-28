@@ -8,7 +8,7 @@ export async function backendFetch(request: Request, path: string, init: Request
   }
   // Bind media to the patient shown in that tab. Flask validates membership.
   const patient = new URL(request.url).searchParams.get("_patient");
-  if (patient && /^\/(known-faces|frames|video_chunks)\//.test(path) && !headers.has("x-cogni-patient")) headers.set("X-Cogni-Patient", patient);
+  if (patient && /^\/(known-faces|frames|video_chunks|place-photos)\//.test(path) && !headers.has("x-cogni-patient")) headers.set("X-Cogni-Patient", patient);
   return fetch(`${backend.replace(/\/$/, "")}${path}`, { ...init, headers, cache: "no-store", redirect: "manual" });
 }
 export function backendResponse(response: Response) {

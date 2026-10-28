@@ -24,8 +24,9 @@ export default function PeoplePage() {
   const [people, setPeople] = useState<Person[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [version, setVersion] = useState(0); // busts the photo cache after an edit
-  const [caregiver] = useCaregiver();
+  const [caregiverMode] = useCaregiver();
   const { session } = useAuth();
+  const caregiver = Boolean(caregiverMode || session?.role === "caregiver");
 
   // Self accounts can edit their own people; caregivers manage their active patient.
   // Paired devices (patient_device) and patient logins have no editing controls.
@@ -304,7 +305,7 @@ export default function PeoplePage() {
                   {t("Add a person")}
                 </Button>
               )}
-              <ReadAloud autoRead={false} text={t("No people added yet.")} />
+              {!caregiver && <ReadAloud autoRead={false} text={t("No people added yet.")} />}
             </div>
           ) : (
             <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">

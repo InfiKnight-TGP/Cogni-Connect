@@ -171,7 +171,9 @@ class PatientStorageTests(unittest.TestCase):
             )
             video_names = {video['filename'] for video in self.client.get('/videos', headers=headers).json}
             self.assertEqual(video_names, {'b.mp4'} if patient_id == 'patient-b' else {'legacy.mp4'})
-            media_status = self.client.get('/video_chunks/b.mp4', headers=headers).status_code
+            res = self.client.get('/video_chunks/b.mp4', headers=headers)
+            media_status = res.status_code
+            res.close()
             self.assertEqual(media_status, 200 if patient_id == 'patient-b' else 404)
             self.assertEqual('/video_chunks/b.mp4' in self.client.get('/video_chunks', headers=headers).json['videos'], patient_id == 'patient-b')
 
@@ -210,8 +212,12 @@ class PatientStorageTests(unittest.TestCase):
         memory = response.json['memories'][0]
         self.assertNotEqual(memory['id'], 'legacy.mp4')
         self.assertRegex(memory['id'], r'^[0-9a-f]{32}$')
-        self.assertEqual(self.client.get(f"/memories/{memory['id']}/video").status_code, 200)
-        self.assertEqual(self.client.get(f"/memories/{memory['id']}/thumbnail").status_code, 200)
+        res_v = self.client.get(f"/memories/{memory['id']}/video")
+        self.assertEqual(res_v.status_code, 200)
+        res_v.close()
+        res_t = self.client.get(f"/memories/{memory['id']}/thumbnail")
+        self.assertEqual(res_t.status_code, 200)
+        res_t.close()
         self.assertEqual(self.client.get('/memories/../patient-b/video').status_code, 404)
         for path in ('/video_chunks/../patient-b/video_chunks/b.mp4', '/video_chunks/%2e%2e/patient-b/video_chunks/b.mp4', '/frames/..%2Fpatient-b%2Fframes%2Fb.jpg'):
             self.assertEqual(self.client.get(path).status_code, 404)

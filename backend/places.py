@@ -5,6 +5,8 @@ from urllib.parse import urlsplit
 
 CATEGORIES = {'home', 'shop', 'doctor', 'temple', 'family', 'park', 'other'}
 WEEKDAYS = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
+MAX_PLACES = 30
+DEMO_MAX_PLACES = 12
 _TIME_PATTERN = re.compile(r'^(?:[01]\d|2[0-3]):[0-5]\d$')
 
 

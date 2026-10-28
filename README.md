@@ -90,6 +90,10 @@ CogniConnect features 19 fully implemented, playable games (`comingSoon: false`)
 - **Daily Routine Editor**: Configure 3 to 5 daily activities (e.g., *"Wake up"*, *"Morning walk"*, *"Take blood pressure tablet"*) which dynamically feed the sequencing puzzles in *Plan the Day*.
 - **Device Management**: View all paired tablets with last-seen timestamps and unpair devices remotely with a single click.
 
+### 11. SOS Alerts & My Places
+- **SOS Caregiver Alerts (`/sos`)**: Assistance helper for paired patient devices or patient logins to alert linked family caregivers. SOS is a communication helper for caregivers and **does not call emergency services** (users must dial 112 directly in an emergency). Browser geolocation requires HTTPS or localhost; if denied or on an insecure origin, the alert is safely sent without location.
+- **My Places (`/places`)**: Curated directory of familiar places (home, doctor, temple, shop) with optional visiting hours and safe Google Maps directions. Places data stays strictly within the patient profile.
+
 ---
 
 ## 🏗️ How It Works & Architecture
