@@ -105,6 +105,15 @@ def _caregiver():
     return bool(session and session['kind'] == 'caregiver' and user and user['role'] == 'caregiver')
 
 
+import hashlib
+
+
+def _session_hash(session_id):
+    if not session_id:
+        return None
+    return hashlib.sha256(session_id.encode('utf-8')).hexdigest()
+
+
 def _redact_private(row):
     return {key: value for key, value in row.items() if not key.startswith('_')}
 
@@ -124,16 +133,27 @@ def _send_alert_emails(patient_id, row):
             continue
 
 
-def _create_alert(test=False, location=None):
+def _create_alert(test=False, location=None, request_key=None):
     session = g.auth_session
     patient_id = _patient_id_for_request()
     if not patient_id:
         raise NoActivePatient
     path = _alert_file(patient_id)
     now = _now()
+    session_hash = _session_hash(session['id'])
     with _lock(path):
         rows, changed = _clean(_read(path), now)
-        recent = [row for row in rows if row.get('_sessionId') == session['id']
+        # Idempotency check: repeated request_key from same session within 10 minutes returns same alert
+        if request_key and isinstance(request_key, str):
+            for row in rows:
+                if row.get('_ownerHash') == session_hash and row.get('_requestKey') == request_key:
+                    created = _parse(row.get('createdAt'))
+                    if created and created > now - timedelta(minutes=10):
+                        if changed:
+                            _save(path, rows)
+                        return _redact_private(row), None
+
+        recent = [row for row in rows if (row.get('_ownerHash') == session_hash or row.get('_sessionId') == session['id'])
                   and (created := _parse(row.get('createdAt'))) and created > now - RATE_WINDOW]
         latest = max(recent, key=lambda row: row['createdAt'], default=None)
         if latest:
@@ -154,7 +174,10 @@ def _create_alert(test=False, location=None):
             'test': bool(test),
             'status': 'open',
             '_sessionId': session['id'],
+            '_ownerHash': session_hash,
         }
+        if request_key and isinstance(request_key, str):
+            row['_requestKey'] = request_key
         if location is not None:
             row['location'] = location
         rows.append(row)
@@ -186,8 +209,90 @@ def create_alert():
         location = {'lat': lat, 'lng': lng}
         if accuracy is not None:
             location['accuracy'] = accuracy
-    row, error = _create_alert(location=location)
+    request_key = data.get('requestKey')
+    if request_key is not None and not isinstance(request_key, str):
+        return jsonify(error='Invalid request key.'), 400
+    row, error = _create_alert(location=location, request_key=request_key)
     return error or (jsonify(row), 201)
+
+
+@bp.route('/sos/alerts/<alert_id>/location', methods=['PATCH', 'POST'])
+def attach_location(alert_id):
+    if not g.get('active_patient'):
+        raise NoActivePatient
+    session = g.get('auth_session')
+    user = auth.session_user()
+    if not session or not (session['kind'] == 'patient_device' or auth.patient_account(user)):
+        return jsonify(error='Only a patient device or patient login can update alert location.'), 403
+
+    patient_id = _patient_id_for_request()
+    if not patient_id:
+        raise NoActivePatient
+    path = _alert_file(patient_id)
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(error='Location data is required.'), 400
+    location = data.get('location')
+    if not isinstance(location, dict):
+        return jsonify(error='Location is invalid.'), 400
+    lat, lng, accuracy = location.get('lat'), location.get('lng'), location.get('accuracy')
+    if (isinstance(lat, bool) or not isinstance(lat, (float, int)) or not -90 <= lat <= 90
+            or isinstance(lng, bool) or not isinstance(lng, (float, int)) or not -180 <= lng <= 180
+            or accuracy is None or isinstance(accuracy, bool) or not isinstance(accuracy, (float, int)) or not 0 <= accuracy <= 100000):
+        return jsonify(error='Location is invalid.'), 400
+
+    now = _now()
+    session_hash = _session_hash(session['id'])
+
+    with _lock(path):
+        rows, changed = _clean(_read(path), now)
+        target = None
+        for row in rows:
+            if row.get('id') == alert_id:
+                target = row
+                break
+
+        if not target:
+            if changed:
+                _save(path, rows)
+            return jsonify(error='Alert not found.'), 404
+
+        # Rate limit to 3 requests per alert
+        patch_attempts = target.get('_patchAttempts', 0)
+        if patch_attempts >= 3:
+            if changed:
+                _save(path, rows)
+            return jsonify(error='Too many location update requests for this alert.'), 429
+        target['_patchAttempts'] = patch_attempts + 1
+
+        # Check alert ownership: alert created before this commit has no _ownerHash -> 403
+        owner_hash = target.get('_ownerHash')
+        if not owner_hash:
+            _save(path, rows)
+            return jsonify(error='Alert has no owner hash or was created by another session.'), 403
+
+        if owner_hash != session_hash:
+            _save(path, rows)
+            return jsonify(error='You do not own this alert.'), 403
+
+        # Exactly one successful patch per alert; a second returns 400
+        if target.get('location') is not None:
+            _save(path, rows)
+            return jsonify(error='Location is already set for this alert.'), 400
+
+        # Only within 2 minutes of alert creation
+        created = _parse(target.get('createdAt'))
+        if not created or created < now - timedelta(minutes=2):
+            _save(path, rows)
+            return jsonify(error='Location update window has expired.'), 400
+
+        loc_obj = {'lat': lat, 'lng': lng, 'accuracy': accuracy}
+        target['location'] = loc_obj
+        _save(path, rows)
+
+    # Sends no email
+    return jsonify(_redact_private(target)), 200
 
 
 @bp.get('/sos/alerts')

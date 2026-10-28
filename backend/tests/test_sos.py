@@ -361,6 +361,114 @@ class SosTests(unittest.TestCase):
         res_self_del = self_client.delete(f'/places/{place_self_id}')
         self.assertEqual(res_self_del.status_code, 200)
 
+    def test_patch_location_full_flow_and_constraints(self):
+        # 1. Create alert without location
+        alert_res = self.device.post('/sos', json={'requestKey': 'req-key-1'})
+        self.assertEqual(alert_res.status_code, 201)
+        alert_id = alert_res.json['id']
+        self.assertNotIn('_ownerHash', alert_res.json)
+        self.assertNotIn('_sessionId', alert_res.json)
+
+        # GET /sos/alerts never returns _ownerHash or _sessionId
+        caregiver_list = self.auth_client.get('/sos/alerts?status=open')
+        self.assertEqual(caregiver_list.status_code, 200)
+        matching = [a for a in caregiver_list.json if a['id'] == alert_id][0]
+        self.assertNotIn('_ownerHash', matching)
+        self.assertNotIn('_sessionId', matching)
+
+        # Idempotency: same requestKey from same session within 10 min returns same alert
+        idempotent_res = self.device.post('/sos', json={'requestKey': 'req-key-1'})
+        self.assertEqual(idempotent_res.status_code, 201)
+        self.assertEqual(idempotent_res.json['id'], alert_id)
+
+        # Caregiver or unauthenticated cannot PATCH location (403)
+        cg_patch = self.auth_client.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.0, 'lng': 77.0, 'accuracy': 10}})
+        self.assertEqual(cg_patch.status_code, 403)
+
+        anon_client = app.api.test_client()
+        anon_patch = anon_client.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.0, 'lng': 77.0, 'accuracy': 10}})
+        self.assertEqual(anon_patch.status_code, 401)
+
+        # Another patient's device / session cannot find or update it (404)
+        # Create a second patient
+        with app.api.app_context():
+            db.execute("INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,NULL,?,?,0)",
+                       ('patient-2', 'Patient Two', 'test-user', auth.now()))
+            token_p2, _ = auth.new_session('patient_device', patient_id='patient-2')
+        p2_client = app.api.test_client()
+        p2_client.set_cookie(auth.COOKIES['patient_device'], token_p2)
+        p2_patch = p2_client.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.0, 'lng': 77.0, 'accuracy': 10}})
+        self.assertEqual(p2_patch.status_code, 404)
+
+        # Another session for the SAME patient gets 403 (alert owned by first session)
+        with app.api.app_context():
+            token_other_sess, _ = auth.new_session('patient_device', patient_id='test-patient')
+        other_sess_client = app.api.test_client()
+        other_sess_client.set_cookie(auth.COOKIES['patient_device'], token_other_sess)
+        other_sess_patch = other_sess_client.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.0, 'lng': 77.0, 'accuracy': 10}})
+        self.assertEqual(other_sess_patch.status_code, 403)
+
+        # Alert without _ownerHash (legacy pre-commit alert) gets 403
+        path = self.auth_root / 'data' / 'test-patient' / 'alerts.json'
+        rows = json.loads(path.read_text(encoding='utf-8'))
+        legacy_id = 'legacy-alert-id'
+        rows.append({
+            'id': legacy_id,
+            'createdAt': alerts._now().isoformat(timespec='seconds').replace('+00:00', 'Z'),
+            'deviceLabel': 'Legacy device',
+            'status': 'open',
+            'location': None,
+        })
+        path.write_text(json.dumps(rows), encoding='utf-8')
+        legacy_patch = self.device.patch(f'/sos/alerts/{legacy_id}/location', json={'location': {'lat': 12.0, 'lng': 77.0, 'accuracy': 10}})
+        self.assertEqual(legacy_patch.status_code, 403)
+
+        # Invalid location inputs: bounds, types, missing accuracy -> 400
+        self.assertEqual(self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 91, 'lng': 0, 'accuracy': 10}}).status_code, 400)
+        self.assertEqual(self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 0, 'lng': 181, 'accuracy': 10}}).status_code, 400)
+        self.assertEqual(self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 0, 'lng': 0}}).status_code, 400)
+        self.assertEqual(self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 'bad', 'lng': 0, 'accuracy': 10}}).status_code, 400)
+
+        # Valid patch by owning session within 2 minutes sends NO second email and returns 200
+        with patch.object(alerts.mailer, 'send_alert') as send_email:
+            ok_patch = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.95, 'lng': 77.55, 'accuracy': 25.5}})
+        self.assertEqual(ok_patch.status_code, 200)
+        send_email.assert_not_called()
+        self.assertEqual(ok_patch.json['location'], {'lat': 12.95, 'lng': 77.55, 'accuracy': 25.5})
+        self.assertNotIn('_ownerHash', ok_patch.json)
+
+        # Second successful patch to same alert returns 400 (only one patch allowed)
+        second_patch = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.95, 'lng': 77.55, 'accuracy': 15}})
+        self.assertEqual(second_patch.status_code, 400)
+
+        # Rate limit to 3 requests per alert
+        # We did: 4 invalid attempts + 1 valid attempt = 5 attempts on alert_id already
+        # Any further request returns 429
+        rate_patch = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.95, 'lng': 77.55, 'accuracy': 15}})
+        self.assertEqual(rate_patch.status_code, 429)
+
+        # Expired alert (>2 min) returns 400
+        # Create directly in alerts.json to avoid POST rate limit / cooldown
+        from datetime import timedelta
+        expired_id = 'expired-alert-test'
+        cookie_val = self.device.get_cookie('cogni_device').value
+        token = cookie_val.split('.')[0]
+        session_row = db.fetchone('SELECT id FROM sessions WHERE token_hash=?', (auth.digest(token),))
+        rows = json.loads(path.read_text(encoding='utf-8'))
+        rows.append({
+            'id': expired_id,
+            'createdAt': (alerts._now() - timedelta(minutes=5)).isoformat(timespec='seconds').replace('+00:00', 'Z'),
+            'deviceLabel': 'Test device',
+            'status': 'open',
+            '_ownerHash': alerts._session_hash(session_row['id']),
+            'location': None,
+        })
+        path.write_text(json.dumps(rows), encoding='utf-8')
+        expired_patch = self.device.patch(f'/sos/alerts/{expired_id}/location', json={'location': {'lat': 12.0, 'lng': 77.0, 'accuracy': 10}})
+        self.assertEqual(expired_patch.status_code, 400)
+        self.assertEqual(expired_patch.json, {'error': 'Location update window has expired.'})
+
 
 if __name__ == '__main__':
     unittest.main()
+
