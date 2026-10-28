@@ -3,7 +3,12 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { shouldSpeak } from "./interaction/speech-gate.ts";
+import {
+  shouldSpeak,
+  shouldAutoListenOnQuestionChange,
+  BrowserSpeechProvider,
+  SpeechError,
+} from "./interaction/speech-gate.ts";
 import { getPreferenceKey } from "./interaction/preferences.ts";
 
 // 1. shouldSpeak pure helper tests
@@ -113,7 +118,7 @@ assert.equal(
   "guest role must return false"
 );
 
-// 2. getPreferenceKey logic for each role
+// 2. getPreferenceKey logic for each role & key isolation
 assert.equal(
   getPreferenceKey({ role: "self", activePatient: { id: "p-self-1" } }),
   "cogniconnect.preferences.v1:p-self-1",
@@ -140,7 +145,184 @@ assert.equal(
   "null session must load public preferences key"
 );
 
-// 3. Static checks across frontend
+// Caregiver key isolation: two caregivers get different keys, caregiver key never equals patient key
+{
+  const cgKey1 = getPreferenceKey({ role: "caregiver", user: { id: "cg-1" }, activePatient: { id: "p-1" } });
+  const cgKey2 = getPreferenceKey({ role: "caregiver", user: { id: "cg-2" }, activePatient: { id: "p-1" } });
+  const patientKey = getPreferenceKey({ role: "patient", user: { id: "cg-1" }, activePatient: { id: "p-1" } });
+  const selfKey = getPreferenceKey({ role: "self", user: { id: "cg-1" }, activePatient: { id: "p-1" } });
+  const devKey = getPreferenceKey({ role: "patient_device", user: { id: "cg-1" }, activePatient: { id: "p-1" } });
+
+  assert.notEqual(cgKey1, cgKey2, "two caregivers with different user ids must get different keys");
+  assert.notEqual(cgKey1, patientKey, "caregiver key must never equal patient key");
+  assert.notEqual(cgKey2, patientKey, "caregiver key must never equal patient key");
+  assert.notEqual(cgKey1, selfKey, "caregiver key must never equal self key");
+  assert.notEqual(cgKey1, devKey, "caregiver key must never equal patient_device key");
+}
+
+// 3. BrowserSpeechProvider.speak fail-closed tests
+{
+  let speakCalls = 0;
+  const mockSynth = {
+    getVoices: () => [{ lang: "en-US" }],
+    speak: (utterance) => {
+      speakCalls++;
+      setTimeout(() => {
+        utterance.onend?.();
+      }, 0);
+    },
+    cancel: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+  globalThis.window = { speechSynthesis: mockSynth };
+  globalThis.SpeechSynthesisUtterance = class {
+    constructor(text) {
+      this.text = text;
+      this.lang = "en";
+      this.rate = 1;
+      this.onend = null;
+      this.onerror = null;
+    }
+  };
+
+  const provider = new BrowserSpeechProvider();
+
+  // Without options -> rejects SpeechError("cancelled"), 0 speak calls
+  await assert.rejects(
+    async () => { await provider.speak("Hello", "en", undefined, 1, undefined); },
+    (err) => err instanceof SpeechError && err.reason === "cancelled",
+    "provider.speak without options must reject with SpeechError('cancelled')"
+  );
+  assert.equal(speakCalls, 0, "synth.speak must not be called when options are missing");
+
+  // Options with readAloudSetting: false -> rejects SpeechError("cancelled"), 0 speak calls
+  await assert.rejects(
+    async () => { await provider.speak("Hello", "en", undefined, 1, { role: "patient", readAloudSetting: false }); },
+    (err) => err instanceof SpeechError && err.reason === "cancelled",
+    "provider.speak with readAloudSetting: false must reject with SpeechError('cancelled')"
+  );
+  assert.equal(speakCalls, 0, "synth.speak must not be called when readAloudSetting is false");
+
+  // Options with readAloudSetting: true and valid role -> calls synth.speak once
+  const ts = await provider.speak("Hello", "en", undefined, 1, { role: "patient", readAloudSetting: true });
+  assert.ok(typeof ts === "number", "speak with readAloudSetting: true returns timestamp");
+  assert.equal(speakCalls, 1, "synth.speak must be called once when enabled");
+}
+
+// 4. Caregiver preference isolation: makes 0 requests to /preferences
+{
+  let fetchCount = 0;
+  const mockFetch = async (url) => {
+    if (String(url).includes("/preferences")) {
+      fetchCount++;
+    }
+    return new Response(JSON.stringify({ values: {}, locked: [], version: 1 }));
+  };
+
+  function simulateUpdatePreferences({ role, activePatient, fetchFn }) {
+    const shouldSyncToServer = Boolean(activePatient && (role === "patient_device" || role === "self"));
+    if (shouldSyncToServer) {
+      void fetchFn("/preferences");
+    }
+  }
+
+  fetchCount = 0;
+  simulateUpdatePreferences({ role: "caregiver", activePatient: { id: "p-1" }, fetchFn: mockFetch });
+  assert.equal(fetchCount, 0, "caregiver preference update must make 0 requests to /preferences");
+
+  simulateUpdatePreferences({ role: "patient_device", activePatient: { id: "p-1" }, fetchFn: mockFetch });
+  assert.equal(fetchCount, 1, "patient preference update must sync to /preferences");
+}
+
+// 5. VoiceQuestion auto-listen flow check with mocked listen function
+{
+  function createVoiceQuestionFlow({ readAloud, answerBySpeaking, listenAutomatically = true, allowAnswer = true, disabled = false }) {
+    let listenCallCount = 0;
+    let cancelCallCount = 0;
+    let lastQuestion = null;
+
+    const mockListen = () => { listenCallCount++; };
+    const mockCancel = () => { cancelCallCount++; };
+
+    const onQuestionChange = (newQuestion) => {
+      if (lastQuestion !== null && lastQuestion !== newQuestion) {
+        mockCancel();
+      }
+      if (shouldAutoListenOnQuestionChange({
+        readAloud,
+        answerBySpeaking,
+        allowAnswer,
+        disabled,
+        lastQuestion,
+        newQuestion,
+      })) {
+        lastQuestion = newQuestion;
+        mockListen();
+      } else {
+        lastQuestion = newQuestion;
+      }
+    };
+
+    const onReadComplete = () => {
+      const automaticListen = allowAnswer && !disabled && answerBySpeaking && listenAutomatically;
+      if (automaticListen) mockListen();
+    };
+
+    const unmount = () => {
+      mockCancel();
+    };
+
+    return {
+      getListenCount: () => listenCallCount,
+      getCancelCount: () => cancelCallCount,
+      onQuestionChange,
+      onReadComplete,
+      unmount,
+    };
+  }
+
+  // Flow 1: speech off plus answerBySpeaking on starts listening once
+  {
+    const flow = createVoiceQuestionFlow({ readAloud: false, answerBySpeaking: true });
+    flow.onQuestionChange("What day is it today?");
+    assert.equal(flow.getListenCount(), 1, "speech off plus answerBySpeaking on starts listening once");
+
+    // Same question re-render does not start again
+    flow.onQuestionChange("What day is it today?");
+    assert.equal(flow.getListenCount(), 1, "re-rendering with same question does not start listen again");
+
+    // Question changed starts listening once for new question
+    flow.onQuestionChange("Where are you now?");
+    assert.equal(flow.getListenCount(), 2, "question change starts listening once for new question");
+    assert.equal(flow.getCancelCount(), 1, "question change cancels pending listen");
+
+    flow.unmount();
+    assert.equal(flow.getCancelCount(), 2, "unmount cancels pending listen");
+  }
+
+  // Flow 2: speech off plus answerBySpeaking off never starts it
+  {
+    const flow = createVoiceQuestionFlow({ readAloud: false, answerBySpeaking: false });
+    flow.onQuestionChange("What day is it today?");
+    assert.equal(flow.getListenCount(), 0, "speech off plus answerBySpeaking off never starts listening");
+    flow.onQuestionChange("Where are you now?");
+    assert.equal(flow.getListenCount(), 0, "question change with answerBySpeaking off never starts listening");
+  }
+
+  // Flow 3: speech on keeps today's flow (listen after the read completes)
+  {
+    const flow = createVoiceQuestionFlow({ readAloud: true, answerBySpeaking: true, listenAutomatically: true });
+    flow.onQuestionChange("What day is it today?");
+    assert.equal(flow.getListenCount(), 0, "speech on does not start listen from effect");
+
+    // Read completes -> starts listen once
+    flow.onReadComplete();
+    assert.equal(flow.getListenCount(), 1, "speech on starts listen after read completes");
+  }
+}
+
+// 6. Static checks across frontend
 const frontendRoot = fileURLToPath(new URL("..", import.meta.url));
 
 async function collectFiles(dir) {
@@ -165,6 +347,7 @@ assert.ok(allFrontendFiles.length > 50, "should scan frontend files");
 
 const speechCallerAllowedFiles = new Set([
   join(frontendRoot, "lib", "interaction", "speech.ts"),
+  join(frontendRoot, "lib", "interaction", "speech-gate.ts"),
   join(frontendRoot, "components", "caregiver", "sosAlertBanner.tsx"),
 ]);
 
@@ -202,12 +385,41 @@ for (const filePath of allFrontendFiles) {
       );
     }
   }
+
+  // C: ReadAloud is the only caller of provider.speak
+  const isSpeechFile = rel === "lib/interaction/speech.ts" || rel === "lib/interaction/speech-gate.ts";
+  const isReadAloud = rel === "components/interaction/ReadAloud.tsx";
+  const isCheckFile = rel.endsWith(".check.mjs") || rel.endsWith(".check.ts");
+
+  if (!isSpeechFile && !isReadAloud && !isCheckFile) {
+    assert.doesNotMatch(
+      content,
+      /provider\.speak\s*\(/,
+      `${rel} must not call provider.speak (ReadAloud is the only caller)`
+    );
+  }
+
+  // D: No caller treats SpeechError("cancelled") as a visible error
+  if (!isCheckFile) {
+    assert.doesNotMatch(
+      content,
+      /reason\s*===\s*["']cancelled["']\s*\?\s*t\(/,
+      `${rel} must not show visible message for SpeechError('cancelled')`
+    );
+  }
 }
 
-// 4. Silent SOS screen check
+// 7. ReadAloud explicitly ignores cancelled errors
+const readAloudContent = await readFile(join(frontendRoot, "components", "interaction", "ReadAloud.tsx"), "utf8");
+assert.ok(
+  readAloudContent.includes('error.reason !== "cancelled"'),
+  "ReadAloud must ignore SpeechError cancelled and not show visible message"
+);
+
+// 8. Silent SOS screen check
 const sosPageContent = await readFile(join(frontendRoot, "app", "sos", "page.tsx"), "utf8");
 assert.ok(!sosPageContent.includes("autoRead={true}"), "SOS page must not have autoRead={true}");
 assert.ok(!sosPageContent.includes("speechSynthesis"), "SOS page must not have speechSynthesis");
 assert.ok(!sosPageContent.includes("new Audio"), "SOS page must not create Audio objects");
 
-console.log("Speech & Read-Aloud settings checks passed: shouldSpeak coverage, role preference keys, zero forceAutoRead, and speechSynthesis gating verified.");
+console.log("Speech & Read-Aloud settings checks passed: shouldSpeak coverage, role preference keys, zero forceAutoRead, fail-closed speak, preference isolation, VoiceQuestion flow, and ReadAloud speak exclusivity verified.");

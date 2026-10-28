@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ReadAloud from "@/components/interaction/ReadAloud";
 import { usePreferences, useSpeech, useTranslate } from "@/components/interaction/InteractionProvider";
-import { SpeechError } from "@/lib/interaction/speech";
+import { shouldAutoListenOnQuestionChange, SpeechError } from "@/lib/interaction/speech";
 import { matchAnswer, type AnswerOption, localizeAnswerOptions } from "@/lib/interaction/matching";
 import { beginSpeechSession } from "./speechSession";
 
@@ -68,6 +68,25 @@ export function VoiceQuestion({
   const listenRef = useRef(listen);
   listenRef.current = listen;
   const afterRead = useCallback(() => { if (automaticListen) void listenRef.current(); }, [automaticListen]);
+
+  const lastQuestionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (shouldAutoListenOnQuestionChange({
+      readAloud: preferences.readAloud,
+      answerBySpeaking: preferences.answerBySpeaking,
+      allowAnswer,
+      disabled,
+      lastQuestion: lastQuestionRef.current,
+      newQuestion: question,
+    })) {
+      lastQuestionRef.current = question;
+      void listenRef.current();
+    }
+    return () => {
+      sessionRef.current?.cancel();
+    };
+  }, [question, preferences.readAloud, preferences.answerBySpeaking, allowAnswer, disabled]);
 
   return <div className="my-3 space-y-2">
     <ReadAloud text={question} options={options.map(option => option.label)} autoRead={!disabled && preferences.readAloud} onReadComplete={afterRead} />

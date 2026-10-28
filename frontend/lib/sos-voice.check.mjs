@@ -166,4 +166,47 @@ const mockTranslate = (phrase, values = {}) => {
   assert.ok(pageContent.includes("Speak new alerts"), "alerts page must include 'Speak new alerts' switch");
 }
 
-console.log("SOS voice checks passed: not spoken twice, capped at 200, 10-min cutoff, patient grouping, test wording, tab lock, location exclusion, and page silence");
+// 9. Alert arriving in first poll after switch turns on is spoken once
+{
+  const storage = createMockStorage();
+  const caregiverId = "cg-voice-test";
+
+  // Phase A: Speech was OFF.
+  // Poll 1 returns alert A1 while speech is off.
+  // Banner marks alerts that existed BEFORE current poll's snapshot while speech was off as spoken.
+  const poll1Alerts = [
+    { id: "alert-1", patientName: "Grandma", createdAt: new Date().toISOString(), test: false, status: "open" },
+  ];
+  markAlertsSpoken(storage, caregiverId, poll1Alerts.map(a => a.id));
+
+  // Verify alert-1 is now in spokenIds
+  const spokenBefore = getSpokenAlertIds(storage, caregiverId);
+  assert.deepEqual(spokenBefore, ["alert-1"]);
+
+  // Phase B: Setting is turned ON.
+  // Poll 2 is the first poll made after the switch turns on.
+  // Alert A2 arrives in this poll along with existing open alert A1.
+  const poll2Alerts = [
+    { id: "alert-1", patientName: "Grandma", createdAt: new Date().toISOString(), test: false, status: "open" },
+    { id: "alert-2", patientName: "Grandpa", createdAt: new Date().toISOString(), test: false, status: "open" },
+  ];
+
+  // Filtering alerts to announce against spokenIds:
+  // alert-1 is already marked spoken (was seen while speech was off)
+  // alert-2 first returned by a poll made while setting is on -> must be spoken!
+  const toAnnounce = filterAlertsToAnnounce(poll2Alerts, spokenBefore, { isFirstPoll: false, nowMs: Date.now() });
+  assert.equal(toAnnounce.length, 1, "only alert-2 should be announced");
+  assert.equal(toAnnounce[0].id, "alert-2");
+
+  // When utterance starts, alert-2 is marked spoken
+  markAlertsSpoken(storage, caregiverId, toAnnounce.map(a => a.id));
+
+  // Phase C: Next poll with same alerts - alert-2 is not spoken again
+  const spokenAfter = getSpokenAlertIds(storage, caregiverId);
+  assert.equal(spokenAfter.includes("alert-2"), true);
+  const poll3Announce = filterAlertsToAnnounce(poll2Alerts, spokenAfter, { isFirstPoll: false, nowMs: Date.now() });
+  assert.equal(poll3Announce.length, 0, "alert-2 must be spoken only once");
+}
+
+console.log("SOS voice checks passed: not spoken twice, capped at 200, 10-min cutoff, patient grouping, test wording, tab lock, location exclusion, page silence, and switch-on poll announcement");
+
