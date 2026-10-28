@@ -331,7 +331,8 @@ required.push(
 required.push(
   "Story {number} of {total}", "Blanks completed: {done} / {total}",
   "Blank {number} of {total} (Story {story})", "I'm ready to remember",
-  "That's right!", "The missing word is {answer}.", "Next blank", "Next story", "Start another session"
+  "That's right!", "The missing word is {answer}.", "Next blank", "Next story", "Start another session",
+  "This device", "Read aloud (this device)", "Spoken alerts need Read aloud turned on."
 );
 for (const phrase of required) {
   assert.equal(typeof hi.ui[phrase], 'string', `Hindi missing UI phrase: ${phrase}`);

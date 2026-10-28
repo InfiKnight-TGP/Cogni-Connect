@@ -6,6 +6,7 @@ import {
   groupAlertsForAnnouncement,
   markAlertsSpoken,
   claimAlertForSpeech,
+  planAnnouncements,
   MAX_SPOKEN_IDS,
   MAX_ALERT_AGE_MS,
   SPOKEN_PREFIX,
@@ -166,4 +167,137 @@ const mockTranslate = (phrase, values = {}) => {
   assert.ok(pageContent.includes("Speak new alerts"), "alerts page must include 'Speak new alerts' switch");
 }
 
-console.log("SOS voice checks passed: not spoken twice, capped at 200, 10-min cutoff, patient grouping, test wording, tab lock, location exclusion, and page silence");
+// 9. Banner wiring static check
+{
+  const bannerPath = new URL("../components/caregiver/sosAlertBanner.tsx", import.meta.url);
+  const bannerContent = await readFile(bannerPath, "utf8");
+
+  assert.ok(bannerContent.includes("planAnnouncements"), "sosAlertBanner must import planAnnouncements");
+  assert.match(bannerContent, /const\s*\{\s*toSpeak,\s*toMarkSeen\s*\}\s*=\s*planAnnouncements\(/, "sosAlertBanner must call planAnnouncements on poll");
+  assert.match(bannerContent, /markAlertsSpoken\(localStorage,\s*caregiverId,\s*toMarkSeen\)/, "sosAlertBanner must mark toMarkSeen as spoken");
+  assert.ok(!bannerContent.includes('"default"'), "sosAlertBanner must not write under default key when caregiverId is unknown");
+  assert.match(bannerContent, /if\s*\(!caregiverId\)\s*return;/, "sosAlertBanner must do nothing if caregiverId is unknown");
+  assert.match(bannerContent, /if\s*\(rows\.length === 0\)\s*\{\s*isFirstPollRef\.current = false;\s*return;\s*\}/, "sosAlertBanner must mark nothing when poll returns nothing");
+}
+
+// 10. planAnnouncements pure helper tests
+{
+  const storage = createMockStorage();
+  const caregiverId = "cg-voice-test";
+
+  // Case (a): Alert arrives while speech is OFF. Setting turns ON. Alert is NOT spoken.
+  const poll1Alerts = [
+    { id: "alert-1", patientName: "Grandma", createdAt: new Date().toISOString(), test: false, status: "open" },
+  ];
+  const plan1 = planAnnouncements({
+    alerts: poll1Alerts,
+    spokenIds: getSpokenAlertIds(storage, caregiverId),
+    allowedToSpeak: false,
+    isFirstPoll: true,
+    nowMs: Date.now(),
+  });
+  assert.deepEqual(plan1.toSpeak, [], "when speech is off, toSpeak must be empty");
+  assert.deepEqual(plan1.toMarkSeen, ["alert-1"], "when speech is off, toMarkSeen holds alert-1");
+  markAlertsSpoken(storage, caregiverId, plan1.toMarkSeen);
+
+  // Switch turns ON. Next poll returns alert-1 again.
+  const plan2 = planAnnouncements({
+    alerts: poll1Alerts,
+    spokenIds: getSpokenAlertIds(storage, caregiverId),
+    allowedToSpeak: true,
+    isFirstPoll: false,
+    nowMs: Date.now(),
+  });
+  assert.deepEqual(plan2.toSpeak, [], "alert-1 that arrived while speech was off is NOT spoken after turning on");
+  assert.deepEqual(plan2.toMarkSeen, []);
+
+  // Case (b): New alert arrives in first poll after turning on -> IS spoken once
+  const poll3Alerts = [
+    { id: "alert-1", patientName: "Grandma", createdAt: new Date().toISOString(), test: false, status: "open" },
+    { id: "alert-2", patientName: "Grandpa", createdAt: new Date().toISOString(), test: false, status: "open" },
+  ];
+  const plan3 = planAnnouncements({
+    alerts: poll3Alerts,
+    spokenIds: getSpokenAlertIds(storage, caregiverId),
+    allowedToSpeak: true,
+    isFirstPoll: false,
+    nowMs: Date.now(),
+  });
+  assert.equal(plan3.toSpeak.length, 1, "new alert-2 must be planned to speak");
+  assert.equal(plan3.toSpeak[0].id, "alert-2");
+  assert.deepEqual(plan3.toMarkSeen, [], "toMarkSeen is empty when speech is allowed");
+
+  // When utterance starts, alert-2 is marked spoken
+  markAlertsSpoken(storage, caregiverId, plan3.toSpeak.map(a => a.id));
+
+  // Subsequent poll with same alerts -> alert-2 is spoken only once
+  const plan4 = planAnnouncements({
+    alerts: poll3Alerts,
+    spokenIds: getSpokenAlertIds(storage, caregiverId),
+    allowedToSpeak: true,
+    isFirstPoll: false,
+    nowMs: Date.now(),
+  });
+  assert.deepEqual(plan4.toSpeak, [], "alert-2 must not be spoken again (spoken only once)");
+  assert.deepEqual(plan4.toMarkSeen, []);
+
+  // Case (c): Test alerts follow the exact same rules
+  const testAlert1 = [
+    { id: "test-1", patientName: "Grandma", createdAt: new Date().toISOString(), test: true, status: "open" },
+  ];
+  // Arrives while off:
+  const planTestOff = planAnnouncements({
+    alerts: testAlert1,
+    spokenIds: getSpokenAlertIds(storage, caregiverId),
+    allowedToSpeak: false,
+    isFirstPoll: false,
+    nowMs: Date.now(),
+  });
+  assert.deepEqual(planTestOff.toSpeak, []);
+  assert.deepEqual(planTestOff.toMarkSeen, ["test-1"]);
+  markAlertsSpoken(storage, caregiverId, planTestOff.toMarkSeen);
+
+  // Setting on:
+  const planTestOnOld = planAnnouncements({
+    alerts: testAlert1,
+    spokenIds: getSpokenAlertIds(storage, caregiverId),
+    allowedToSpeak: true,
+    isFirstPoll: false,
+    nowMs: Date.now(),
+  });
+  assert.deepEqual(planTestOnOld.toSpeak, [], "test alert that arrived while off is NOT spoken after turning on");
+
+  // New test alert arriving while on:
+  const testAlert2 = [
+    { id: "test-2", patientName: "Grandpa", createdAt: new Date().toISOString(), test: true, status: "open" },
+  ];
+  const planTestOnNew = planAnnouncements({
+    alerts: testAlert2,
+    spokenIds: getSpokenAlertIds(storage, caregiverId),
+    allowedToSpeak: true,
+    isFirstPoll: false,
+    nowMs: Date.now(),
+  });
+  assert.equal(planTestOnNew.toSpeak.length, 1);
+  assert.equal(planTestOnNew.toSpeak[0].id, "test-2");
+
+  // Case (d): Speech blocked by browser (needs a click)
+  // An alert that is allowed to speak but cannot start must NOT be marked seen until utterance starts.
+  const blockedAlert = [
+    { id: "blocked-1", patientName: "Alice", createdAt: new Date().toISOString(), test: false, status: "open" },
+  ];
+  const planBlocked = planAnnouncements({
+    alerts: blockedAlert,
+    spokenIds: getSpokenAlertIds(storage, caregiverId),
+    allowedToSpeak: true,
+    isFirstPoll: false,
+    nowMs: Date.now(),
+  });
+  assert.equal(planBlocked.toSpeak.length, 1);
+  assert.deepEqual(planBlocked.toMarkSeen, [], "when allowed, toMarkSeen is empty so blocked alert is NOT marked seen");
+  assert.equal(getSpokenAlertIds(storage, caregiverId).includes("blocked-1"), false, "blocked alert remains unmarked in storage until utterance starts");
+}
+
+console.log("SOS voice checks passed: not spoken twice, capped at 200, 10-min cutoff, patient grouping, test wording, tab lock, location exclusion, page silence, banner wiring, and planAnnouncements rules");
+
+

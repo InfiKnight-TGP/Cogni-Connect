@@ -201,7 +201,15 @@ function AllGames() {
             trains={wordAssociation.trains}
             level={wordAssociation.levels[0]}
             comingSoon={wordAssociation.comingSoon}
-          />
+          >
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setActive({ game: wordAssociation, level: wordAssociation.levels[0] })}
+            >
+              Preview
+            </Button>
+          </GameCard>
 
           <GameCard
             emoji={molePath.emoji}
@@ -259,7 +267,15 @@ function AllGames() {
             trains={whackAMole.trains}
             level={whackAMole.levels[0]}
             comingSoon={whackAMole.comingSoon}
-          />
+          >
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setActive({ game: whackAMole, level: whackAMole.levels[0] })}
+            >
+              Preview
+            </Button>
+          </GameCard>
 
           <GameCard
             emoji={attentionHunt.emoji}
@@ -325,7 +341,15 @@ function AllGames() {
             trains={pillBoxPlanner.trains}
             level={pillBoxPlanner.levels[0]}
             comingSoon={pillBoxPlanner.comingSoon}
-          />
+          >
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setActive({ game: pillBoxPlanner, level: pillBoxPlanner.levels[0] })}
+            >
+              Preview
+            </Button>
+          </GameCard>
         </div>
       </section>
 

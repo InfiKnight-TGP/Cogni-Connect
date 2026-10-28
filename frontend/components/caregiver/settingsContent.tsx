@@ -8,11 +8,14 @@ import { useTheme } from "next-themes";
 import { LANGUAGES } from "@/components/siteLinks";
 import { DEFAULT_PREFERENCES, type Preferences } from "@/lib/interaction/preferences";
 import { useAuth } from "@/lib/auth-context";
+import { usePreferences, useTranslate } from "@/components/interaction/InteractionProvider";
 
 type PreferenceState = { values: Preferences; locked: (keyof Preferences)[]; version: number; updatedAt: number; updatedBy?: string | null };
 
 export default function SettingsContent() {
   const { theme, setTheme } = useTheme(); const { session } = useAuth(); const patient = session?.activePatient;
+  const { preferences: caregiverPrefs, updatePreferences: updateCaregiverPrefs } = usePreferences();
+  const { t } = useTranslate();
   const [state, setState] = useState<PreferenceState>({ values: DEFAULT_PREFERENCES, locked: [], version: 0, updatedAt: 0 });
   const [name, setName] = useState(""); const [language, setLanguage] = useState("en"); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false);
   useEffect(() => { if (!patient?.id) return; Promise.all([apiJSON<PreferenceState>("/preferences"), apiFetch(`${API_URL}/settings`).then(response => response.ok ? response.json() : Promise.reject())]).then(([preferences, settings]) => { setState(preferences); setName(settings.patient_name ?? ""); const configured = LANGUAGES.find(item => item.code === settings.language); setLanguage(configured?.selectable ? configured.code : "en"); }).catch(() => setNotice("Could not load settings.")); }, [patient?.id]);
@@ -31,6 +34,7 @@ export default function SettingsContent() {
       <div className="flex flex-wrap gap-3"><Button variant="outline" disabled={busy} onClick={() => void reset()}>Reset to defaults</Button><Button variant="outline" disabled={busy} onClick={() => preset({ textSize: "large", readAloud: true })}>Reading support</Button><Button variant="outline" disabled={busy} onClick={() => preset({ readAloud: true, answerBySpeaking: true, listenAutomatically: true })}>Voice first</Button><Button variant="outline" disabled={busy} onClick={() => preset({ soundEffects: false, animations: false, encouragingMessages: false })}>Quiet</Button></div>
     </Card>
     <Card className="rounded-xl border border-border bg-card p-5 shadow-sm"><h2 className="text-lg font-semibold">Patient settings</h2><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Patient name<input value={name} maxLength={60} onChange={event => setName(event.target.value)} className="mt-1 min-h-11 w-full rounded-md border bg-background px-3" /></label><label className="text-sm font-medium">Default language<select value={language} onChange={event => { const selected = LANGUAGES.find(item => item.code === event.target.value); if (selected?.selectable) setLanguage(selected.code); }} className="mt-1 min-h-11 w-full rounded-md border bg-background px-3">{LANGUAGES.map(item => <option key={item.code} value={item.code} disabled={!item.selectable}>{item.code.toUpperCase()} – {item.name}</option>)}</select></label></div><Button className="mt-4" onClick={() => void save().catch(error => setNotice(error instanceof Error ? error.message : "Could not save settings."))}>Save settings</Button></Card>
+    <Card className="rounded-xl border border-border bg-card p-5 shadow-sm"><h2 className="text-lg font-semibold">{t("This device")}</h2><div className="mt-3 flex flex-wrap items-center justify-between gap-3"><div><span className="text-lg font-medium">{t("Read aloud (this device)")}</span><p className="mt-1 text-sm text-muted-foreground">{t("Spoken alerts need Read aloud turned on.")}</p></div><Toggle checked={caregiverPrefs.readAloud} disabled={busy} onChange={value => updateCaregiverPrefs({ readAloud: value })} /></div></Card>
     <Card className="rounded-xl border border-border bg-card p-5 shadow-sm"><h2 className="text-lg font-semibold">Appearance</h2><label className="mt-3 flex min-h-14 flex-col justify-center gap-2 text-lg font-medium sm:flex-row sm:items-center sm:justify-between"><span>Theme</span><select value={theme ?? "system"} onChange={event => setTheme(event.target.value)} className="min-h-12 rounded-xl border-2 border-input bg-background px-3 text-base"><option value="system">System default</option><option value="light">Light</option><option value="dark">Dark</option></select></label></Card>
     {notice && <p role="status" className="text-lg text-muted-foreground">{notice}</p>}
   </div>;

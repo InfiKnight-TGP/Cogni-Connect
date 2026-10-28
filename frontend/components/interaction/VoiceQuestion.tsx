@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ReadAloud from "@/components/interaction/ReadAloud";
 import { usePreferences, useSpeech, useTranslate } from "@/components/interaction/InteractionProvider";
-import { SpeechError } from "@/lib/interaction/speech";
+import { shouldAutoListenOnQuestionChange, SpeechError } from "@/lib/interaction/speech";
 import { matchAnswer, type AnswerOption, localizeAnswerOptions } from "@/lib/interaction/matching";
 import { beginSpeechSession } from "./speechSession";
 
@@ -69,8 +69,50 @@ export function VoiceQuestion({
   listenRef.current = listen;
   const afterRead = useCallback(() => { if (automaticListen) void listenRef.current(); }, [automaticListen]);
 
+  const propsRef = useRef({
+    readAloud: preferences.readAloud,
+    answerBySpeaking: preferences.answerBySpeaking,
+    listenAutomatically: preferences.listenAutomatically,
+    allowAnswer,
+    disabled,
+  });
+  propsRef.current = {
+    readAloud: preferences.readAloud,
+    answerBySpeaking: preferences.answerBySpeaking,
+    listenAutomatically: preferences.listenAutomatically,
+    allowAnswer,
+    disabled,
+  };
+
+  const lastQuestionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const current = propsRef.current;
+    if (!shouldAutoListenOnQuestionChange({
+      readAloud: current.readAloud,
+      answerBySpeaking: current.answerBySpeaking,
+      listenAutomatically: current.listenAutomatically,
+      allowAnswer: current.allowAnswer,
+      disabled: current.disabled,
+      lastQuestion: lastQuestionRef.current,
+      newQuestion: question,
+    })) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      lastQuestionRef.current = question;
+      void listenRef.current();
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+      sessionRef.current?.cancel();
+    };
+  }, [question]);
+
   return <div className="my-3 space-y-2">
-    <ReadAloud text={question} options={options.map(option => option.label)} autoRead={!disabled && (preferences.readAloud || caregiver || automaticListen)} forceAutoRead={automaticListen} onReadComplete={afterRead} />
+    <ReadAloud text={question} options={options.map(option => option.label)} autoRead={!disabled && preferences.readAloud} onReadComplete={afterRead} />
     {allowAnswer && (preferences.answerBySpeaking || caregiver) && <Button type="button" variant="outline" className="min-h-12 max-w-full whitespace-normal text-base" onClick={() => void listen()} disabled={listening || disabled}>
       <Mic className="mr-2 h-5 w-5" />{t(listening ? "Listening…" : "Speak an answer")}
     </Button>}

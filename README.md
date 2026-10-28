@@ -285,7 +285,7 @@ CogniConnect adheres to privacy-by-design principles tailored for sensitive memo
 
 ## 📊 System Evaluation Metrics
 
-The following metrics are copied directly from the empirical benchmark report in [`docs/EVALUATION.md`](file:///e:/Cogni-Connect/docs/EVALUATION.md).
+The following metrics reflect the empirical benchmark evaluation results.
 
 > [!NOTE]
 > *Evaluation Setup*: Tested on Windows 11 (AMD64), Python 3.14, using `content/Me_at_the_zoo.mp4`, 240p video chunks, and 4 known face references (Akash, Dinesh, Nikhil, Jawed Karim). **These metrics reflect a small, controlled test set and are indicative of pipeline performance rather than clinical validation.**
@@ -400,12 +400,7 @@ Cogni-Connect/
 │   ├── package.json                     # Frontend package manifest and dependencies
 │   └── .env.example                     # Environment template for frontend variables
 │
-├── docs/                                # Technical documentation and benchmark reports
-│   ├── AUTH_FLOWS.md                    # Authentication lifecycle, session guards, and routing
-│   └── EVALUATION.md                    # Empirical accuracy, latency, and algorithmic evaluation results
-│
 ├── package.json                         # Root project manifest with concurrent run scripts
-├── AGENTS.md                            # Core project facts, rules, and verification checklist
 └── README.md                            # Comprehensive project overview (this file)
 ```
 
@@ -413,7 +408,7 @@ Cogni-Connect/
 
 ## 🧪 Testing & Verification Checks
 
-CogniConnect enforces rigorous quality checks across both the frontend and backend. Automated verification can be executed at any time using the exact commands specified in [`AGENTS.md`](file:///e:/Cogni-Connect/AGENTS.md):
+CogniConnect enforces rigorous quality checks across both the frontend and backend. Automated verification can be executed at any time using the commands below:
 
 ### 1. Frontend Verification Checks
 Run from the `frontend/` directory:
@@ -609,7 +604,7 @@ All backend endpoints defined across `backend/app.py` and `backend/auth.py`, org
 
 ### Contributing Guidelines
 1. Create a dedicated feature branch for each change (`git checkout -b feature/your-feature-name`).
-2. Run all frontend and backend verification checks listed in [`AGENTS.md`](file:///e:/Cogni-Connect/AGENTS.md) before submitting code.
+2. Run all frontend and backend verification checks before submitting code.
 3. Keep commits atomic, well-documented, and never push directly to `main`.
 4. Ensure no secrets, API keys, or raw personal data are committed.
 
@@ -624,7 +619,3 @@ There is currently no formal open-source `LICENSE` file present in this reposito
 - **Radix UI & Tailwind CSS**: Accessible component primitives and ergonomic styling.
 - **Smart India Hackathon (SIH 2024 / MDoNER)**: Problem statement SIH26003 inspiring technology-assisted memory care for North East India.
 
-### Documentation References
-- [`AGENTS.md`](file:///e:/Cogni-Connect/AGENTS.md) — Core architecture facts, strict development rules, and verification suite commands.
-- [`docs/AUTH_FLOWS.md`](file:///e:/Cogni-Connect/docs/AUTH_FLOWS.md) — Exhaustive authentication flows, role guards, and session state diagrams.
-- [`docs/EVALUATION.md`](file:///e:/Cogni-Connect/docs/EVALUATION.md) — Empirical accuracy, latency, and algorithmic evaluation results.
