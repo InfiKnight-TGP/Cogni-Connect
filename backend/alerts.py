@@ -162,19 +162,20 @@ def _create_alert(test=False, location=None, request_key=None):
                             _save(path, rows)
                         return _redact_private(row), None, 200
 
+        # An open, non-test alert from the same session inside the 60s COOLDOWN returns 200
+        if not test:
+            for row in reversed(rows):
+                if (row.get('_ownerHash') == session_hash or row.get('_sessionId') == session['id']):
+                    if not row.get('test') and row.get('status') == 'open':
+                        created = _parse(row.get('createdAt'))
+                        if created and created > now - COOLDOWN:
+                            if changed:
+                                _save(path, rows)
+                            return _redact_private(row), None, 200
+                        break
+
         recent = [row for row in rows if (row.get('_ownerHash') == session_hash or row.get('_sessionId') == session['id'])
                   and (created := _parse(row.get('createdAt'))) and created > now - RATE_WINDOW]
-        latest = max(recent, key=lambda row: row['createdAt'], default=None)
-        if latest:
-            created = _parse(latest['createdAt'])
-            if latest.get('status') == 'open' and created > now - COOLDOWN:
-                if changed:
-                    _save(path, rows)
-                return _redact_private(latest), None, 200
-            if created > now - COOLDOWN:
-                if changed:
-                    _save(path, rows)
-                return None, (jsonify(error='Please wait before sending another alert.'), 429), 429
 
         email_skipped = bool(test) or len(recent) >= RATE_LIMIT
         created_at = now.isoformat(timespec='seconds').replace('+00:00', 'Z')

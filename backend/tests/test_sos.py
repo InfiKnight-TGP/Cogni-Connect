@@ -542,6 +542,59 @@ class SosTests(unittest.TestCase):
         self.assertEqual(expired_patch.status_code, 400)
         self.assertEqual(expired_patch.json, {'error': 'Location update window has expired.'})
 
+    def test_handled_alert_inside_60s_then_new_sos_returns_201_with_new_id(self):
+        first = self.device.post('/sos')
+        self.assertEqual(first.status_code, 201)
+        first_id = first.json['id']
+
+        # Caregiver marks it handled
+        handled = self.auth_client.post(f'/sos/alerts/{first_id}/handled')
+        self.assertEqual(handled.status_code, 200)
+
+        # Device sends another SOS within 60 seconds -> returns 201 and a fresh ID
+        second = self.device.post('/sos')
+        self.assertEqual(second.status_code, 201)
+        second_id = second.json['id']
+        self.assertNotEqual(first_id, second_id)
+        self.assertEqual(second.json['status'], 'open')
+
+    def test_open_alert_older_than_60s_then_new_sos_returns_201(self):
+        from datetime import timedelta
+        cookie_val = self.device.get_cookie('cogni_device').value
+        token = cookie_val.split('.')[0]
+        session_row = db.fetchone('SELECT id FROM sessions WHERE token_hash=?', (auth.digest(token),))
+        path = self.auth_root / 'data' / 'test-patient' / 'alerts.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        now = alerts._now()
+        old_id = 'old-open-alert'
+        rows = [{
+            'id': old_id,
+            'createdAt': (now - timedelta(seconds=75)).isoformat(timespec='seconds').replace('+00:00', 'Z'),
+            'deviceLabel': 'Test device',
+            'status': 'open',
+            '_ownerHash': alerts._session_hash(session_row['id']),
+            'location': None,
+        }]
+        path.write_text(json.dumps(rows), encoding='utf-8')
+
+        # Sending SOS when open alert is older than 60s creates a NEW alert (201)
+        res = self.device.post('/sos')
+        self.assertEqual(res.status_code, 201)
+        self.assertNotEqual(res.json['id'], old_id)
+
+    def test_caregiver_test_alert_does_not_affect_device_sos(self):
+        # Caregiver creates an open test alert
+        cg_test = self.auth_client.post('/sos/test')
+        self.assertEqual(cg_test.status_code, 201)
+        self.assertTrue(cg_test.json['test'])
+        test_id = cg_test.json['id']
+
+        # Device sends SOS -> receives 201 with a fresh non-test alert (not 200 with test alert)
+        device_res = self.device.post('/sos')
+        self.assertEqual(device_res.status_code, 201)
+        self.assertFalse(device_res.json.get('test', False))
+        self.assertNotEqual(device_res.json['id'], test_id)
+
 
 if __name__ == '__main__':
     unittest.main()
