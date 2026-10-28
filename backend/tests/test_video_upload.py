@@ -26,25 +26,11 @@ def make_test_mp4(path, duration_secs=2, width=64, height=64, fps=25):
 
 
 class VideoUploadBackendTests(unittest.TestCase):
-    @staticmethod
-    def _read_json_safe(path):
-        for _ in range(10):
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError):
-                time.sleep(0.1)
-        with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-
     def setUp(self):
-        temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        temp = tempfile.TemporaryDirectory()
         def _cleanup():
             db.close_connection()
-            try:
-                temp.cleanup()
-            except OSError:
-                pass
+            temp.cleanup()
         self.addCleanup(_cleanup)
         self.root = Path(temp.name)
         self.patient_root = self.root / 'data'
@@ -470,10 +456,12 @@ class VideoUploadBackendTests(unittest.TestCase):
             memory_id = res.get_json()['id']
 
             # Check immediate storage before processing finishes
-            mems_init = self._read_json_safe(self.base_a / 'memories.json')
+            with open(self.base_a / 'memories.json', 'r', encoding='utf-8') as f:
+                mems_init = json.load(f)
             self.assertEqual(mems_init[memory_id]['date'], chosen_date)
 
-            journals_init = self._read_json_safe(self.base_a / 'video_journals.json')
+            with open(self.base_a / 'video_journals.json', 'r', encoding='utf-8') as f:
+                journals_init = json.load(f)
             stored_name = mems_init[memory_id]['filename']
             self.assertEqual(journals_init[stored_name]['date'], chosen_date)
 

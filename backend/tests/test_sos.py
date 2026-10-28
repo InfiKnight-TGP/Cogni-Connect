@@ -207,37 +207,159 @@ class SosTests(unittest.TestCase):
         patient_login_client = app.api.test_client()
         patient_login_client.set_cookie(auth.COOKIES['patient_device'], patient_login_token)
 
-        # 4 sessions: self, caregiver (self.auth_client), patient_device (self.device), patient_login
-        # 1. POST /sos: only patient_device and patient_login are allowed
-        self.assertEqual(self.device.post('/sos').status_code, 201)
-        self.assertEqual(patient_login_client.post('/sos').status_code, 201)
-        self.assertEqual(self.auth_client.post('/sos').status_code, 403)
-        self.assertEqual(self_client.post('/sos').status_code, 403)
+        cg_client = self.auth_client
+        dev_client = self.device
 
-        # 2. GET /sos/alerts: only caregiver is allowed
-        self.assertEqual(self.auth_client.get('/sos/alerts').status_code, 200)
-        self.assertEqual(self_client.get('/sos/alerts').status_code, 403)
-        self.assertEqual(self.device.get('/sos/alerts').status_code, 403)
-        self.assertEqual(patient_login_client.get('/sos/alerts').status_code, 403)
+        # Create real places first: one for caregiver's patient, one for self's patient
+        place_cg_payload = {'name': 'Clinic', 'category': 'doctor', 'mapsUrl': 'https://maps.app.goo.gl/cg-clinic', 'note': ''}
+        res_cg_create = cg_client.post('/places', json=place_cg_payload)
+        self.assertEqual(res_cg_create.status_code, 201)
+        place_cg_id = res_cg_create.get_json()['id']
 
-        # 3. POST /sos/test: only caregiver is allowed
-        self.assertEqual(self.auth_client.post('/sos/test').status_code, 201)
-        self.assertEqual(self_client.post('/sos/test').status_code, 403)
-        self.assertEqual(self.device.post('/sos/test').status_code, 403)
-        self.assertEqual(patient_login_client.post('/sos/test').status_code, 403)
+        place_self_payload = {'name': 'Home', 'category': 'home', 'mapsUrl': 'https://maps.app.goo.gl/self-home', 'note': ''}
+        res_self_create = self_client.post('/places', json=place_self_payload)
+        self.assertEqual(res_self_create.status_code, 201)
+        place_self_id = res_self_create.get_json()['id']
 
-        # 4. Places read: all 4 can read places
-        self.assertEqual(self.auth_client.get('/places').status_code, 200)
-        self.assertEqual(self_client.get('/places').status_code, 200)
-        self.assertEqual(self.device.get('/places').status_code, 200)
-        self.assertEqual(patient_login_client.get('/places').status_code, 200)
+        # 1. POST /sos
+        res_dev_sos = dev_client.post('/sos')
+        self.assertEqual(res_dev_sos.status_code, 201)
+        self.assertFalse(res_dev_sos.get_json()['test'])
+        alert_id = res_dev_sos.get_json()['id']
 
-        # 5. Places write: self-care can write to its own patient's places!
-        place_payload = {'name': 'Self Place', 'category': 'home', 'mapsUrl': 'https://maps.app.goo.gl/place', 'note': ''}
-        self.assertEqual(self_client.post('/places', json=place_payload).status_code, 201)
-        self.assertEqual(self.auth_client.post('/places', json=place_payload).status_code, 201)
-        self.assertEqual(self.device.post('/places', json=place_payload).status_code, 403)
-        self.assertEqual(patient_login_client.post('/places', json=place_payload).status_code, 403)
+        res_pl_sos = patient_login_client.post('/sos')
+        self.assertEqual(res_pl_sos.status_code, 201)
+        self.assertFalse(res_pl_sos.get_json()['test'])
+
+        res_cg_sos = cg_client.post('/sos')
+        self.assertEqual(res_cg_sos.status_code, 403)
+        self.assertEqual(res_cg_sos.get_json(), {'error': 'Only a patient device or patient login can send an alert.'})
+
+        res_self_sos = self_client.post('/sos')
+        self.assertEqual(res_self_sos.status_code, 403)
+        self.assertEqual(res_self_sos.get_json(), {'error': 'Only a patient device or patient login can send an alert.'})
+
+        # 2. GET /sos/alerts
+        res_cg_alerts = cg_client.get('/sos/alerts')
+        self.assertEqual(res_cg_alerts.status_code, 200)
+        self.assertTrue(isinstance(res_cg_alerts.get_json(), list))
+
+        res_self_alerts = self_client.get('/sos/alerts')
+        self.assertEqual(res_self_alerts.status_code, 403)
+        self.assertEqual(res_self_alerts.get_json(), {'error': 'Caregiver access is required.'})
+
+        res_dev_alerts = dev_client.get('/sos/alerts')
+        self.assertEqual(res_dev_alerts.status_code, 403)
+        self.assertEqual(res_dev_alerts.get_json(), {'error': 'Unable to complete this request. Please check your details and try again.'})
+
+        res_pl_alerts = patient_login_client.get('/sos/alerts')
+        self.assertEqual(res_pl_alerts.status_code, 403)
+        self.assertEqual(res_pl_alerts.get_json(), {'error': 'Unable to complete this request. Please check your details and try again.'})
+
+        # 3. POST /sos/alerts/<id>/handled
+        res_cg_handled = cg_client.post(f'/sos/alerts/{alert_id}/handled')
+        self.assertEqual(res_cg_handled.status_code, 200)
+        self.assertEqual(res_cg_handled.get_json()['status'], 'handled')
+
+        res_self_handled = self_client.post(f'/sos/alerts/{alert_id}/handled')
+        self.assertEqual(res_self_handled.status_code, 403)
+        self.assertEqual(res_self_handled.get_json(), {'error': 'Caregiver access is required.'})
+
+        res_dev_handled = dev_client.post(f'/sos/alerts/{alert_id}/handled')
+        self.assertEqual(res_dev_handled.status_code, 403)
+        self.assertEqual(res_dev_handled.get_json(), {'error': 'Unable to complete this request. Please check your details and try again.'})
+
+        res_pl_handled = patient_login_client.post(f'/sos/alerts/{alert_id}/handled')
+        self.assertEqual(res_pl_handled.status_code, 403)
+        self.assertEqual(res_pl_handled.get_json(), {'error': 'Unable to complete this request. Please check your details and try again.'})
+
+        # 4. POST /sos/test
+        res_cg_test = cg_client.post('/sos/test')
+        self.assertEqual(res_cg_test.status_code, 201)
+        self.assertTrue(res_cg_test.get_json()['test'])
+
+        res_self_test = self_client.post('/sos/test')
+        self.assertEqual(res_self_test.status_code, 403)
+        self.assertEqual(res_self_test.get_json(), {'error': 'Caregiver access is required.'})
+
+        res_dev_test = dev_client.post('/sos/test')
+        self.assertEqual(res_dev_test.status_code, 403)
+        self.assertEqual(res_dev_test.get_json(), {'error': 'Unable to complete this request. Please check your details and try again.'})
+
+        res_pl_test = patient_login_client.post('/sos/test')
+        self.assertEqual(res_pl_test.status_code, 403)
+        self.assertEqual(res_pl_test.get_json(), {'error': 'Unable to complete this request. Please check your details and try again.'})
+
+        # 5. POST /places (creation permissions)
+        res_dev_create = dev_client.post('/places', json=place_cg_payload)
+        self.assertEqual(res_dev_create.status_code, 403)
+        self.assertEqual(res_dev_create.get_json(), {'error': 'Only the patient or a caregiver can edit places.'})
+
+        res_pl_create = patient_login_client.post('/places', json=place_cg_payload)
+        self.assertEqual(res_pl_create.status_code, 403)
+        self.assertEqual(res_pl_create.get_json(), {'error': 'Only the patient or a caregiver can edit places.'})
+
+        # 6. PUT /places/<id>
+        res_cg_put = cg_client.put(f'/places/{place_cg_id}', json={'name': 'Updated Clinic'})
+        self.assertEqual(res_cg_put.status_code, 200)
+        self.assertEqual(res_cg_put.get_json()['name'], 'Updated Clinic')
+
+        res_self_put = self_client.put(f'/places/{place_self_id}', json={'name': 'Updated Home'})
+        self.assertEqual(res_self_put.status_code, 200)
+        self.assertEqual(res_self_put.get_json()['name'], 'Updated Home')
+
+        # Check cross-patient isolation gives 404
+        self.assertEqual(self_client.put(f'/places/{place_cg_id}', json={'name': 'Hacked'}).status_code, 404)
+        self.assertEqual(cg_client.put(f'/places/{place_self_id}', json={'name': 'Hacked'}).status_code, 404)
+
+        res_dev_put = dev_client.put(f'/places/{place_cg_id}', json={'name': 'Hacked'})
+        self.assertEqual(res_dev_put.status_code, 403)
+        self.assertEqual(res_dev_put.get_json(), {'error': 'Only the patient or a caregiver can edit places.'})
+
+        res_pl_put = patient_login_client.put(f'/places/{place_cg_id}', json={'name': 'Hacked'})
+        self.assertEqual(res_pl_put.status_code, 403)
+        self.assertEqual(res_pl_put.get_json(), {'error': 'Only the patient or a caregiver can edit places.'})
+
+        # 7. POST /places/<id>/photo (check role access & cross-patient 404)
+        # Without multipart file, allowed roles get 400 "Please choose a photo." proving access check passed
+        res_cg_photo = cg_client.post(f'/places/{place_cg_id}/photo')
+        self.assertEqual(res_cg_photo.status_code, 400)
+        self.assertEqual(res_cg_photo.get_json(), {'error': 'Please choose a photo.'})
+
+        res_self_photo = self_client.post(f'/places/{place_self_id}/photo')
+        self.assertEqual(res_self_photo.status_code, 400)
+        self.assertEqual(res_self_photo.get_json(), {'error': 'Please choose a photo.'})
+
+        # Cross-patient photo gives 404
+        self.assertEqual(self_client.post(f'/places/{place_cg_id}/photo').status_code, 404)
+        self.assertEqual(cg_client.post(f'/places/{place_self_id}/photo').status_code, 404)
+
+        res_dev_photo = dev_client.post(f'/places/{place_cg_id}/photo')
+        self.assertEqual(res_dev_photo.status_code, 403)
+        self.assertEqual(res_dev_photo.get_json(), {'error': 'Only the patient or a caregiver can edit places.'})
+
+        res_pl_photo = patient_login_client.post(f'/places/{place_cg_id}/photo')
+        self.assertEqual(res_pl_photo.status_code, 403)
+        self.assertEqual(res_pl_photo.get_json(), {'error': 'Only the patient or a caregiver can edit places.'})
+
+        # 8. DELETE /places/<id>
+        # Cross-patient delete gives 404
+        self.assertEqual(self_client.delete(f'/places/{place_cg_id}').status_code, 404)
+        self.assertEqual(cg_client.delete(f'/places/{place_self_id}').status_code, 404)
+
+        res_dev_del = dev_client.delete(f'/places/{place_cg_id}')
+        self.assertEqual(res_dev_del.status_code, 403)
+        self.assertEqual(res_dev_del.get_json(), {'error': 'Only the patient or a caregiver can edit places.'})
+
+        res_pl_del = patient_login_client.delete(f'/places/{place_cg_id}')
+        self.assertEqual(res_pl_del.status_code, 403)
+        self.assertEqual(res_pl_del.get_json(), {'error': 'Only the patient or a caregiver can edit places.'})
+
+        res_cg_del = cg_client.delete(f'/places/{place_cg_id}')
+        self.assertEqual(res_cg_del.status_code, 200)
+
+        res_self_del = self_client.delete(f'/places/{place_self_id}')
+        self.assertEqual(res_self_del.status_code, 200)
 
 
 if __name__ == '__main__':

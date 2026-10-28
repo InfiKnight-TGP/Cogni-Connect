@@ -384,8 +384,8 @@ def build_daily_plan(
     try:
         if date_str <= today_str:
             saved_plans[date_str] = plan
-            with plans_path.open("w", encoding="utf-8") as f:
-                json.dump(saved_plans, f, indent=2, ensure_ascii=False)
+            from jsonio import atomic_write_json
+            atomic_write_json(plans_path, saved_plans)
     except Exception:
         pass
 

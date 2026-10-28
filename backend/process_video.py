@@ -160,8 +160,8 @@ def process_single_video(video_path):
     
     # Save transcripts
     json_path = os.path.join(output_dir, 'full_transcript.json')
-    with open(json_path, 'w', encoding='utf-8') as json_file:
-        json.dump(all_transcripts, json_file, indent=4)
+    from jsonio import atomic_write_json
+    atomic_write_json(json_path, all_transcripts, indent=4)
     
     print(f"✓ Transcription completed for {video_name}")
     return output_dir
@@ -309,8 +309,8 @@ def perform_face_recognition(chunks_folder, base_dir):
 
             # Save JSON
             json_path = os.path.join(chunks_folder, f'{video_name}_faces.json')
-            with open(json_path, 'w', encoding='utf-8') as json_file:
-                json.dump(video_appearance_summary, json_file, indent=4)
+            from jsonio import atomic_write_json
+            atomic_write_json(json_path, video_appearance_summary, indent=4)
 
             print(f"  ✓ Found faces: {names if names else 'No known faces detected'}")
 

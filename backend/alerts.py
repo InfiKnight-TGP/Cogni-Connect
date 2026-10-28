@@ -56,12 +56,11 @@ def _read(path):
         return []
 
 
+from jsonio import atomic_write_json
+
+
 def _save(path, rows):
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(f'.{target.name}.{uuid.uuid4().hex}.tmp')
-    temporary.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding='utf-8')
-    temporary.replace(target)
+    atomic_write_json(path, rows)
 
 
 def _clean(rows, now):
