@@ -1,3 +1,9 @@
+/**
+ * Pure and testable speech primitives, types, and browser provider.
+ * Kept free of Next.js path aliases and backend network dependencies so that
+ * plain Node check scripts (e.g. speech.check.mjs) can import them directly.
+ */
+
 export type UserRole = "caregiver" | "patient" | "patient_device" | "self";
 
 export function shouldSpeak({
@@ -23,13 +29,14 @@ export function shouldSpeak({
 export function shouldAutoListenOnQuestionChange(params: {
   readAloud: boolean;
   answerBySpeaking: boolean;
+  listenAutomatically: boolean;
   allowAnswer?: boolean;
   disabled?: boolean;
   lastQuestion: string | null;
   newQuestion: string;
 }): boolean {
   if (params.readAloud) return false;
-  if (!params.answerBySpeaking) return false;
+  if (!params.answerBySpeaking || !params.listenAutomatically) return false;
   if (params.allowAnswer === false || params.disabled) return false;
   return params.lastQuestion !== params.newQuestion;
 }
@@ -63,7 +70,7 @@ const errorMap: Record<string, SpeechFailure> = { "not-allowed": "permission", "
 export class BrowserSpeechProvider implements SpeechProvider {
   private cancelCurrent: (() => void) | null = null;
   cancel() { this.cancelCurrent?.(); this.cancelCurrent = null; }
-  async speak(text: string, language: string, signal: AbortSignal | undefined, rate = 1, options?: SpeechOptions): Promise<number> {
+  async speak(text: string, language: string, signal: AbortSignal | undefined, rate: number, options: SpeechOptions): Promise<number> {
     if (signal?.aborted) throw new SpeechError("cancelled");
     if (!options || options.readAloudSetting !== true) {
       throw new SpeechError("cancelled");

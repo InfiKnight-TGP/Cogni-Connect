@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { translate, type Locale } from "@/lib/interaction/locale";
 import { apiFetch, apiJSON, API_URL, ApiError } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
-import { DEFAULT_PREFERENCES, getPreferenceKey, readPreferences, textSizePixels, writePreferences, type Preferences } from "@/lib/interaction/preferences";
+import { DEFAULT_PREFERENCES, getPreferenceKey, readPreferences, shouldSyncPreferences, textSizePixels, writePreferences, type Preferences } from "@/lib/interaction/preferences";
 import { WhisperSpeechProvider, type SpeechProvider } from "@/lib/interaction/speech";
 import { usePathname } from "next/navigation";
 import { cancelSpeechSession } from "./speechSession";
@@ -116,10 +116,10 @@ export function InteractionProvider({
   }, [preferenceKey]);
 
   const loadServerPreferences = useCallback(async () => {
-    if (!session?.activePatient || (session.role !== "patient_device" && session.role !== "self")) return;
+    if (!shouldSyncPreferences(session)) return;
     try {
       const result = await apiJSON<{ values: Preferences; locked: (keyof Preferences)[]; version: number; empty?: boolean }>("/preferences", { authRedirect: false });
-      if (result.empty && session.role === "patient_device") {
+      if (result.empty && session?.role === "patient_device") {
         const imported = await apiJSON<{ values: Preferences; locked: (keyof Preferences)[]; version: number }>("/preferences", {
           method: "PUT", authRedirect: false, headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ values: readPreferences(preferenceKey), version: result.version, source: "device-import" }),
@@ -132,7 +132,7 @@ export function InteractionProvider({
     } catch {
       // Keep the local cache active and retry on focus or the next interval.
     }
-  }, [preferenceKey, session?.activePatient, session?.role]);
+  }, [preferenceKey, session]);
 
   useEffect(() => {
     void loadServerPreferences();
@@ -148,7 +148,7 @@ export function InteractionProvider({
       const next = { ...previous, ...update };
       if (!next.answerBySpeaking) next.listenAutomatically = false;
       writePreferences(next, preferenceKey);
-      if (preferenceReady.current && session?.activePatient && (session.role === "patient_device" || session.role === "self")) {
+      if (preferenceReady.current && shouldSyncPreferences(session)) {
         if (preferenceWrite.current !== null) window.clearTimeout(preferenceWrite.current);
         preferenceWrite.current = window.setTimeout(async () => {
           try {

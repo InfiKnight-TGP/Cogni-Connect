@@ -69,24 +69,47 @@ export function VoiceQuestion({
   listenRef.current = listen;
   const afterRead = useCallback(() => { if (automaticListen) void listenRef.current(); }, [automaticListen]);
 
+  const propsRef = useRef({
+    readAloud: preferences.readAloud,
+    answerBySpeaking: preferences.answerBySpeaking,
+    listenAutomatically: preferences.listenAutomatically,
+    allowAnswer,
+    disabled,
+  });
+  propsRef.current = {
+    readAloud: preferences.readAloud,
+    answerBySpeaking: preferences.answerBySpeaking,
+    listenAutomatically: preferences.listenAutomatically,
+    allowAnswer,
+    disabled,
+  };
+
   const lastQuestionRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (shouldAutoListenOnQuestionChange({
-      readAloud: preferences.readAloud,
-      answerBySpeaking: preferences.answerBySpeaking,
-      allowAnswer,
-      disabled,
+    const current = propsRef.current;
+    if (!shouldAutoListenOnQuestionChange({
+      readAloud: current.readAloud,
+      answerBySpeaking: current.answerBySpeaking,
+      listenAutomatically: current.listenAutomatically,
+      allowAnswer: current.allowAnswer,
+      disabled: current.disabled,
       lastQuestion: lastQuestionRef.current,
       newQuestion: question,
     })) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
       lastQuestionRef.current = question;
       void listenRef.current();
-    }
+    }, 0);
+
     return () => {
+      clearTimeout(timer);
       sessionRef.current?.cancel();
     };
-  }, [question, preferences.readAloud, preferences.answerBySpeaking, allowAnswer, disabled]);
+  }, [question]);
 
   return <div className="my-3 space-y-2">
     <ReadAloud text={question} options={options.map(option => option.label)} autoRead={!disabled && preferences.readAloud} onReadComplete={afterRead} />

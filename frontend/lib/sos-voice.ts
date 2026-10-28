@@ -64,6 +64,26 @@ export function filterAlertsToAnnounce(
   });
 }
 
+export function planAnnouncements({
+  alerts,
+  spokenIds,
+  allowedToSpeak,
+  isFirstPoll,
+  nowMs,
+}: {
+  alerts: SosAlert[];
+  spokenIds: string[] | Set<string>;
+  allowedToSpeak: boolean;
+  isFirstPoll: boolean;
+  nowMs: number;
+}): { toSpeak: SosAlert[]; toMarkSeen: string[] } {
+  if (!allowedToSpeak) {
+    return { toSpeak: [], toMarkSeen: alerts.map(a => a.id) };
+  }
+  const toSpeak = filterAlertsToAnnounce(alerts, spokenIds, { isFirstPoll, nowMs });
+  return { toSpeak, toMarkSeen: [] };
+}
+
 export type Announcement = {
   patientName: string;
   text: string;

@@ -9,7 +9,7 @@ import {
   BrowserSpeechProvider,
   SpeechError,
 } from "./interaction/speech-gate.ts";
-import { getPreferenceKey } from "./interaction/preferences.ts";
+import { getPreferenceKey, shouldSyncPreferences } from "./interaction/preferences.ts";
 
 // 1. shouldSpeak pure helper tests
 // Caregiver off
@@ -210,32 +210,73 @@ assert.equal(
   assert.equal(speakCalls, 1, "synth.speak must be called once when enabled");
 }
 
-// 4. Caregiver preference isolation: makes 0 requests to /preferences
-{
-  let fetchCount = 0;
-  const mockFetch = async (url) => {
-    if (String(url).includes("/preferences")) {
-      fetchCount++;
-    }
-    return new Response(JSON.stringify({ values: {}, locked: [], version: 1 }));
-  };
-
-  function simulateUpdatePreferences({ role, activePatient, fetchFn }) {
-    const shouldSyncToServer = Boolean(activePatient && (role === "patient_device" || role === "self"));
-    if (shouldSyncToServer) {
-      void fetchFn("/preferences");
-    }
-  }
-
-  fetchCount = 0;
-  simulateUpdatePreferences({ role: "caregiver", activePatient: { id: "p-1" }, fetchFn: mockFetch });
-  assert.equal(fetchCount, 0, "caregiver preference update must make 0 requests to /preferences");
-
-  simulateUpdatePreferences({ role: "patient_device", activePatient: { id: "p-1" }, fetchFn: mockFetch });
-  assert.equal(fetchCount, 1, "patient preference update must sync to /preferences");
-}
+// 4. shouldSyncPreferences pure function tests
+assert.equal(
+  shouldSyncPreferences({ role: "caregiver", activePatient: { id: "p-1" } }),
+  false,
+  "caregiver must not sync preferences to server"
+);
+assert.equal(
+  shouldSyncPreferences({ role: "self", activePatient: { id: "p-1" } }),
+  true,
+  "self with active patient must sync preferences to server"
+);
+assert.equal(
+  shouldSyncPreferences({ role: "patient_device", activePatient: { id: "p-1" } }),
+  true,
+  "patient_device with active patient must sync preferences to server"
+);
+assert.equal(
+  shouldSyncPreferences({ role: "self", activePatient: null }),
+  false,
+  "no active patient must not sync preferences"
+);
+assert.equal(
+  shouldSyncPreferences({ role: "patient_device" }),
+  false,
+  "missing active patient must not sync preferences"
+);
+assert.equal(
+  shouldSyncPreferences(null),
+  false,
+  "null session must not sync preferences"
+);
+assert.equal(
+  shouldSyncPreferences(undefined),
+  false,
+  "undefined session must not sync preferences"
+);
 
 // 5. VoiceQuestion auto-listen flow check with mocked listen function
+// 5a. shouldAutoListenOnQuestionChange requires listenAutomatically to be true
+assert.equal(
+  shouldAutoListenOnQuestionChange({
+    readAloud: false,
+    answerBySpeaking: true,
+    listenAutomatically: false,
+    allowAnswer: true,
+    disabled: false,
+    lastQuestion: null,
+    newQuestion: "What day is it today?",
+  }),
+  false,
+  "shouldAutoListenOnQuestionChange must return false when listenAutomatically is false"
+);
+
+assert.equal(
+  shouldAutoListenOnQuestionChange({
+    readAloud: false,
+    answerBySpeaking: true,
+    listenAutomatically: true,
+    allowAnswer: true,
+    disabled: false,
+    lastQuestion: null,
+    newQuestion: "What day is it today?",
+  }),
+  true,
+  "shouldAutoListenOnQuestionChange must return true when readAloud is off and answerBySpeaking + listenAutomatically are on"
+);
+
 {
   function createVoiceQuestionFlow({ readAloud, answerBySpeaking, listenAutomatically = true, allowAnswer = true, disabled = false }) {
     let listenCallCount = 0;
@@ -252,6 +293,7 @@ assert.equal(
       if (shouldAutoListenOnQuestionChange({
         readAloud,
         answerBySpeaking,
+        listenAutomatically,
         allowAnswer,
         disabled,
         lastQuestion,
@@ -284,7 +326,7 @@ assert.equal(
 
   // Flow 1: speech off plus answerBySpeaking on starts listening once
   {
-    const flow = createVoiceQuestionFlow({ readAloud: false, answerBySpeaking: true });
+    const flow = createVoiceQuestionFlow({ readAloud: false, answerBySpeaking: true, listenAutomatically: true });
     flow.onQuestionChange("What day is it today?");
     assert.equal(flow.getListenCount(), 1, "speech off plus answerBySpeaking on starts listening once");
 
@@ -303,7 +345,7 @@ assert.equal(
 
   // Flow 2: speech off plus answerBySpeaking off never starts it
   {
-    const flow = createVoiceQuestionFlow({ readAloud: false, answerBySpeaking: false });
+    const flow = createVoiceQuestionFlow({ readAloud: false, answerBySpeaking: false, listenAutomatically: true });
     flow.onQuestionChange("What day is it today?");
     assert.equal(flow.getListenCount(), 0, "speech off plus answerBySpeaking off never starts listening");
     flow.onQuestionChange("Where are you now?");
@@ -319,6 +361,56 @@ assert.equal(
     // Read completes -> starts listen once
     flow.onReadComplete();
     assert.equal(flow.getListenCount(), 1, "speech on starts listen after read completes");
+  }
+
+  // Flow 4: StrictMode simulated lifecycle (mount -> synchronous cleanup before timeout -> remount)
+  {
+    let listenCallCount = 0;
+    let cancelCallCount = 0;
+    let pendingTimer = null;
+    let lastQuestion = null;
+
+    const mockListen = () => { listenCallCount++; };
+    const mockCancel = () => { cancelCallCount++; };
+
+    const simulateMount = (question) => {
+      if (shouldAutoListenOnQuestionChange({
+        readAloud: false,
+        answerBySpeaking: true,
+        listenAutomatically: true,
+        allowAnswer: true,
+        disabled: false,
+        lastQuestion,
+        newQuestion: question,
+      })) {
+        pendingTimer = setTimeout(() => {
+          lastQuestion = question;
+          mockListen();
+        }, 0);
+      }
+    };
+
+    const simulateCleanup = () => {
+      if (pendingTimer !== null) {
+        clearTimeout(pendingTimer);
+        pendingTimer = null;
+      }
+      mockCancel();
+    };
+
+    // First mount
+    simulateMount("Question 1");
+    // Synchronous unmount in React Strict Mode before the 0ms timeout fires
+    simulateCleanup();
+    assert.equal(listenCallCount, 0, "no listen calls after synchronous unmount in Strict Mode");
+    assert.equal(lastQuestion, null, "lastQuestion remains null when timer was cleared before execution");
+
+    // Remount with same question in Strict Mode
+    simulateMount("Question 1");
+    // Wait for the scheduled 0ms timeout to fire
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    assert.equal(listenCallCount, 1, "remount fires listen exactly once after Strict Mode cycle");
+    assert.equal(lastQuestion, "Question 1", "lastQuestion is set when timeout executes");
   }
 }
 
@@ -406,6 +498,19 @@ for (const filePath of allFrontendFiles) {
       /reason\s*===\s*["']cancelled["']\s*\?\s*t\(/,
       `${rel} must not show visible message for SpeechError('cancelled')`
     );
+  }
+
+  // E: Static check that no call to speech provider .speak( omits the options argument
+  if (!isCheckFile) {
+    const speakCalls = content.matchAll(/(?:provider|this\.browser)\.speak\s*\(([^;]+?)\);/gs);
+    for (const match of speakCalls) {
+      const callArgs = match[1];
+      const hasOptions = /,\s*(\{[^}]*\}|\boptions\b)\s*$/s.test(callArgs.trim());
+      assert.ok(
+        hasOptions,
+        `${rel} calls .speak(${callArgs.trim()}) but omits the required options argument`
+      );
+    }
   }
 }
 

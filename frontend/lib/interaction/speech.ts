@@ -34,7 +34,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
     this.stream?.getTracks().forEach(track => track.stop()); this.stream = null; this.recorder = null;
     if (this.audio) { this.audio.pause(); this.audio.src = ""; this.audio = null; }
   }
-  async speak(text: string, language: string, signal: AbortSignal | undefined, rate = 1, options?: SpeechOptions): Promise<number> {
+  async speak(text: string, language: string, signal: AbortSignal | undefined, rate: number, options: SpeechOptions): Promise<number> {
     if (signal?.aborted) throw new SpeechError("cancelled");
     if (!options || options.readAloudSetting !== true) {
       throw new SpeechError("cancelled");

@@ -9,10 +9,10 @@ import { apiJSON } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import {
   claimAlertForSpeech,
-  filterAlertsToAnnounce,
   getSpokenAlertIds,
   groupAlertsForAnnouncement,
   markAlertsSpoken,
+  planAnnouncements,
   MAX_ALERT_AGE_MS,
   type Announcement,
   type SosAlert,
@@ -44,7 +44,7 @@ export default function SosAlertBanner() {
   const { session } = useAuth();
   const [alerts, setAlerts] = useState<SosAlert[]>([]);
   const [needsInteraction, setNeedsInteraction] = useState(false);
-  const caregiverId = session?.user?.id ?? "default";
+  const caregiverId = session?.user?.id;
 
   const tabIdRef = useRef<string>(
     typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)
@@ -95,8 +95,9 @@ export default function SosAlertBanner() {
         window.clearTimeout(startTimer);
         setNeedsInteraction(false);
         isSpeakingRef.current = true;
-        // Mark as spoken ONLY when utterance start event fires
-        markAlertsSpoken(localStorage, caregiverId, announcement.alertIds);
+        if (caregiverId) {
+          markAlertsSpoken(localStorage, caregiverId, announcement.alertIds);
+        }
         try {
           if (typeof BroadcastChannel !== "undefined") {
             const ch = new BroadcastChannel("cogni-sos-voice");
@@ -171,11 +172,17 @@ export default function SosAlertBanner() {
   }, []);
 
   const load = useCallback(async () => {
+    if (!caregiverId) return;
     try {
       const result = await apiJSON<SosAlert[]>("/sos/alerts?status=open", { authRedirect: false });
       const rows = Array.isArray(result) ? result : [];
       setAlerts(rows);
       notifyNew(rows, t, caregiverId);
+
+      if (rows.length === 0) {
+        isFirstPollRef.current = false;
+        return;
+      }
 
       // Check caregiver voice preference (default on) AND accessibility readAloud (default off)
       const voiceEnabled = localStorage.getItem(`${VOICE_ENABLED_PREFIX}${caregiverId}`) !== "false";
@@ -184,26 +191,31 @@ export default function SosAlertBanner() {
         readAloudSetting: preferences.readAloud,
         forced: false,
       });
-      if (allowedToSpeak && rows.length > 0) {
-        const spokenIds = getSpokenAlertIds(localStorage, caregiverId);
-        const toAnnounce = filterAlertsToAnnounce(rows, spokenIds, {
-          isFirstPoll: isFirstPollRef.current,
-          nowMs: Date.now(),
-        });
 
-        if (toAnnounce.length > 0) {
-          const announcements = groupAlertsForAnnouncement(toAnnounce, t);
-          for (const announcement of announcements) {
-            // Claim each announcement atomically across tabs
-            const wonClaim = await claimAlertForSpeech(
-              localStorage,
-              announcement.alertIds[0],
-              tabIdRef.current,
-              50
-            );
-            if (wonClaim) {
-              speakAnnouncement(announcement);
-            }
+      const { toSpeak, toMarkSeen } = planAnnouncements({
+        alerts: rows,
+        spokenIds: getSpokenAlertIds(localStorage, caregiverId),
+        allowedToSpeak,
+        isFirstPoll: isFirstPollRef.current,
+        nowMs: Date.now(),
+      });
+
+      if (toMarkSeen.length > 0) {
+        markAlertsSpoken(localStorage, caregiverId, toMarkSeen);
+      }
+
+      if (toSpeak.length > 0) {
+        const announcements = groupAlertsForAnnouncement(toSpeak, t);
+        for (const announcement of announcements) {
+          // Claim each announcement atomically across tabs
+          const wonClaim = await claimAlertForSpeech(
+            localStorage,
+            announcement.alertIds[0],
+            tabIdRef.current,
+            50
+          );
+          if (wonClaim) {
+            speakAnnouncement(announcement);
           }
         }
       }

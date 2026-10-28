@@ -32,6 +32,11 @@ export function getPreferenceKey(session: { role?: string; user?: { id: string }
   return "cogniconnect.preferences.v1:public";
 }
 
+export function shouldSyncPreferences(session: { role?: string | null; activePatient?: unknown } | null | undefined): boolean {
+  if (!session?.activePatient) return false;
+  return session.role === "patient_device" || session.role === "self";
+}
+
 export function readPreferences(storageKey = STORAGE_KEY): Preferences {
   try {
     const value = JSON.parse(localStorage.getItem(storageKey) || "{}");
