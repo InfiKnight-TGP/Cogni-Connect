@@ -171,10 +171,12 @@ def _create_alert(test=False, location=None, request_key=None):
                 if changed:
                     _save(path, rows)
                 return _redact_private(latest), None, 200
-            if created > now - COOLDOWN or len(recent) >= RATE_LIMIT:
+            if created > now - COOLDOWN:
                 if changed:
                     _save(path, rows)
                 return None, (jsonify(error='Please wait before sending another alert.'), 429), 429
+
+        email_skipped = bool(test) or len(recent) >= RATE_LIMIT
         created_at = now.isoformat(timespec='seconds').replace('+00:00', 'Z')
         row = {
             'id': uuid.uuid4().hex,
@@ -184,13 +186,16 @@ def _create_alert(test=False, location=None, request_key=None):
             'status': 'open',
             '_ownerHash': session_hash,
         }
+        if email_skipped and not test:
+            row['emailSkipped'] = True
         if request_key and isinstance(request_key, str):
             row['_requestKey'] = request_key
         if location is not None:
             row['location'] = location
         rows.append(row)
         _save(path, rows)
-    if not test:
+
+    if not email_skipped:
         _send_alert_emails(patient_id, row)
     return _redact_private(row), None, 201
 
@@ -273,6 +278,10 @@ def attach_location(alert_id):
                 _save(path, rows)
             return jsonify(error='Too many location update requests for this alert.'), 429
 
+        # Increment _patchAttempts and save at once before validating body
+        target['_patchAttempts'] = patch_attempts + 1
+        _save(path, rows)
+
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return jsonify(error='Location data is required.'), 400
@@ -285,17 +294,13 @@ def attach_location(alert_id):
                 or accuracy is None or isinstance(accuracy, bool) or not isinstance(accuracy, (float, int)) or not 0 <= accuracy <= 100000):
             return jsonify(error='Location is invalid.'), 400
 
-        target['_patchAttempts'] = patch_attempts + 1
-
         # Exactly one successful patch per alert; a second returns 400
         if target.get('location') is not None:
-            _save(path, rows)
             return jsonify(error='Location is already set for this alert.'), 400
 
         # Only within 2 minutes of alert creation
         created = _parse(target.get('createdAt'))
         if not created or created < now - timedelta(minutes=2):
-            _save(path, rows)
             return jsonify(error='Location update window has expired.'), 400
 
         loc_obj = {'lat': lat, 'lng': lng, 'accuracy': accuracy}

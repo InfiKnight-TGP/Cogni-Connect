@@ -9,8 +9,10 @@ import { useAuth } from "@/lib/auth-context";
 import { apiJSON, jsonBody } from "@/lib/api";
 import {
   canUseSos,
+  cleanupHoldOnUnmount,
   holdProgress,
   remainingSeconds,
+  shouldAcceptPosition,
   shouldRetry,
   shouldSend,
   sosHoldReady,
@@ -54,16 +56,23 @@ export default function SosPage() {
   const retryTimeout = useRef<number | null>(null);
   const requestKeyRef = useRef<string>("");
   const cancelledRef = useRef(false);
+  const countdownRunId = useRef(0);
 
   // Clear ONLY the hold interval on unmount.
   // Countdown, retry, and late-location timers intentionally persist across unmount
   // so that leaving the page, locking the screen, or switching tabs during the countdown still sends.
   useEffect(() => {
     return () => {
-      if (holdInterval.current !== null) {
-        window.clearInterval(holdInterval.current);
-        holdInterval.current = null;
-      }
+      const cleaned = cleanupHoldOnUnmount(
+        {
+          holdInterval: holdInterval.current,
+          countdownTimeout: countdownTimeout.current,
+          retryInterval: retryInterval.current,
+          retryTimeout: retryTimeout.current,
+        },
+        window.clearInterval
+      );
+      holdInterval.current = cleaned.holdInterval;
     };
   }, []);
 
@@ -121,11 +130,14 @@ export default function SosPage() {
     positionRef.current = null;
     onLocationArrived.current = null;
 
+    countdownRunId.current += 1;
+    const currentRunId = countdownRunId.current;
+
     // Request position at the START of the countdown with 4s timeout if enabled
     if (includeLocation && typeof navigator !== "undefined" && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         pos => {
-          if (cancelledRef.current) return;
+          if (!shouldAcceptPosition(cancelledRef.current, countdownRunId.current, currentRunId)) return;
           const loc: LatLngAccuracy = {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,

@@ -276,6 +276,7 @@ required.push(
   "Alert sent.",
   "Sending...",
   "Could not send. Try again.",
+  "Try again",
   "Getting your location…",
   "Your caregiver has been alerted",
   "Call 112",

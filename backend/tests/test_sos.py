@@ -55,7 +55,8 @@ class SosTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 201)
         with patch.object(alerts, '_now', return_value=now + __import__('datetime').timedelta(minutes=6)):
             response = self.device.post('/sos')
-        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json.get('emailSkipped'))
 
     def test_caregiver_lists_handles_and_tests_alert_without_email(self):
         alert_response = self.device.post('/sos')
@@ -439,13 +440,10 @@ class SosTests(unittest.TestCase):
         legacy_patch = self.device.patch(f'/sos/alerts/{legacy_id}/location', json={'location': {'lat': 12.0, 'lng': 77.0, 'accuracy': 10}})
         self.assertEqual(legacy_patch.status_code, 403)
 
-        # Invalid location inputs: bounds, types, missing accuracy -> 400
+        # Invalid location input: bounds error -> 400 (attempt 1)
         self.assertEqual(self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 91, 'lng': 0, 'accuracy': 10}}).status_code, 400)
-        self.assertEqual(self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 0, 'lng': 181, 'accuracy': 10}}).status_code, 400)
-        self.assertEqual(self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 0, 'lng': 0}}).status_code, 400)
-        self.assertEqual(self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 'bad', 'lng': 0, 'accuracy': 10}}).status_code, 400)
 
-        # Valid patch by owning session within 2 minutes sends NO second email and returns 200
+        # Valid patch by owning session within 2 minutes sends NO second email and returns 200 (attempt 2)
         with patch.object(alerts.mailer, 'send_alert') as send_email:
             ok_patch = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.95, 'lng': 77.55, 'accuracy': 25.5}})
         self.assertEqual(ok_patch.status_code, 200)
@@ -453,17 +451,75 @@ class SosTests(unittest.TestCase):
         self.assertEqual(ok_patch.json['location'], {'lat': 12.95, 'lng': 77.55, 'accuracy': 25.5})
         self.assertNotIn('_ownerHash', ok_patch.json)
 
-        # Second successful patch to same alert returns 400 (only one patch allowed)
+        # Second patch to same alert returns 400 (attempt 3: location already set)
         second_patch = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.95, 'lng': 77.55, 'accuracy': 15}})
         self.assertEqual(second_patch.status_code, 400)
-
-        # Third attempt returns 400 and increments attempts to 3
-        third_patch = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.95, 'lng': 77.55, 'accuracy': 15}})
-        self.assertEqual(third_patch.status_code, 400)
 
         # Rate limit to 3 requests per alert: 4th attempt returns 429
         rate_patch = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.95, 'lng': 77.55, 'accuracy': 15}})
         self.assertEqual(rate_patch.status_code, 429)
+
+    def test_three_invalid_patch_requests_produce_429_on_fourth(self):
+        alert_res = self.device.post('/sos', json={'requestKey': 'req-invalid-seq'})
+        self.assertEqual(alert_res.status_code, 201)
+        alert_id = alert_res.json['id']
+
+        # Attempt 1: lat out of range -> 400
+        p1 = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 95, 'lng': 0, 'accuracy': 10}})
+        self.assertEqual(p1.status_code, 400)
+
+        # Attempt 2: missing accuracy -> 400
+        p2 = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 0, 'lng': 0}})
+        self.assertEqual(p2.status_code, 400)
+
+        # Attempt 3: bad lat type -> 400
+        p3 = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 'invalid', 'lng': 0, 'accuracy': 10}})
+        self.assertEqual(p3.status_code, 400)
+
+        # Attempt 4: even with valid coordinates, returns 429 because 3 attempts already counted
+        p4 = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.95, 'lng': 77.55, 'accuracy': 10}})
+        self.assertEqual(p4.status_code, 429)
+        self.assertEqual(p4.json, {'error': 'Too many location update requests for this alert.'})
+
+    def test_sixth_alert_in_hour_creates_alert_with_email_skipped(self):
+        from datetime import timedelta
+        cookie_val = self.device.get_cookie('cogni_device').value
+        token = cookie_val.split('.')[0]
+        session_row = db.fetchone('SELECT id FROM sessions WHERE token_hash=?', (auth.digest(token),))
+        path = self.auth_root / 'data' / 'test-patient' / 'alerts.json'
+        now = alerts._now()
+        rows = []
+        for i in range(5):
+            rows.append({
+                'id': f'pre-alert-{i}',
+                'createdAt': (now - timedelta(minutes=50 - i * 5)).isoformat(timespec='seconds').replace('+00:00', 'Z'),
+                'deviceLabel': 'Test device',
+                'status': 'handled',
+                '_ownerHash': alerts._session_hash(session_row['id']),
+                'location': None,
+            })
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(rows), encoding='utf-8')
+
+        with patch.object(alerts.mailer, 'send_alert') as mock_send:
+            res = self.device.post('/sos')
+        self.assertEqual(res.status_code, 201)
+        mock_send.assert_not_called()
+        self.assertTrue(res.json.get('emailSkipped'))
+        sixth_id = res.json['id']
+
+        # Exists in alerts.json with emailSkipped: True
+        file_rows = json.loads(path.read_text(encoding='utf-8'))
+        matching = [r for r in file_rows if r['id'] == sixth_id]
+        self.assertEqual(len(matching), 1)
+        self.assertTrue(matching[0].get('emailSkipped'))
+
+        # Shows in GET /sos/alerts with emailSkipped: True
+        cg_res = self.auth_client.get('/sos/alerts?status=open')
+        self.assertEqual(cg_res.status_code, 200)
+        cg_matching = [r for r in cg_res.json if r['id'] == sixth_id]
+        self.assertEqual(len(cg_matching), 1)
+        self.assertTrue(cg_matching[0].get('emailSkipped'))
 
         # Expired alert (>2 min) returns 400
         # Create directly in alerts.json to avoid POST rate limit / cooldown

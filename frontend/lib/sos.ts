@@ -34,3 +34,25 @@ export function canUseSos(role: string | null | undefined) {
   // Patient logins and paired devices share this session role. Self-care does not.
   return role === "patient_device";
 }
+
+export function cleanupHoldOnUnmount<T extends { holdInterval: number | null }>(
+  timers: T,
+  clearIntervalFn: (id: number) => void = clearInterval
+): T {
+  if (timers.holdInterval !== null) {
+    clearIntervalFn(timers.holdInterval);
+  }
+  return {
+    ...timers,
+    holdInterval: null,
+  };
+}
+
+export function shouldAcceptPosition(
+  cancelled: boolean,
+  currentRunId: number,
+  capturedRunId: number
+): boolean {
+  return !cancelled && currentRunId === capturedRunId;
+}
+

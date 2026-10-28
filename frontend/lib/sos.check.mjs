@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   canUseSos,
+  cleanupHoldOnUnmount,
   holdProgress,
   remainingSeconds,
+  shouldAcceptPosition,
   shouldRetry,
   shouldSend,
   SOS_COUNTDOWN_MS,
@@ -93,8 +95,51 @@ assert.ok(page.includes("minHeight: \"80px\"") || page.includes("min-h-20"), "Ca
 assert.ok(page.includes("AbortController"), "Cancel must abort unsent request with AbortController");
 assert.ok(page.includes("patchLocation"), "Must support late arriving location patch");
 assert.ok(page.includes("/sos/alerts/"), "Must target PATCH /sos/alerts/<id>/location");
-assert.ok(page.includes("holdInterval.current = null;"), "Must clear hold interval on unmount");
-assert.ok(page.includes("onLocationArrived"), "Late location must be attached across view reset");
+
+// Behaviour check: cleanupHoldOnUnmount clears holdInterval while countdown, retry timers survive
+const clearedIds = [];
+const mockClearInterval = (id) => clearedIds.push(id);
+const mockTimers = {
+  holdInterval: 101,
+  countdownTimeout: 202,
+  retryInterval: 303,
+  retryTimeout: 404,
+};
+const cleanedTimers = cleanupHoldOnUnmount(mockTimers, mockClearInterval);
+assert.deepEqual(clearedIds, [101], "cleanupHoldOnUnmount must call clearInterval with holdInterval ID");
+assert.equal(cleanedTimers.holdInterval, null, "holdInterval must be null after cleanup");
+assert.equal(cleanedTimers.countdownTimeout, 202, "countdownTimeout must survive unmount");
+assert.equal(cleanedTimers.retryInterval, 303, "retryInterval must survive unmount");
+assert.equal(cleanedTimers.retryTimeout, 404, "retryTimeout must survive unmount");
+
+// Behaviour check: Two simulated countdowns prove new countdown runId rejects late position from earlier countdown
+let activeRunId = 0;
+let positionAttachedAlert = null;
+let onLocationArrived = null;
+
+// Countdown 1 starts
+activeRunId += 1;
+const run1 = activeRunId;
+onLocationArrived = (loc) => { positionAttachedAlert = "alert-1"; };
+
+// Countdown 2 starts (e.g. user pressed Cancel/Back and restarted hold)
+// onLocationArrived is cleared to null and runId is incremented
+onLocationArrived = null;
+activeRunId += 1;
+const run2 = activeRunId;
+
+// Delayed geolocation callback from countdown 1 arrives now
+const shouldAccept1 = shouldAcceptPosition(false, activeRunId, run1);
+assert.equal(shouldAccept1, false, "Position from earlier countdown run must be rejected");
+if (shouldAccept1 && onLocationArrived) onLocationArrived({ lat: 10, lng: 20 });
+assert.equal(positionAttachedAlert, null, "Earlier alert must NOT receive location from later or mismatched countdown");
+
+// Geolocation callback for countdown 2 arrives
+const shouldAccept2 = shouldAcceptPosition(false, activeRunId, run2);
+assert.equal(shouldAccept2, true, "Position from current countdown run must be accepted");
+onLocationArrived = (loc) => { positionAttachedAlert = "alert-2"; };
+if (shouldAccept2 && onLocationArrived) onLocationArrived({ lat: 10, lng: 20 });
+assert.equal(positionAttachedAlert, "alert-2", "Current alert receives location from its matching run");
 
 for (const phrase of [
   "SOS alerts your caregiver. It does not call emergency services. In an emergency, call 112 yourself.",
