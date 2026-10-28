@@ -57,6 +57,7 @@ platform-data/
 
 docs/games_export.txt
 docs/auth_export.txt
+docs/export/
 
 # Agent Instructions
 AGENTS.md
