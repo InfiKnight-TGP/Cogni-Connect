@@ -29,11 +29,17 @@ class SosTests(unittest.TestCase):
         first = self.device.post('/sos', json={'location': {'lat': 12.9, 'lng': 77.5, 'accuracy': 30}})
         again = self.device.post('/sos')
         self.assertEqual(first.status_code, 201)
-        self.assertEqual(again.status_code, 201)
+        self.assertEqual(again.status_code, 200)
         self.assertEqual(first.json['id'], again.json['id'])
         stored = json.loads((self.auth_root / 'data' / 'test-patient' / 'alerts.json').read_text(encoding='utf-8'))
         self.assertEqual(stored[0]['location']['lat'], 12.9)
-        self.assertIn('_sessionId', stored[0])
+        self.assertIn('_ownerHash', stored[0])
+        self.assertNotIn('_sessionId', stored[0])
+        # Verify no raw session id exists in stored alert
+        cookie_val = self.device.get_cookie('cogni_device').value
+        token = cookie_val.split('.')[0]
+        session_row = db.fetchone('SELECT id FROM sessions WHERE token_hash=?', (auth.digest(token),))
+        self.assertNotIn(session_row['id'], json.dumps(stored[0]))
 
     def test_rate_limit_survives_storage_reload_and_allows_at_most_five_per_hour(self):
         now = alerts._now()
@@ -141,10 +147,12 @@ class SosTests(unittest.TestCase):
         # - an alert older than 90 days (should be deleted)
         # - an alert older than 30 days with location (location should be removed)
         # - a fresh alert with location (should be untouched)
+        # - an old-format alert with raw _sessionId and no _ownerHash (should be migrated)
         rows = [
             {'id': 'expired-alert', 'createdAt': (now - timedelta(days=95)).isoformat(), 'status': 'open'},
             {'id': 'expired-loc', 'createdAt': (now - timedelta(days=35)).isoformat(), 'status': 'open', 'location': {'lat': 10, 'lng': 20}},
             {'id': 'fresh-alert', 'createdAt': (now - timedelta(days=2)).isoformat(), 'status': 'open', 'location': {'lat': 11, 'lng': 21}},
+            {'id': 'legacy-session-alert', 'createdAt': (now - timedelta(days=1)).isoformat(), 'status': 'open', '_sessionId': 'old-sess-123'},
         ]
         alerts_path = patient_dir / 'alerts.json'
         alerts_path.write_text(json.dumps(rows), encoding='utf-8')
@@ -169,11 +177,16 @@ class SosTests(unittest.TestCase):
         self.assertNotIn('expired-alert', cleaned_ids)
         self.assertIn('expired-loc', cleaned_ids)
         self.assertIn('fresh-alert', cleaned_ids)
+        self.assertIn('legacy-session-alert', cleaned_ids)
         for r in cleaned_rows:
             if r['id'] == 'expired-loc':
                 self.assertNotIn('location', r)
             if r['id'] == 'fresh-alert':
                 self.assertIn('location', r)
+            if r['id'] == 'legacy-session-alert':
+                self.assertNotIn('_sessionId', r)
+                self.assertEqual(r.get('_ownerHash'), alerts._session_hash('old-sess-123'))
+        self.assertNotIn('old-sess-123', alerts_path.read_text(encoding='utf-8'))
 
         # Verify corrupt file is untouched and did not crash the sweep
         self.assertEqual(corrupt_path.read_text(encoding='utf-8'), '{invalid-json-content')
@@ -376,9 +389,9 @@ class SosTests(unittest.TestCase):
         self.assertNotIn('_ownerHash', matching)
         self.assertNotIn('_sessionId', matching)
 
-        # Idempotency: same requestKey from same session within 10 min returns same alert
+        # Idempotency: same requestKey from same session within 10 min returns same alert with 200
         idempotent_res = self.device.post('/sos', json={'requestKey': 'req-key-1'})
-        self.assertEqual(idempotent_res.status_code, 201)
+        self.assertEqual(idempotent_res.status_code, 200)
         self.assertEqual(idempotent_res.json['id'], alert_id)
 
         # Caregiver or unauthenticated cannot PATCH location (403)
@@ -401,16 +414,19 @@ class SosTests(unittest.TestCase):
         self.assertEqual(p2_patch.status_code, 404)
 
         # Another session for the SAME patient gets 403 (alert owned by first session)
+        # Verify it does NOT increment _patchAttempts
         with app.api.app_context():
             token_other_sess, _ = auth.new_session('patient_device', patient_id='test-patient')
         other_sess_client = app.api.test_client()
         other_sess_client.set_cookie(auth.COOKIES['patient_device'], token_other_sess)
         other_sess_patch = other_sess_client.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.0, 'lng': 77.0, 'accuracy': 10}})
         self.assertEqual(other_sess_patch.status_code, 403)
-
-        # Alert without _ownerHash (legacy pre-commit alert) gets 403
         path = self.auth_root / 'data' / 'test-patient' / 'alerts.json'
         rows = json.loads(path.read_text(encoding='utf-8'))
+        target_alert = [r for r in rows if r['id'] == alert_id][0]
+        self.assertEqual(target_alert.get('_patchAttempts', 0), 0)
+
+        # Alert without _ownerHash and without _sessionId gets 403
         legacy_id = 'legacy-alert-id'
         rows.append({
             'id': legacy_id,
@@ -441,9 +457,11 @@ class SosTests(unittest.TestCase):
         second_patch = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.95, 'lng': 77.55, 'accuracy': 15}})
         self.assertEqual(second_patch.status_code, 400)
 
-        # Rate limit to 3 requests per alert
-        # We did: 4 invalid attempts + 1 valid attempt = 5 attempts on alert_id already
-        # Any further request returns 429
+        # Third attempt returns 400 and increments attempts to 3
+        third_patch = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.95, 'lng': 77.55, 'accuracy': 15}})
+        self.assertEqual(third_patch.status_code, 400)
+
+        # Rate limit to 3 requests per alert: 4th attempt returns 429
         rate_patch = self.device.patch(f'/sos/alerts/{alert_id}/location', json={'location': {'lat': 12.95, 'lng': 77.55, 'accuracy': 15}})
         self.assertEqual(rate_patch.status_code, 429)
 

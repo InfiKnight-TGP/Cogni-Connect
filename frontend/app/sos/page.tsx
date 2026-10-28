@@ -11,11 +11,13 @@ import {
   canUseSos,
   holdProgress,
   remainingSeconds,
+  shouldRetry,
   shouldSend,
   sosHoldReady,
   SOS_COUNTDOWN_MS,
   SOS_HOLD_MS,
 } from "@/lib/sos";
+import { ApiError } from "@/lib/api";
 
 const soon = ["Call 112", "Call my contacts", "SOS for self-care accounts", "Text message alerts"] as const;
 const LOCATION_STORAGE_KEY = "cogni_sos_include_location";
@@ -47,12 +49,23 @@ export default function SosPage() {
   const countdownTimeout = useRef<number | null>(null);
   const abortController = useRef<AbortController | null>(null);
   const positionRef = useRef<LatLngAccuracy | null>(null);
-  const locationResolved = useRef(false);
-  const alertIdRef = useRef<string | null>(null);
+  const onLocationArrived = useRef<((loc: LatLngAccuracy) => void) | null>(null);
   const retryInterval = useRef<number | null>(null);
   const retryTimeout = useRef<number | null>(null);
   const requestKeyRef = useRef<string>("");
   const cancelledRef = useRef(false);
+
+  // Clear ONLY the hold interval on unmount.
+  // Countdown, retry, and late-location timers intentionally persist across unmount
+  // so that leaving the page, locking the screen, or switching tabs during the countdown still sends.
+  useEffect(() => {
+    return () => {
+      if (holdInterval.current !== null) {
+        window.clearInterval(holdInterval.current);
+        holdInterval.current = null;
+      }
+    };
+  }, []);
 
   // Load remembered includeLocation preference per device
   useEffect(() => {
@@ -106,8 +119,7 @@ export default function SosPage() {
     countdownStart.current = performance.now();
     requestKeyRef.current = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     positionRef.current = null;
-    locationResolved.current = false;
-    alertIdRef.current = null;
+    onLocationArrived.current = null;
 
     // Request position at the START of the countdown with 4s timeout if enabled
     if (includeLocation && typeof navigator !== "undefined" && navigator.geolocation) {
@@ -120,19 +132,15 @@ export default function SosPage() {
             accuracy: pos.coords.accuracy,
           };
           positionRef.current = loc;
-          locationResolved.current = true;
-          // If alert is already sent and waiting for late location
-          if (alertIdRef.current) {
-            void patchLocation(alertIdRef.current, loc);
+          if (onLocationArrived.current) {
+            onLocationArrived.current(loc);
           }
         },
         () => {
-          locationResolved.current = true;
+          // Geolocation failed or timed out; proceed without location
         },
         { enableHighAccuracy: false, maximumAge: 0, timeout: 4000 }
       );
-    } else {
-      locationResolved.current = true;
     }
 
     // Interval to update visible countdown
@@ -164,8 +172,7 @@ export default function SosPage() {
       abortController.current = null;
     }
     positionRef.current = null;
-    locationResolved.current = true;
-    alertIdRef.current = null;
+    onLocationArrived.current = null;
     setInCountdown(false);
     setStatus("idle");
     setProgress(0);
@@ -193,18 +200,32 @@ export default function SosPage() {
     setStatus("sending");
     setStatusMessage(t("Sending..."));
 
+    // Keep alert id and location in local variables for this send operation
+    const requestKey = requestKeyRef.current;
+    let localAlertId: string | null = null;
+    let locationAttached = false;
     const sendStartTime = Date.now();
     let sentSuccessfully = false;
+
+    // Attach late-arriving location listener in closure so Back button cannot drop it
+    onLocationArrived.current = (loc: LatLngAccuracy) => {
+      if (localAlertId && !locationAttached) {
+        locationAttached = true;
+        void patchLocation(localAlertId, loc);
+      }
+    };
 
     async function attemptPost(): Promise<boolean> {
       if (cancelledRef.current || sentSuccessfully) return true;
       try {
         abortController.current = new AbortController();
         const payload: Record<string, unknown> = {
-          requestKey: requestKeyRef.current,
+          requestKey,
         };
-        if (positionRef.current) {
-          payload.location = positionRef.current;
+        const currentLoc = positionRef.current;
+        if (currentLoc) {
+          payload.location = currentLoc;
+          locationAttached = true;
         }
         const res = await apiJSON<{ id: string }>("/sos", {
           ...jsonBody(payload),
@@ -218,29 +239,52 @@ export default function SosPage() {
         if (retryTimeout.current !== null) window.clearTimeout(retryTimeout.current);
         retryTimeout.current = null;
 
-        alertIdRef.current = res.id;
+        localAlertId = res.id;
         setStatus("sent");
 
-        // If location arrived while alert was sending without location, send patch
-        if (!payload.location && positionRef.current) {
-          void patchLocation(res.id, positionRef.current);
+        // If location arrived while alert was in flight without location, patch it now
+        if (!locationAttached && positionRef.current) {
+          locationAttached = true;
+          void patchLocation(localAlertId, positionRef.current);
         }
         return true;
-      } catch {
+      } catch (err: unknown) {
         if (cancelledRef.current) return true;
+        // Treat AbortError as a cancel, not a failure
+        if (err instanceof Error && err.name === "AbortError") {
+          return true;
+        }
+
+        const status = err instanceof ApiError ? err.status : undefined;
+        if (!shouldRetry(status)) {
+          // 4xx client errors (e.g. 403, 400, 429) stop retrying immediately
+          if (retryInterval.current !== null) window.clearInterval(retryInterval.current);
+          retryInterval.current = null;
+          if (retryTimeout.current !== null) window.clearTimeout(retryTimeout.current);
+          retryTimeout.current = null;
+          setStatus("failed");
+          setStatusMessage(t("Could not send. Try again."));
+          return true;
+        }
+
         setStatus("sending");
         setStatusMessage(t("Sending..."));
         return false;
       }
     }
 
-    void attemptPost().then(ok => {
-      if (ok || cancelledRef.current) return;
+    void attemptPost().then(done => {
+      if (done || cancelledRef.current) return;
 
-      // Retry every 5s for up to 2 minutes
+      // Retry every 5s for up to 2 minutes on network failures and 5xx
       retryInterval.current = window.setInterval(() => {
         if (cancelledRef.current || sentSuccessfully) return;
-        void attemptPost();
+        void attemptPost().then(finished => {
+          if (finished && retryInterval.current !== null) {
+            window.clearInterval(retryInterval.current);
+            retryInterval.current = null;
+          }
+        });
       }, 5000);
 
       retryTimeout.current = window.setTimeout(() => {
@@ -249,12 +293,15 @@ export default function SosPage() {
         retryInterval.current = null;
         setStatus("failed");
         setStatusMessage(t("Could not send. Try again."));
-      }, 120000 - (Date.now() - sendStartTime));
+      }, Math.max(1000, 120000 - (Date.now() - sendStartTime)));
     });
   }
 
+  // Back button on result screen resets view state only without aborting late location patch
   function resetToSos() {
-    cancel();
+    setStatus("idle");
+    setProgress(0);
+    setStatusMessage("");
   }
 
   // Full screen countdown view

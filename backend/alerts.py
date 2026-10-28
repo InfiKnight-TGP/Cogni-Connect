@@ -67,12 +67,21 @@ def _clean(rows, now):
     changed = False
     kept = []
     for row in rows:
-        created = _parse(row.get('createdAt')) if isinstance(row, dict) else None
+        if not isinstance(row, dict):
+            changed = True
+            continue
+        created = _parse(row.get('createdAt'))
         if not created or created < now - ALERT_RETENTION:
             changed = True
             continue
         if row.get('location') and created < now - LOCATION_RETENTION:
             row = {key: value for key, value in row.items() if key != 'location'}
+            changed = True
+        # Migration: convert raw _sessionId to _ownerHash and delete _sessionId
+        if '_sessionId' in row:
+            if not row.get('_ownerHash') and row['_sessionId']:
+                row['_ownerHash'] = _session_hash(row['_sessionId'])
+            del row['_sessionId']
             changed = True
         kept.append(row)
     return kept, changed
@@ -151,7 +160,7 @@ def _create_alert(test=False, location=None, request_key=None):
                     if created and created > now - timedelta(minutes=10):
                         if changed:
                             _save(path, rows)
-                        return _redact_private(row), None
+                        return _redact_private(row), None, 200
 
         recent = [row for row in rows if (row.get('_ownerHash') == session_hash or row.get('_sessionId') == session['id'])
                   and (created := _parse(row.get('createdAt'))) and created > now - RATE_WINDOW]
@@ -161,11 +170,11 @@ def _create_alert(test=False, location=None, request_key=None):
             if latest.get('status') == 'open' and created > now - COOLDOWN:
                 if changed:
                     _save(path, rows)
-                return _redact_private(latest), None
+                return _redact_private(latest), None, 200
             if created > now - COOLDOWN or len(recent) >= RATE_LIMIT:
                 if changed:
                     _save(path, rows)
-                return None, (jsonify(error='Please wait before sending another alert.'), 429)
+                return None, (jsonify(error='Please wait before sending another alert.'), 429), 429
         created_at = now.isoformat(timespec='seconds').replace('+00:00', 'Z')
         row = {
             'id': uuid.uuid4().hex,
@@ -173,7 +182,6 @@ def _create_alert(test=False, location=None, request_key=None):
             'deviceLabel': session.get('label') or 'Patient device',
             'test': bool(test),
             'status': 'open',
-            '_sessionId': session['id'],
             '_ownerHash': session_hash,
         }
         if request_key and isinstance(request_key, str):
@@ -184,7 +192,7 @@ def _create_alert(test=False, location=None, request_key=None):
         _save(path, rows)
     if not test:
         _send_alert_emails(patient_id, row)
-    return _redact_private(row), None
+    return _redact_private(row), None, 201
 
 
 @bp.post('/sos')
@@ -212,8 +220,8 @@ def create_alert():
     request_key = data.get('requestKey')
     if request_key is not None and not isinstance(request_key, str):
         return jsonify(error='Invalid request key.'), 400
-    row, error = _create_alert(location=location, request_key=request_key)
-    return error or (jsonify(row), 201)
+    row, error, status = _create_alert(location=location, request_key=request_key)
+    return error or (jsonify(row), status)
 
 
 @bp.route('/sos/alerts/<alert_id>/location', methods=['PATCH', 'POST'])
@@ -229,18 +237,6 @@ def attach_location(alert_id):
     if not patient_id:
         raise NoActivePatient
     path = _alert_file(patient_id)
-
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify(error='Location data is required.'), 400
-    location = data.get('location')
-    if not isinstance(location, dict):
-        return jsonify(error='Location is invalid.'), 400
-    lat, lng, accuracy = location.get('lat'), location.get('lng'), location.get('accuracy')
-    if (isinstance(lat, bool) or not isinstance(lat, (float, int)) or not -90 <= lat <= 90
-            or isinstance(lng, bool) or not isinstance(lng, (float, int)) or not -180 <= lng <= 180
-            or accuracy is None or isinstance(accuracy, bool) or not isinstance(accuracy, (float, int)) or not 0 <= accuracy <= 100000):
-        return jsonify(error='Location is invalid.'), 400
 
     now = _now()
     session_hash = _session_hash(session['id'])
@@ -258,23 +254,38 @@ def attach_location(alert_id):
                 _save(path, rows)
             return jsonify(error='Alert not found.'), 404
 
-        # Rate limit to 3 requests per alert
+        # Check alert ownership first: non-owner must not change _patchAttempts
+        owner_hash = target.get('_ownerHash')
+        if not owner_hash:
+            if changed:
+                _save(path, rows)
+            return jsonify(error='Alert has no owner hash or was created by another session.'), 403
+
+        if owner_hash != session_hash:
+            if changed:
+                _save(path, rows)
+            return jsonify(error='You do not own this alert.'), 403
+
+        # Rate limit to 3 requests per alert (counted only for the owner)
         patch_attempts = target.get('_patchAttempts', 0)
         if patch_attempts >= 3:
             if changed:
                 _save(path, rows)
             return jsonify(error='Too many location update requests for this alert.'), 429
+
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify(error='Location data is required.'), 400
+        location = data.get('location')
+        if not isinstance(location, dict):
+            return jsonify(error='Location is invalid.'), 400
+        lat, lng, accuracy = location.get('lat'), location.get('lng'), location.get('accuracy')
+        if (isinstance(lat, bool) or not isinstance(lat, (float, int)) or not -90 <= lat <= 90
+                or isinstance(lng, bool) or not isinstance(lng, (float, int)) or not -180 <= lng <= 180
+                or accuracy is None or isinstance(accuracy, bool) or not isinstance(accuracy, (float, int)) or not 0 <= accuracy <= 100000):
+            return jsonify(error='Location is invalid.'), 400
+
         target['_patchAttempts'] = patch_attempts + 1
-
-        # Check alert ownership: alert created before this commit has no _ownerHash -> 403
-        owner_hash = target.get('_ownerHash')
-        if not owner_hash:
-            _save(path, rows)
-            return jsonify(error='Alert has no owner hash or was created by another session.'), 403
-
-        if owner_hash != session_hash:
-            _save(path, rows)
-            return jsonify(error='You do not own this alert.'), 403
 
         # Exactly one successful patch per alert; a second returns 400
         if target.get('location') is not None:
@@ -346,8 +357,8 @@ def create_test_alert():
     if not g.get('active_patient'):
         raise NoActivePatient
     # Demo test messages stay local and never reach caregivers by email.
-    row, error = _create_alert(test=True)
-    return error or (jsonify(row), 201)
+    row, error, status = _create_alert(test=True)
+    return error or (jsonify(row), status)
 
 
 def sweep_alerts_on_startup(data_root):

@@ -4,6 +4,7 @@ import {
   canUseSos,
   holdProgress,
   remainingSeconds,
+  shouldRetry,
   shouldSend,
   SOS_COUNTDOWN_MS,
   SOS_HOLD_MS,
@@ -47,6 +48,20 @@ assert.equal(shouldSend(0, 5000, 5000), true);
 assert.equal(shouldSend(0, 6000, 5000), true);
 assert.equal(shouldSend(Number.NaN, 5000, 5000), false);
 
+// shouldRetry (status)
+assert.equal(shouldRetry(undefined), true);
+assert.equal(shouldRetry(null), true);
+assert.equal(shouldRetry(0), true);
+assert.equal(shouldRetry(500), true);
+assert.equal(shouldRetry(502), true);
+assert.equal(shouldRetry(503), true);
+assert.equal(shouldRetry(400), false);
+assert.equal(shouldRetry(401), false);
+assert.equal(shouldRetry(403), false);
+assert.equal(shouldRetry(404), false);
+assert.equal(shouldRetry(429), false);
+assert.equal(shouldRetry(200), false);
+
 // Simulated timer sequence (e.g. simulated clock ticks)
 let simStart = 1000;
 assert.equal(remainingSeconds(simStart, simStart, 5000), 5);
@@ -78,6 +93,8 @@ assert.ok(page.includes("minHeight: \"80px\"") || page.includes("min-h-20"), "Ca
 assert.ok(page.includes("AbortController"), "Cancel must abort unsent request with AbortController");
 assert.ok(page.includes("patchLocation"), "Must support late arriving location patch");
 assert.ok(page.includes("/sos/alerts/"), "Must target PATCH /sos/alerts/<id>/location");
+assert.ok(page.includes("holdInterval.current = null;"), "Must clear hold interval on unmount");
+assert.ok(page.includes("onLocationArrived"), "Late location must be attached across view reset");
 
 for (const phrase of [
   "SOS alerts your caregiver. It does not call emergency services. In an emergency, call 112 yourself.",

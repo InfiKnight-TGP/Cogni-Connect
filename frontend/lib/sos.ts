@@ -23,6 +23,13 @@ export function shouldSend(startMs: number, nowMs: number, totalMs = SOS_COUNTDO
   return nowMs - startMs >= totalMs;
 }
 
+export function shouldRetry(status?: number | null) {
+  if (status === undefined || status === null || status === 0 || !Number.isFinite(status)) {
+    return true; // Network failure or client error without HTTP status
+  }
+  return status >= 500 && status <= 599; // Only 5xx server errors
+}
+
 export function canUseSos(role: string | null | undefined) {
   // Patient logins and paired devices share this session role. Self-care does not.
   return role === "patient_device";
