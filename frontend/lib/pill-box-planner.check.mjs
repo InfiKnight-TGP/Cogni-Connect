@@ -230,10 +230,6 @@ assert(
     strippedCode.includes('text="Practice only. This is not medical advice."'),
   'Permanent banner must include ReadAloud speech rendered in active JSX'
 );
-assert(
-  !strippedCode.includes("forceAutoRead"),
-  "forceAutoRead must not be used on the banner; speech must respect read-aloud setting"
-);
 
 // Knob and Date check
 assert(

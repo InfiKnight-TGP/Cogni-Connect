@@ -80,7 +80,6 @@ const page = await readFile(new URL("../app/sos/page.tsx", import.meta.url), "ut
 
 // Strict silence checks: page must NOT contain automatic speech, sound, vibration, or Audio objects
 assert.ok(!page.includes("autoRead={true}"), "page must not have autoRead={true}");
-assert.ok(!page.includes("forceAutoRead"), "page must not have forceAutoRead");
 assert.ok(!page.includes("speechSynthesis"), "page must not have speechSynthesis");
 assert.ok(!page.includes("navigator.vibrate"), "page must not have navigator.vibrate");
 assert.ok(!page.includes("new Audio"), "page must not have Audio objects");

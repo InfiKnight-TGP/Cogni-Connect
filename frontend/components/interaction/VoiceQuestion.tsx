@@ -70,7 +70,7 @@ export function VoiceQuestion({
   const afterRead = useCallback(() => { if (automaticListen) void listenRef.current(); }, [automaticListen]);
 
   return <div className="my-3 space-y-2">
-    <ReadAloud text={question} options={options.map(option => option.label)} autoRead={!disabled && (preferences.readAloud || caregiver || automaticListen)} forceAutoRead={automaticListen} onReadComplete={afterRead} />
+    <ReadAloud text={question} options={options.map(option => option.label)} autoRead={!disabled && preferences.readAloud} onReadComplete={afterRead} />
     {allowAnswer && (preferences.answerBySpeaking || caregiver) && <Button type="button" variant="outline" className="min-h-12 max-w-full whitespace-normal text-base" onClick={() => void listen()} disabled={listening || disabled}>
       <Mic className="mr-2 h-5 w-5" />{t(listening ? "Listening…" : "Speak an answer")}
     </Button>}

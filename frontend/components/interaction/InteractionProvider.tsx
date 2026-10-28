@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { translate, type Locale } from "@/lib/interaction/locale";
 import { apiFetch, apiJSON, API_URL, ApiError } from "@/lib/api";
 import { useCaregiver } from "@/lib/mode";
-import { DEFAULT_PREFERENCES, readPreferences, textSizePixels, writePreferences, type Preferences } from "@/lib/interaction/preferences";
+import { DEFAULT_PREFERENCES, getPreferenceKey, readPreferences, textSizePixels, writePreferences, type Preferences } from "@/lib/interaction/preferences";
 import { WhisperSpeechProvider, type SpeechProvider } from "@/lib/interaction/speech";
 import { usePathname } from "next/navigation";
 import { cancelSpeechSession } from "./speechSession";
@@ -38,6 +38,8 @@ export function normalizeLanguage(value: unknown): LanguageCode {
     : "en";
 }
 
+export { getPreferenceKey } from "@/lib/interaction/preferences";
+
 export function InteractionProvider({
   locales,
   fontClassNames,
@@ -59,7 +61,7 @@ export function InteractionProvider({
   const [caregiver, caregiverReady] = useCaregiver();
   const pathname = usePathname();
   const { session } = useAuth();
-  const preferenceKey = session?.activePatient?.id ? `cogniconnect.preferences.v1:${session.activePatient.id}` : "cogniconnect.preferences.v1:public";
+  const preferenceKey = getPreferenceKey(session);
   const languageKey = `cogni-language:${session?.activePatient?.id ?? "public"}`;
   const locale = locales.find((item) => item.code === language) ?? locales.find((item) => item.code === "en")!;
   const englishLocale = locales.find((item) => item.code === "en")!;

@@ -21,6 +21,17 @@ export const DEFAULT_PREFERENCES: Preferences = {
 };
 
 const STORAGE_KEY = "cogniconnect.preferences.v1";
+
+export function getPreferenceKey(session: { role?: string; user?: { id: string } | null; activePatient?: { id: string } | null } | null): string {
+  if (session?.role === "caregiver") {
+    return `cogniconnect.preferences.caregiver.v1:${session.user?.id ?? "default"}`;
+  }
+  if (session?.activePatient?.id) {
+    return `cogniconnect.preferences.v1:${session.activePatient.id}`;
+  }
+  return "cogniconnect.preferences.v1:public";
+}
+
 export function readPreferences(storageKey = STORAGE_KEY): Preferences {
   try {
     const value = JSON.parse(localStorage.getItem(storageKey) || "{}");

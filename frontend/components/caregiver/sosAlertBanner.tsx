@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BellRing } from "lucide-react";
-import { useSpeech, useTranslate } from "@/components/interaction/InteractionProvider";
+import { usePreferences, useSpeech, useTranslate } from "@/components/interaction/InteractionProvider";
+import { shouldSpeak } from "@/lib/interaction/speech";
 import { apiJSON } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -39,6 +40,7 @@ function notifyNew(alerts: SosAlert[], t: (phrase: string) => string, caregiverI
 export default function SosAlertBanner() {
   const { t } = useTranslate();
   const { speechLanguage } = useSpeech();
+  const { preferences } = usePreferences();
   const { session } = useAuth();
   const [alerts, setAlerts] = useState<SosAlert[]>([]);
   const [needsInteraction, setNeedsInteraction] = useState(false);
@@ -52,6 +54,10 @@ export default function SosAlertBanner() {
   const pendingAnnouncementRef = useRef<Announcement | null>(null);
 
   const speakAnnouncement = useCallback((announcement: Announcement) => {
+    if (!shouldSpeak({ role: "caregiver", readAloudSetting: preferences.readAloud, forced: false })) {
+      pendingAnnouncementRef.current = null;
+      return;
+    }
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     const now = Date.now();
     if (now - announcement.createdAtMs > MAX_ALERT_AGE_MS) {
@@ -124,7 +130,7 @@ export default function SosAlertBanner() {
     } catch {
       isSpeakingRef.current = false;
     }
-  }, [caregiverId, speechLanguage]);
+  }, [caregiverId, speechLanguage, preferences.readAloud]);
 
   // Unlock audio on first user interaction if blocked
   useEffect(() => {
@@ -171,9 +177,14 @@ export default function SosAlertBanner() {
       setAlerts(rows);
       notifyNew(rows, t, caregiverId);
 
-      // Check caregiver voice preference (default on)
+      // Check caregiver voice preference (default on) AND accessibility readAloud (default off)
       const voiceEnabled = localStorage.getItem(`${VOICE_ENABLED_PREFIX}${caregiverId}`) !== "false";
-      if (voiceEnabled && rows.length > 0) {
+      const allowedToSpeak = voiceEnabled && shouldSpeak({
+        role: "caregiver",
+        readAloudSetting: preferences.readAloud,
+        forced: false,
+      });
+      if (allowedToSpeak && rows.length > 0) {
         const spokenIds = getSpokenAlertIds(localStorage, caregiverId);
         const toAnnounce = filterAlertsToAnnounce(rows, spokenIds, {
           isFirstPoll: isFirstPollRef.current,
@@ -201,7 +212,7 @@ export default function SosAlertBanner() {
       /* The banner recovers on its next poll. */
       isFirstPollRef.current = false;
     }
-  }, [caregiverId, speakAnnouncement, t]);
+  }, [caregiverId, preferences.readAloud, speakAnnouncement, t]);
 
   useEffect(() => {
     if (session?.role !== "caregiver") return;

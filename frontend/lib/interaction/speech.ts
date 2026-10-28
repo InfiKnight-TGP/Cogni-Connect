@@ -1,12 +1,19 @@
 import { apiFetch, API_URL } from "@/lib/api";
+import { shouldSpeak, type UserRole } from "./speech-gate";
 
+export { shouldSpeak, type UserRole };
 export type SpeechFailure = "unsupported" | "offline" | "permission" | "microphone" | "language" | "silence" | "cancelled";
 export class SpeechError extends Error {
-  constructor(readonly reason: SpeechFailure) { super(reason); }
+  readonly reason: SpeechFailure;
+  constructor(reason: SpeechFailure) {
+    super(reason);
+    this.reason = reason;
+  }
 }
 export type SpeechResult = { text: string; confidence: number; speechStartedAt: number | null };
+
 export interface SpeechProvider {
-  speak(text: string, language: string, signal?: AbortSignal, rate?: number): Promise<number>;
+  speak(text: string, language: string, signal?: AbortSignal, rate?: number, options?: { role?: string | null; readAloudSetting?: boolean | null }): Promise<number>;
   listen(language: string, signal?: AbortSignal): Promise<SpeechResult>;
   cancel(): void;
 }
@@ -23,8 +30,11 @@ const errorMap: Record<string, SpeechFailure> = { "not-allowed": "permission", "
 export class BrowserSpeechProvider implements SpeechProvider {
   private cancelCurrent: (() => void) | null = null;
   cancel() { this.cancelCurrent?.(); this.cancelCurrent = null; }
-  async speak(text: string, language: string, signal?: AbortSignal, rate = 1): Promise<number> {
+  async speak(text: string, language: string, signal?: AbortSignal, rate = 1, options?: { role?: string | null; readAloudSetting?: boolean | null }): Promise<number> {
     if (signal?.aborted) throw new SpeechError("cancelled");
+    if (!shouldSpeak({ role: options?.role ?? "patient", readAloudSetting: options?.readAloudSetting ?? true, forced: false })) {
+      return performance.now();
+    }
     if (typeof window === "undefined" || !("speechSynthesis" in window)) throw new SpeechError("unsupported");
     const synth = window.speechSynthesis;
     if (!synth.getVoices().length) await new Promise<void>((resolve, reject) => {
@@ -93,8 +103,11 @@ export class WhisperSpeechProvider implements SpeechProvider {
     this.stream?.getTracks().forEach(track => track.stop()); this.stream = null; this.recorder = null;
     if (this.audio) { this.audio.pause(); this.audio.src = ""; this.audio = null; }
   }
-  async speak(text: string, language: string, signal?: AbortSignal, rate = 1): Promise<number> {
-    try { return await this.browser.speak(text, language, signal, rate); }
+  async speak(text: string, language: string, signal?: AbortSignal, rate = 1, options?: { role?: string | null; readAloudSetting?: boolean | null }): Promise<number> {
+    if (!shouldSpeak({ role: options?.role ?? "patient", readAloudSetting: options?.readAloudSetting ?? true, forced: false })) {
+      return performance.now();
+    }
+    try { return await this.browser.speak(text, language, signal, rate, options); }
     catch (error) {
       if (!(error instanceof SpeechError) || error.reason !== "language") throw error;
       const response = await apiFetch(`${API_URL}/speak`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, language }), signal });
