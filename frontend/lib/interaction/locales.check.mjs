@@ -302,6 +302,10 @@ required.push(
   "Handled",
   "On",
   "Off",
+  "SOS alert from {name}. Please check on them.",
+  "Test alert from {name}.",
+  "Speak new alerts",
+  "Click anywhere on this page once to allow voice alerts.",
 );
 required.push(
   "What comes after {step}?", "What do you do first in your day?", "Which step is missing?",
