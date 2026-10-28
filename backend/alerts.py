@@ -22,6 +22,16 @@ LOCATION_RETENTION = timedelta(days=30)
 ALERT_RETENTION = timedelta(days=90)
 
 
+class NoActivePatient(Exception):
+    """Raised when an alert operation requires an active patient context."""
+    pass
+
+
+@bp.errorhandler(NoActivePatient)
+def handle_no_active_patient(_):
+    return jsonify(error="No active patient."), 403
+
+
 def _lock(path):
     with _locks_guard:
         return _locks.setdefault(path, threading.RLock())
@@ -71,8 +81,8 @@ def _clean(rows, now):
 
 def _alert_file(patient_id):
     # patient_path enforces that the current request is bound to this patient.
-    if not g.active_patient or g.active_patient['id'] != patient_id:
-        raise PermissionError
+    if not g.get('active_patient') or g.active_patient.get('id') != patient_id:
+        raise NoActivePatient
     return patient_path('alerts.json')
 
 
@@ -119,7 +129,7 @@ def _create_alert(test=False, location=None):
     session = g.auth_session
     patient_id = _patient_id_for_request()
     if not patient_id:
-        return None, (jsonify(error='No active patient.'), 403)
+        raise NoActivePatient
     path = _alert_file(patient_id)
     now = _now()
     with _lock(path):
@@ -157,6 +167,8 @@ def _create_alert(test=False, location=None):
 
 @bp.post('/sos')
 def create_alert():
+    if not g.get('active_patient'):
+        raise NoActivePatient
     session = g.get('auth_session')
     user = auth.session_user()
     if not session or not (session['kind'] == 'patient_device' or auth.patient_account(user)):
@@ -183,6 +195,8 @@ def create_alert():
 def list_alerts():
     if not _caregiver():
         return jsonify(error='Caregiver access is required.'), 403
+    if not g.get('active_patient'):
+        raise NoActivePatient
     status = request.args.get('status', 'open')
     if status not in ('open', 'handled', 'all'):
         return jsonify(error='Status is invalid.'), 400
@@ -205,6 +219,8 @@ def list_alerts():
 def mark_handled(alert_id):
     if not _caregiver():
         return jsonify(error='Caregiver access is required.'), 403
+    if not g.get('active_patient'):
+        raise NoActivePatient
     for patient in auth.patients_for(g.auth_session['user_id']):
         path = str(Path(current_app.config['PATIENT_DATA_ROOT']) / patient['id'] / 'alerts.json')
         with _lock(path):
@@ -224,7 +240,35 @@ def create_test_alert():
         return jsonify(error='Caregiver access is required.'), 403
     # A caregiver can test alerts for the patient selected in their session.
     if not g.get('active_patient'):
-        return jsonify(error='Select a patient first.'), 403
+        raise NoActivePatient
     # Demo test messages stay local and never reach caregivers by email.
     row, error = _create_alert(test=True)
     return error or (jsonify(row), 201)
+
+
+def sweep_alerts_on_startup(data_root):
+    """Clean location and alert retention on startup across patient alerts.json files."""
+    import logging
+    logger = logging.getLogger(__name__)
+    root = Path(data_root)
+    if not root.is_dir():
+        return
+    now = _now()
+    for path in root.glob('*/alerts.json'):
+        if not path.is_file():
+            continue
+        try:
+            with _lock(str(path)):
+                try:
+                    content = path.read_text(encoding='utf-8')
+                    rows = json.loads(content)
+                    if not isinstance(rows, list):
+                        rows = []
+                except (OSError, ValueError, TypeError) as err:
+                    logger.warning("Could not sweep alert file %s: %s", path.name, err.__class__.__name__)
+                    continue
+                rows, changed = _clean(rows, now)
+                if changed:
+                    _save(str(path), rows)
+        except Exception as err:
+            logger.warning("Could not sweep alert file %s: %s", path.name, err.__class__.__name__)

@@ -269,6 +269,7 @@ required.push(
   "SOS is available from a paired patient device or patient login.",
   "Press and hold for 3 seconds",
   "Alert your caregiver?",
+  "Include my location",
   "Could not send the alert. Please try again.",
   "Sending alert…",
   "Getting your location…",

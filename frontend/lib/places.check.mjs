@@ -67,4 +67,10 @@ const privacy = await readFile(new URL("../app/privacy/page.tsx", import.meta.ur
 assert.match(privacy, /Saved place links stay in the person's profile/);
 assert.match(privacy, /does not track location/);
 
+const proxySource = await readFile(new URL("./backend-proxy.ts", import.meta.url), "utf8");
+const mediaRegex = /^\/(known-faces|frames|video_chunks|place-photos)\//;
+assert.match(proxySource, /place-photos/);
+assert.equal(mediaRegex.test("/place-photos/x.jpg"), true);
+assert.equal(mediaRegex.test("/known-faces/x.jpg"), true);
+
 console.log("Places checks passed: safe Maps links, categories, overnight hours, role gating, accessible UI, and privacy.");

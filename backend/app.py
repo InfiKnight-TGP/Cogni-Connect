@@ -3721,9 +3721,10 @@ from auth import init_auth
 
 configure(api)
 init_auth(api, lambda: _load_settings())
-from alerts import bp as alerts_bp
+from alerts import bp as alerts_bp, sweep_alerts_on_startup
 api.register_blueprint(alerts_bp)
 _cleanup_stale_processing_jobs()
+sweep_alerts_on_startup(api.config.get('PATIENT_DATA_ROOT', 'data'))
 CORS(api, origins=api.config['AUTH_ORIGINS'], supports_credentials=True)
 
 
@@ -3732,9 +3733,8 @@ def migrate_authenticated_data():
     # Authentication runs first. Never mutate data on an anonymous request.
     from flask import g
     if g.get('auth_session') and request.blueprint != 'auth':
-        from flask import abort
         if not g.get('active_patient'):
-            abort(403)
+            return jsonify(error='No active patient.'), 403
         ensure_runtime_data()
         _migrate_performance_record_ids()
 

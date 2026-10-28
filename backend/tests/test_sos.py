@@ -98,6 +98,147 @@ class SosTests(unittest.TestCase):
         initialize_patient(root, 'Reset Patient')
         self.assertEqual(json.loads((root / 'alerts.json').read_text(encoding='utf-8')), [])
 
+    def test_no_active_patient_returns_403_on_all_four_routes(self):
+        from werkzeug.security import generate_password_hash
+        # Caregiver with no linked patients -> g.active_patient is None
+        with app.api.app_context():
+            db.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo,role) "
+                       "VALUES (?,?,?,?,0,0,?,0,?)",
+                       ('unlinked-user', 'unlinked@example.com', 'Unlinked', generate_password_hash('pw', method='scrypt'), auth.now(), 'caregiver'))
+            caregiver_token, _ = auth.new_session('caregiver', user_id='unlinked-user')
+        caregiver_no_patient = app.api.test_client()
+        caregiver_no_patient.set_cookie(auth.COOKIES['caregiver'], caregiver_token)
+
+        # 1. POST /sos
+        res1 = caregiver_no_patient.post('/sos')
+        self.assertEqual(res1.status_code, 403)
+        self.assertEqual(res1.json, {'error': 'No active patient.'})
+
+        # 2. GET /sos/alerts
+        res2 = caregiver_no_patient.get('/sos/alerts')
+        self.assertEqual(res2.status_code, 403)
+        self.assertEqual(res2.json, {'error': 'No active patient.'})
+
+        # 3. POST /sos/alerts/<id>/handled
+        res3 = caregiver_no_patient.post('/sos/alerts/fake-id/handled')
+        self.assertEqual(res3.status_code, 403)
+        self.assertEqual(res3.json, {'error': 'No active patient.'})
+
+        # 4. POST /sos/test
+        res4 = caregiver_no_patient.post('/sos/test')
+        self.assertEqual(res4.status_code, 403)
+        self.assertEqual(res4.json, {'error': 'No active patient.'})
+
+    def test_sweep_alerts_on_startup_cleans_retention_and_ignores_corrupt_files(self):
+        from datetime import datetime, timedelta, timezone
+        from alerts import sweep_alerts_on_startup
+        data_dir = self.auth_root / 'data'
+        patient_dir = data_dir / 'test-patient'
+        patient_dir.mkdir(parents=True, exist_ok=True)
+        now = datetime.now(timezone.utc)
+
+        # Write alerts file with:
+        # - an alert older than 90 days (should be deleted)
+        # - an alert older than 30 days with location (location should be removed)
+        # - a fresh alert with location (should be untouched)
+        rows = [
+            {'id': 'expired-alert', 'createdAt': (now - timedelta(days=95)).isoformat(), 'status': 'open'},
+            {'id': 'expired-loc', 'createdAt': (now - timedelta(days=35)).isoformat(), 'status': 'open', 'location': {'lat': 10, 'lng': 20}},
+            {'id': 'fresh-alert', 'createdAt': (now - timedelta(days=2)).isoformat(), 'status': 'open', 'location': {'lat': 11, 'lng': 21}},
+        ]
+        alerts_path = patient_dir / 'alerts.json'
+        alerts_path.write_text(json.dumps(rows), encoding='utf-8')
+
+        # Create a corrupt alerts.json in another patient folder
+        corrupt_dir = data_dir / 'corrupt-patient'
+        corrupt_dir.mkdir(parents=True, exist_ok=True)
+        corrupt_path = corrupt_dir / 'alerts.json'
+        corrupt_path.write_text('{invalid-json-content', encoding='utf-8')
+
+        # Create a non-alerts file in the patient folder
+        places_path = patient_dir / 'places.json'
+        places_content = [{'id': 'p1', 'name': 'Sample'}]
+        places_path.write_text(json.dumps(places_content), encoding='utf-8')
+
+        # Run startup sweep
+        sweep_alerts_on_startup(str(data_dir))
+
+        # Verify test-patient alerts.json
+        cleaned_rows = json.loads(alerts_path.read_text(encoding='utf-8'))
+        cleaned_ids = [r['id'] for r in cleaned_rows]
+        self.assertNotIn('expired-alert', cleaned_ids)
+        self.assertIn('expired-loc', cleaned_ids)
+        self.assertIn('fresh-alert', cleaned_ids)
+        for r in cleaned_rows:
+            if r['id'] == 'expired-loc':
+                self.assertNotIn('location', r)
+            if r['id'] == 'fresh-alert':
+                self.assertIn('location', r)
+
+        # Verify corrupt file is untouched and did not crash the sweep
+        self.assertEqual(corrupt_path.read_text(encoding='utf-8'), '{invalid-json-content')
+
+        # Verify places.json is untouched
+        self.assertEqual(json.loads(places_path.read_text(encoding='utf-8')), places_content)
+
+    def test_four_session_matrix(self):
+        from werkzeug.security import generate_password_hash
+        # Create self user & patient
+        with app.api.app_context():
+            db.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo,role) "
+                       "VALUES (?,?,?,?,0,0,?,0,'self')",
+                       ('self-user-id', 'self@matrix.local', 'Self User', generate_password_hash('pw', method='scrypt'), auth.now()))
+            db.execute("INSERT INTO patients (id,name,pin_hash,created_by,created_at,is_demo) VALUES (?,?,NULL,?,?,0)",
+                       ('self-patient-id', 'Self Patient', 'self-user-id', auth.now()))
+            db.execute("UPDATE users SET patient_id='self-patient-id' WHERE id='self-user-id'")
+            db.execute("INSERT INTO patient_members VALUES ('self-patient-id','self-user-id','owner')")
+
+            # Create patient-login user
+            db.execute("INSERT INTO users (id,email,name,password_hash,failed_logins,locked_until,created_at,is_demo,role,patient_id) "
+                       "VALUES (?,?,?,?,0,0,?,0,'patient','test-patient')",
+                       ('patient-user-id', 'patient@matrix.local', 'Patient Login', generate_password_hash('pw', method='scrypt'), auth.now()))
+
+            self_token, _ = auth.new_session('caregiver', user_id='self-user-id')
+            patient_login_token, _ = auth.new_session('patient_device', user_id='patient-user-id', patient_id='test-patient')
+
+        self_client = app.api.test_client()
+        self_client.set_cookie(auth.COOKIES['caregiver'], self_token)
+
+        patient_login_client = app.api.test_client()
+        patient_login_client.set_cookie(auth.COOKIES['patient_device'], patient_login_token)
+
+        # 4 sessions: self, caregiver (self.auth_client), patient_device (self.device), patient_login
+        # 1. POST /sos: only patient_device and patient_login are allowed
+        self.assertEqual(self.device.post('/sos').status_code, 201)
+        self.assertEqual(patient_login_client.post('/sos').status_code, 201)
+        self.assertEqual(self.auth_client.post('/sos').status_code, 403)
+        self.assertEqual(self_client.post('/sos').status_code, 403)
+
+        # 2. GET /sos/alerts: only caregiver is allowed
+        self.assertEqual(self.auth_client.get('/sos/alerts').status_code, 200)
+        self.assertEqual(self_client.get('/sos/alerts').status_code, 403)
+        self.assertEqual(self.device.get('/sos/alerts').status_code, 403)
+        self.assertEqual(patient_login_client.get('/sos/alerts').status_code, 403)
+
+        # 3. POST /sos/test: only caregiver is allowed
+        self.assertEqual(self.auth_client.post('/sos/test').status_code, 201)
+        self.assertEqual(self_client.post('/sos/test').status_code, 403)
+        self.assertEqual(self.device.post('/sos/test').status_code, 403)
+        self.assertEqual(patient_login_client.post('/sos/test').status_code, 403)
+
+        # 4. Places read: all 4 can read places
+        self.assertEqual(self.auth_client.get('/places').status_code, 200)
+        self.assertEqual(self_client.get('/places').status_code, 200)
+        self.assertEqual(self.device.get('/places').status_code, 200)
+        self.assertEqual(patient_login_client.get('/places').status_code, 200)
+
+        # 5. Places write: self-care can write to its own patient's places!
+        place_payload = {'name': 'Self Place', 'category': 'home', 'mapsUrl': 'https://maps.app.goo.gl/place', 'note': ''}
+        self.assertEqual(self_client.post('/places', json=place_payload).status_code, 201)
+        self.assertEqual(self.auth_client.post('/places', json=place_payload).status_code, 201)
+        self.assertEqual(self.device.post('/places', json=place_payload).status_code, 403)
+        self.assertEqual(patient_login_client.post('/places', json=place_payload).status_code, 403)
+
 
 if __name__ == '__main__':
     unittest.main()

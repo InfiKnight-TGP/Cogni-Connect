@@ -20,6 +20,7 @@ export default function SosPage() {
   const interval = useRef<number | null>(null);
   const [progress, setProgress] = useState(0);
   const [confirm, setConfirm] = useState(false);
+  const [includeLocation, setIncludeLocation] = useState(true);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
@@ -59,7 +60,7 @@ export default function SosPage() {
   }
 
   function confirmSend() {
-    if (!navigator.geolocation) { void send(); return; }
+    if (!includeLocation || !navigator.geolocation) { void send(); return; }
     setSending(true); setError("");
     navigator.geolocation.getCurrentPosition(
       position => { void send(position); },
@@ -90,11 +91,20 @@ export default function SosPage() {
       {confirm && <div role="group" aria-label={t("Alert your caregiver?")} className="space-y-4 rounded-2xl border-2 border-border p-5">
         <h3 className="text-2xl font-bold">{t("Alert your caregiver?")}</h3>
         <ReadAloud text={t("Alert your caregiver?")} />
+        <label className="flex items-center justify-center gap-3 text-lg font-semibold cursor-pointer">
+          <input
+            type="checkbox"
+            checked={includeLocation}
+            onChange={e => setIncludeLocation(e.target.checked)}
+            className="h-6 w-6 rounded border-border"
+          />
+          <span>{t("Include my location")}</span>
+        </label>
         <div className="flex flex-wrap justify-center gap-3">
           <button type="button" onClick={() => { setConfirm(false); setProgress(0); }} className="min-h-14 min-w-32 rounded-xl border-2 px-6 text-lg font-semibold">{t("Cancel")}</button>
           <button type="button" onClick={confirmSend} disabled={sending} className="min-h-14 min-w-32 rounded-xl bg-primary px-6 text-lg font-semibold text-primary-foreground disabled:opacity-60">{t(sending ? "Sending alert…" : "Send")}</button>
         </div>
-        {sending && <p role="status" className="text-lg">{t("Getting your location…")}</p>}
+        {sending && includeLocation && <p role="status" className="text-lg">{t("Getting your location…")}</p>}
       </div>}
       {sent && <div role="status" className="rounded-2xl border-2 border-primary/40 bg-primary/5 p-5 text-2xl font-bold">{t("Your caregiver has been alerted")}<ReadAloud text={t("Your caregiver has been alerted")} forceAutoRead /></div>}
       {error && <p role="alert" className="text-lg">{error}</p>}

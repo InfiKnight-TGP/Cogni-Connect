@@ -11,16 +11,18 @@ type Alert = { id: string; patientName: string; createdAt: string; test: boolean
 const enabledKey = "cogni-sos-notifications";
 const seenKey = "cogni-sos-notification-seen";
 
-function notifyNew(alerts: Alert[], t: (phrase: string) => string) {
+function notifyNew(alerts: Alert[], t: (phrase: string) => string, caregiverId: string) {
   if (localStorage.getItem(enabledKey) !== "true" || !("Notification" in window) || Notification.permission !== "granted") return;
+  const seenKey = `cogni-sos-notification-seen-${caregiverId}`;
   let seen: string[] = [];
   try { seen = JSON.parse(localStorage.getItem(seenKey) ?? "[]") as string[]; } catch { seen = []; }
   const ids = new Set(seen);
   for (const alert of alerts) {
     if (ids.has(alert.id)) continue;
-    const notification = new Notification(t("SOS alert"), { body: `${alert.test ? `${t("TEST")}: ` : ""}${alert.patientName} · ${t("Open alert")}` });
-    notification.onclick = () => window.location.assign("/caregiver/alerts");
     ids.add(alert.id);
+    if (alert.test) continue;
+    const notification = new Notification(t("SOS alert"), { body: `${alert.patientName} · ${t("Open alert")}` });
+    notification.onclick = () => window.location.assign("/caregiver/alerts");
   }
   localStorage.setItem(seenKey, JSON.stringify(Array.from(ids).slice(-200)));
 }
@@ -29,22 +31,36 @@ export default function SosAlertBanner() {
   const { t } = useTranslate();
   const { session } = useAuth();
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const caregiverId = session?.user?.id ?? "default";
   const load = useCallback(async () => {
-    if (document.visibilityState !== "visible") return;
     try {
       const result = await apiJSON<Alert[]>("/sos/alerts?status=open", { authRedirect: false });
-      setAlerts(Array.isArray(result) ? result : []);
-      notifyNew(Array.isArray(result) ? result : [], t);
-    } catch { /* The banner recovers on its next visible poll. */ }
-  }, [t]);
+      const rows = Array.isArray(result) ? result : [];
+      setAlerts(rows);
+      notifyNew(rows, t, caregiverId);
+    } catch { /* The banner recovers on its next poll. */ }
+  }, [t, caregiverId]);
   useEffect(() => {
     if (session?.role !== "caregiver") return;
     void load();
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 10_000);
-    const visible = () => { if (document.visibilityState === "visible") void load(); };
+    let timer: number;
+    const schedule = () => {
+      window.clearInterval(timer);
+      const interval = document.visibilityState === "visible" ? 10_000 : 60_000;
+      timer = window.setInterval(() => { void load(); }, interval);
+    };
+    schedule();
+    const visible = () => {
+      schedule();
+      if (document.visibilityState === "visible") void load();
+    };
     document.addEventListener("visibilitychange", visible);
     window.addEventListener("focus", visible);
-    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", visible); window.removeEventListener("focus", visible); };
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", visible);
+      window.removeEventListener("focus", visible);
+    };
   }, [session?.role, load]);
   if (session?.role !== "caregiver" || alerts.length === 0) return null;
   const newest = alerts[0];

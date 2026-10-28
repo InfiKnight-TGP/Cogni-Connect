@@ -18,6 +18,9 @@ for (const phrase of [
 ]) assert.ok(page.includes(phrase), `SOS screen must include ${phrase}`);
 assert.ok(page.includes("canUseSos(session?.role)"), "self-care access must be excluded");
 
+assert.ok(page.includes("Include my location"), "SOS screen must include 'Include my location' checkbox");
+assert.ok(page.includes("includeLocation"), "SOS screen must check includeLocation before reading position");
+
 const locales = await readFile(new URL("./interaction/locales.check.mjs", import.meta.url), "utf8");
 assert.ok(locales.includes("SOS alerts your caregiver. It does not call emergency services. In an emergency, call 112 yourself."));
-console.log("SOS checks passed: hold duration, account access, disclaimer, disabled cards, and locale coverage");
+console.log("SOS checks passed: hold duration, account access, disclaimer, disabled cards, location checkbox, and locale coverage");
