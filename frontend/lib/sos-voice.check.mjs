@@ -152,25 +152,18 @@ const mockTranslate = (phrase, values = {}) => {
   assert.equal(result2, false, "tab-2 should lose because tab-3 overwrote the claim key");
 }
 
-// 8. Alerts page silence verification (Item 1)
+// 8. Alerts page silence verification
 {
   const pagePath = new URL("../app/caregiver/alerts/page.tsx", import.meta.url);
   const pageContent = await readFile(pagePath, "utf8");
 
-  // Must not have autoRead={true} or forceAutoRead
-  assert.equal(pageContent.includes("autoRead={true}"), false, "alerts page must not contain autoRead={true}");
-  assert.equal(pageContent.includes("forceAutoRead"), false, "alerts page must not contain forceAutoRead");
+  // Must not have ReadAloud, autoRead, or speechSynthesis
+  assert.equal(pageContent.includes("ReadAloud"), false, "alerts page must not contain ReadAloud");
+  assert.equal(pageContent.includes("autoRead"), false, "alerts page must not contain autoRead");
+  assert.equal(pageContent.includes("speechSynthesis"), false, "alerts page must not contain speechSynthesis");
 
-  // Every ReadAloud invocation must explicitly set autoRead={false}
-  const readAloudTags = [...pageContent.matchAll(/<ReadAloud\b[^>]*>/g)].map(m => m[0]);
-  assert.ok(readAloudTags.length > 0, "alerts page should retain ReadAloud buttons");
-  for (const tag of readAloudTags) {
-    assert.ok(tag.includes("autoRead={false}"), `ReadAloud tag ${tag} must explicitly specify autoRead={false}`);
-  }
-
-  // Preference switch and notice presence
+  // Preference switch presence
   assert.ok(pageContent.includes("Speak new alerts"), "alerts page must include 'Speak new alerts' switch");
-  assert.ok(pageContent.includes("Click anywhere on this page once to allow voice alerts."), "alerts page must include audio interaction notice");
 }
 
 console.log("SOS voice checks passed: not spoken twice, capped at 200, 10-min cutoff, patient grouping, test wording, tab lock, location exclusion, and page silence");

@@ -908,6 +908,7 @@
     "Done editing": "संपादन पूरा",
     "Add a place": "जगह जोड़ें",
     "{count} of {total} places remaining": "{total} में से {count} जगहें बाकी",
+    "You have reached the limit of {n} places. Remove one to add another.": "आप {n} जगहों की सीमा तक पहुँच चुके हैं। दूसरी जोड़ने के लिए एक को हटाएँ।",
     "Could not load places. Please try again.": "जगहें लोड नहीं हो सकीं। कृपया फिर कोशिश करें।",
     "The saved places could not be read.": "सहेजी गई जगहों को पढ़ा नहीं जा सका।",
     "No places yet": "अभी कोई जगह नहीं है",

@@ -44,6 +44,7 @@ export default function ExplorePage() {
   const { t, language } = useTranslate();
   const { preferences } = usePreferences();
   const { session } = useAuth();
+  const caregiver = session?.role === "caregiver";
   const canManage = canManageMemories(session);
 
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -423,7 +424,7 @@ export default function ExplorePage() {
               {t("My Memories")}
             </p>
             <h1 className="mt-2 text-4xl font-bold">{t("My Memories")}</h1>
-            <ReadAloud text={t("My Memories")} autoRead={false} />
+            {!caregiver && <ReadAloud text={t("My Memories")} autoRead={false} />}
             <p className="mt-3 text-xl text-muted-foreground">
               {t("Look back at moments that matter.")}
             </p>
@@ -699,7 +700,7 @@ export default function ExplorePage() {
                             </div>
                           )}
 
-                          {isReady && (
+                          {isReady && !caregiver && (
                             <div className="pt-1">
                               <ReadAloud
                                 text={`${memory.title}. ${memory.note ?? ""}`}
@@ -848,10 +849,12 @@ export default function ExplorePage() {
                     <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
                       {t("Transcript")}
                     </h4>
-                    <ReadAloud
-                      text={open.transcript.join(" ")}
-                      autoRead={false}
-                    />
+                    {!caregiver && (
+                      <ReadAloud
+                        text={open.transcript.join(" ")}
+                        autoRead={false}
+                      />
+                    )}
                   </div>
                   <p className="max-h-36 overflow-y-auto text-base leading-relaxed text-foreground/90">
                     {open.transcript.join(" ")}

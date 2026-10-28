@@ -5,7 +5,6 @@ import { BellRing, MapPin } from "lucide-react";
 import Nav from "@/components/nav";
 import { CaregiverOnly } from "@/components/caregiver";
 import { useTranslate } from "@/components/interaction/InteractionProvider";
-import ReadAloud from "@/components/interaction/ReadAloud";
 import { apiJSON, jsonBody } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { VOICE_ENABLED_PREFIX } from "@/lib/sos-voice";
@@ -37,7 +36,6 @@ function AlertsContent() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [enabled, setEnabled] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [needsInteraction, setNeedsInteraction] = useState(false);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState("");
   const caregiverId = session?.user?.id ?? "default";
@@ -60,19 +58,6 @@ function AlertsContent() {
     document.addEventListener("visibilitychange", visible); window.addEventListener("focus", visible);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", visible); window.removeEventListener("focus", visible); };
   }, [load, voiceKey]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined" && !("speechSynthesis" in window)) {
-      setNeedsInteraction(true);
-    }
-    const onInteract = () => { setNeedsInteraction(false); };
-    window.addEventListener("pointerdown", onInteract, { once: true });
-    window.addEventListener("keydown", onInteract, { once: true });
-    return () => {
-      window.removeEventListener("pointerdown", onInteract);
-      window.removeEventListener("keydown", onInteract);
-    };
-  }, []);
 
   const open = alerts.filter(alert => alert.status === "open");
   const handled = alerts.filter(alert => alert.status === "handled");
@@ -163,12 +148,6 @@ function AlertsContent() {
             </p>
           )}
 
-          {needsInteraction && (
-            <p role="status" className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 text-base font-semibold">
-              {t("Click anywhere on this page once to allow voice alerts.")}
-            </p>
-          )}
-
           {failed && (
             <p role="alert" className="rounded-xl border border-amber-500 p-4 text-lg">
               {t("Could not load alerts. Try again.")}
@@ -178,7 +157,6 @@ function AlertsContent() {
           <section className="space-y-4" aria-labelledby="open-alerts-heading">
             <div className="flex items-center gap-3">
               <h2 id="open-alerts-heading" className="text-2xl font-bold">{t("Open alerts")}</h2>
-              <ReadAloud text={t("Open alerts")} autoRead={false} />
             </div>
             {open.length === 0 ? (
               <p className="rounded-2xl border border-border p-5 text-lg">{t("No open alerts.")}</p>
@@ -220,7 +198,6 @@ function AlertCard({ alert, busy, onHandle }: { alert: Alert; busy?: boolean; on
       </div>
       <p className="text-lg">{t("Time")}: {time}</p>
       <p className="text-lg">{t("Device")}: {alert.deviceLabel}</p>
-      <ReadAloud text={`${alert.patientName}. ${t(alert.test ? "TEST" : "SOS alert")}. ${t("Time")}: ${time}`} autoRead={false} />
       {alert.location && (
         <a
           className="inline-flex min-h-14 items-center gap-2 rounded-xl border-2 px-4 text-lg font-semibold underline"

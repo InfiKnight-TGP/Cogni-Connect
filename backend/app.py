@@ -2039,10 +2039,23 @@ def list_places():
     return jsonify(_load_places())
 
 
+@api.route('/places/limits', methods=['GET'])
+def places_limits():
+    import auth
+    from places import DEMO_MAX_PLACES, MAX_PLACES
+
+    patient_id, denied = _places_access()
+    if denied:
+        return denied
+    is_demo = _demo_places(patient_id) or auth.is_demo_session(g.auth_session)
+    maximum = DEMO_MAX_PLACES if is_demo else MAX_PLACES
+    return jsonify(limit=maximum, demo=bool(is_demo))
+
+
 @api.route('/places', methods=['POST'])
 def add_place():
     import auth
-    from places import validate_place_fields
+    from places import DEMO_MAX_PLACES, MAX_PLACES, validate_place_fields
 
     patient_id, denied = _places_access(write=True)
     if denied:
@@ -2051,7 +2064,7 @@ def add_place():
         return jsonify(error='Demo place changes are limited to 60 per hour.'), 429
     places = _load_places()
     is_demo = _demo_places(patient_id) or auth.is_demo_session(g.auth_session)
-    maximum = 6 if is_demo else 12
+    maximum = DEMO_MAX_PLACES if is_demo else MAX_PLACES
     if len(places) >= maximum:
         return jsonify(error=f'You can save at most {maximum} places.'), 400
     try:

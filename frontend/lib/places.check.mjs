@@ -52,6 +52,8 @@ assert.match(page, /role="alertdialog"/);
 assert.match(page, /window\.open\(draft\.mapsUrl\.trim\(\), "_blank", "noopener,noreferrer"\)/);
 assert.match(page, /aria-modal="true"/);
 assert.doesNotMatch(page, /navigator\.geolocation/);
+assert.match(page, /\/places\/limits/);
+assert.match(page, /You have reached the limit of \{n\} places\. Remove one to add another\./);
 const requiredSource = await readFile(new URL("./interaction/locales.check.mjs", import.meta.url), "utf8");
 const required = runInNewContext(requiredSource.slice(requiredSource.indexOf("const required ="), requiredSource.indexOf("for (const phrase of required)")) + "\nrequired;");
 const phrases = [...page.matchAll(/\bt\("([^"\n]+)"/g)].map(match => match[1]);

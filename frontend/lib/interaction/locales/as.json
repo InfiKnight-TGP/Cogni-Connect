@@ -906,6 +906,7 @@
     "Done editing": "সম্পাদনা সম্পূৰ্ণ",
     "Add a place": "ঠাই যোগ কৰক",
     "{count} of {total} places remaining": "{total}টাৰ ভিতৰত {count}টা ঠাই বাকী",
+    "You have reached the limit of {n} places. Remove one to add another.": "আপুনি {n}টা ঠাইৰ সীমাত উপনীত হৈছে। আন এটা যোগ কৰিবলৈ এটা মচক।",
     "Could not load places. Please try again.": "ঠাইবোৰ লোড কৰিব পৰা নগ'ল। অনুগ্ৰহ কৰি আকৌ চেষ্টা কৰক।",
     "The saved places could not be read.": "সাঁচি থোৱা ঠাইবোৰ পঢ়িব পৰা নগ'ল।",
     "No places yet": "এতিয়ালৈকে কোনো ঠাই নাই",
