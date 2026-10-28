@@ -157,6 +157,33 @@ class TestPeopleEditing(unittest.TestCase):
         _, buf = cv2.imencode('.jpg', black_img)
         self.no_face_bytes = buf.tobytes()
 
+        # These endpoint tests exercise storage, validation and authorization,
+        # not the separately installed face detector model.
+        detector = patch('process_video.has_face',
+                         side_effect=lambda path: Path(path).read_bytes() == self.valid_face_bytes)
+        detector.start()
+        self.addCleanup(detector.stop)
+
+    def seed_zoo_fixture(self):
+        """Seed deterministic metadata without reading any local patient backup."""
+        from seed_demo_media import seed_demo_media
+        source = self.root / 'pre-migration-backup'
+        content = source / 'content'
+        chunks = source / 'video_chunks' / 'Me_at_the_zoo_chunks'
+        faces = source / 'known_faces'
+        for folder in (content, chunks, faces):
+            folder.mkdir(parents=True, exist_ok=True)
+        (content / 'Me_at_the_zoo.mp4').write_bytes(b'fixture-video')
+        (chunks / 'chunk_0000_0010.mp4').write_bytes(b'fixture-chunk')
+        (chunks / 'full_transcript.json').write_text(json.dumps({
+            'chunk_0000_0010': 'A day at the zoo, looking at the elephants.'
+        }), encoding='utf-8')
+        (chunks / 'chunk_0000_0010_faces.json').write_text(json.dumps({
+            'chunk_0000_0010.mp4': ['jawed_karim']
+        }), encoding='utf-8')
+        (faces / 'jawed_karim.jpg').write_bytes(self.valid_face_bytes)
+        self.assertTrue(seed_demo_media(self.demo_base, self.root))
+
     def test_self_can_add_edit_delete_person_and_photo_deleted(self):
         # 1. Add person
         res_add = self.client_self.post('/people', data={
@@ -565,8 +592,7 @@ class TestPeopleEditing(unittest.TestCase):
 
     @patch.object(app, 'AI_AVAILABLE', False)
     def test_delete_person_in_zoo_video_faces_file_handled_without_crash_or_none(self):
-        from seed_demo_media import seed_demo_media
-        seed_demo_media(self.demo_base, Path(__file__).resolve().parent.parent)
+        self.seed_zoo_fixture()
 
         memories = json.loads((self.demo_base / 'memories.json').read_text(encoding='utf-8'))
         zoo_id = next(mid for mid, row in memories.items() if 'zoo' in str(row.get('filename', '')).lower())
@@ -621,8 +647,7 @@ class TestPeopleEditing(unittest.TestCase):
 
     @patch.object(app, 'AI_AVAILABLE', False)
     def test_generate_questions_fallback_flag(self):
-        from seed_demo_media import seed_demo_media
-        seed_demo_media(self.demo_base, Path(__file__).resolve().parent.parent)
+        self.seed_zoo_fixture()
 
         memories = json.loads((self.demo_base / 'memories.json').read_text(encoding='utf-8'))
         zoo_id = next(mid for mid, row in memories.items() if 'zoo' in str(row.get('filename', '')).lower())

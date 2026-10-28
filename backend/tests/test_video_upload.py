@@ -102,6 +102,15 @@ class VideoUploadBackendTests(unittest.TestCase):
         self.test_clip = self.root / 'clip.mp4'
         make_test_mp4(self.test_clip, duration_secs=2)
 
+    def wait_for_processing(self):
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            with app._patient_job_lock:
+                if self.patient_a not in app._active_patient_jobs:
+                    return
+            time.sleep(0.05)
+        self.fail('Background video processing did not finish within 15 seconds')
+
     def test_self_and_caregiver_can_upload_and_check_status(self):
         with patch('process_video.process_uploaded_video', return_value={'success': True, 'chunks_folder': 'test_chunks'}), \
              patch('app._generate_questions_for_video', return_value=[]):
@@ -127,8 +136,7 @@ class VideoUploadBackendTests(unittest.TestCase):
             self.assertNotEqual(stored_name, 'my_holiday.mp4')
             self.assertTrue(stored_name.endswith('.mp4'))
 
-            # Wait briefly for thread to finish mocked processing
-            time.sleep(0.2)
+            self.wait_for_processing()
             st_res = self.client_self.get(f'/memories/{memory_id}')
             self.assertEqual(st_res.status_code, 200)
             st_data = st_res.get_json()
@@ -456,8 +464,7 @@ class VideoUploadBackendTests(unittest.TestCase):
             stored_name = mems_init[memory_id]['filename']
             self.assertEqual(journals_init[stored_name]['date'], chosen_date)
 
-            # Wait for background thread to complete
-            time.sleep(0.3)
+            self.wait_for_processing()
 
             # 1. Date survives processing in memories.json and video_journals.json
             with open(self.base_a / 'memories.json', 'r', encoding='utf-8') as mf:

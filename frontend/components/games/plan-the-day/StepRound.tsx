@@ -7,6 +7,7 @@ import { GRID_COLS, useSlots } from "./useSlots";
 import { VoiceQuestion } from "@/components/interaction/VoiceQuestion";
 import { usePreferences } from "@/components/interaction/InteractionProvider";
 import ReadAloud from "@/components/interaction/ReadAloud";
+import { useTranslate } from "@/components/interaction/InteractionProvider";
 
 // An everyday step, a caregiver's routine step, or a photo from the user's own day.
 export type StepCard =
@@ -62,14 +63,17 @@ export default function StepRound({
   title,
   prompt,
   cards,
+  preplacedCount = 0,
   onDone,
 }: {
   title: string;
   prompt: string;
   cards: StepCard[];
+  preplacedCount?: number;
   onDone: (points: number) => void;
 }) {
-  const { tray, slots, place, sendBack, full } = useSlots(cards.length);
+  const { t } = useTranslate();
+  const { tray, slots, place, sendBack, full } = useSlots(cards.length, preplacedCount);
   const { preferences } = usePreferences();
   const [checked, setChecked] = useState(false);
   const correct = slots.filter((card, i) => card === i).length;
@@ -77,10 +81,10 @@ export default function StepRound({
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-2xl font-bold md:text-3xl">{title}</h2>
-        <p className="mt-1 text-xl">{prompt}</p>
+        <h2 className="text-2xl font-bold md:text-3xl">{t(title)}</h2>
+        <p className="mt-1 text-xl">{t(prompt)}</p>
       </div>
-      <VoiceQuestion question={`${title}. ${prompt}`} options={tray.map((cardIndex, position) => { const card = cards[cardIndex]; return { id: String(cardIndex), label: card.kind === "step" ? card.label : `Photo ${position + 1}` }; })} onMatched={option => place(Number(option.id))} disabled={full} />
+      <VoiceQuestion question={`${t(title)}. ${t(prompt)}`} options={tray.map((cardIndex, position) => { const card = cards[cardIndex]; return { id: String(cardIndex), label: card.kind === "step" ? card.label : `Photo ${position + 1}` }; })} onMatched={option => place(Number(option.id))} disabled={full} />
 
       <div className={`grid grid-cols-2 gap-4 ${GRID_COLS[cards.length]}`}>
         {slots.map((card, i) => (
@@ -94,7 +98,7 @@ export default function StepRound({
                   card={cards[card]}
                   state={checked && card === i ? "correct" : "selected"}
                   revealed={checked}
-                  onClick={checked ? undefined : () => sendBack(i)}
+                  onClick={checked || i < preplacedCount ? undefined : () => sendBack(i)}
                 />
                 {checked && card !== i && (
                   <p className="text-center text-lg font-semibold text-amber-700 dark:text-amber-400">

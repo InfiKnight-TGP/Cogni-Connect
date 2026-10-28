@@ -12,6 +12,7 @@ import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import Nav from "@/components/nav";
 import { useAuth } from "@/lib/auth-context";
+import { useTranslate } from "@/components/interaction/InteractionProvider";
 
 const ReportRadar = dynamic(() => import("./RadarChart"), {
   ssr: false,
@@ -155,6 +156,7 @@ export default function ReportPage() {
 }
 
 function Report() {
+  const { t } = useTranslate();
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [name, setName] = useState("");
   const [failed, setFailed] = useState(false);
@@ -477,6 +479,7 @@ function Report() {
           difficulty level and are not combined into one overall score. These are practice activities, not a
           clinical test, and a single day can be affected by tiredness or mood.
         </p>
+        <p>{t("Map Navigator scores may include the Your places section; the final score averages route efficiency and place answers.")}</p>
         <p>
           <strong>Days with activity:</strong> {daysPlayed} of 28 days ({inPeriod.length} activities completed).
         </p>

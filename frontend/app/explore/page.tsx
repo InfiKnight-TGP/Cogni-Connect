@@ -35,6 +35,7 @@ type Memory = {
   thumbnailUrl: string;
   people?: string[];
   transcript?: string[];
+  useInGames?: boolean;
   status: "ready" | "processing" | "failed";
   message?: string;
 };
@@ -65,6 +66,8 @@ export default function ExplorePage() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [editingMemory, setEditingMemory] = useState<Memory | null>(null);
   const [memoryToDelete, setMemoryToDelete] = useState<Memory | null>(null);
+  const [gameSettingBusy, setGameSettingBusy] = useState(false);
+  const [gameSettingError, setGameSettingError] = useState("");
 
   // Retry state
   const [retryLoadingId, setRetryLoadingId] = useState<string | null>(null);
@@ -307,6 +310,7 @@ export default function ExplorePage() {
     date?: string;
     note?: string;
     dateLabel?: string;
+    useInGames?: boolean;
   }) => {
     setMemories((prev) =>
       prev.map((m) =>
@@ -316,6 +320,7 @@ export default function ExplorePage() {
               date: updated.date ?? m.date,
               note: updated.note ?? m.note,
               dateLabel: updated.dateLabel ?? m.dateLabel,
+              useInGames: updated.useInGames ?? m.useInGames,
             }
           : m
       )
@@ -328,6 +333,7 @@ export default function ExplorePage() {
               date: updated.date ?? prev.date,
               note: updated.note ?? prev.note,
               dateLabel: updated.dateLabel ?? prev.dateLabel,
+              useInGames: updated.useInGames ?? prev.useInGames,
             }
           : null
       );
@@ -339,6 +345,20 @@ export default function ExplorePage() {
     if (open?.id === id) {
       close();
     }
+  };
+
+  const toggleUseInGames = async (memory: Memory) => {
+    setGameSettingBusy(true); setGameSettingError("");
+    const next = !(memory.useInGames ?? true);
+    try {
+      const response = await apiFetch(`${API_URL}/memories/${encodeURIComponent(memory.id)}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ useInGames: next }),
+      });
+      if (!response.ok) throw new Error("Could not update memory. Please try again.");
+      setMemories(previous => previous.map(item => item.id === memory.id ? { ...item, useInGames: next } : item));
+      setOpen(previous => previous?.id === memory.id ? { ...previous, useInGames: next } : previous);
+    } catch (error) { setGameSettingError(t(error instanceof Error ? error.message : "Could not update memory. Please try again.")); }
+    finally { setGameSettingBusy(false); }
   };
 
   const handleSourceClick = (id: string) => {
@@ -800,6 +820,13 @@ export default function ExplorePage() {
               {open.note && (
                 <p className="mt-2 text-lg text-foreground/90">{open.note}</p>
               )}
+              {canManage && <div className="mt-4 space-y-2 rounded-xl border-2 border-border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div><p className="text-lg font-semibold">{t("Use in games")}</p><p className="text-base text-muted-foreground">{t("Turn off to keep this memory out of games.")}</p></div>
+                  <button type="button" role="switch" aria-label={t("Use in games")} aria-checked={open.useInGames ?? true} disabled={gameSettingBusy} onClick={() => void toggleUseInGames(open)} className={`min-h-14 min-w-28 rounded-xl border-2 px-4 text-lg font-semibold ${open.useInGames ?? true ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background"}`}>{t((open.useInGames ?? true) ? "On" : "Off")}</button>
+                </div>
+                {gameSettingError && <p role="alert" className="text-base">{gameSettingError}</p>}
+              </div>}
               {open.people && open.people.length > 0 && (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <span className="text-sm font-semibold text-muted-foreground">

@@ -17,6 +17,7 @@ interface EditMemoryDialogProps {
     id: string;
     date?: string;
     note?: string;
+    useInGames?: boolean;
   } | null;
   onClose: () => void;
   onSuccess: (updated: {
@@ -24,6 +25,7 @@ interface EditMemoryDialogProps {
     date?: string;
     note?: string;
     dateLabel?: string;
+    useInGames?: boolean;
   }) => void;
 }
 
@@ -35,6 +37,7 @@ export default function EditMemoryDialog({
   const { t } = useTranslate();
   const [editDate, setEditDate] = useState("");
   const [editNote, setEditNote] = useState("");
+  const [editUseInGames, setEditUseInGames] = useState(true);
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState("");
 
@@ -48,6 +51,7 @@ export default function EditMemoryDialog({
     if (memory) {
       setEditDate(memory.date || dayKey(new Date()));
       setEditNote(memory.note || "");
+      setEditUseInGames(memory.useInGames ?? true);
       setEditError("");
     }
   }, [memory]);
@@ -73,7 +77,7 @@ export default function EditMemoryDialog({
       const res = await apiFetch(`${API_URL}/memories/${encodeURIComponent(memory.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: dateVal.cleaned, note: noteVal.cleaned }),
+        body: JSON.stringify({ date: dateVal.cleaned, note: noteVal.cleaned, useInGames: editUseInGames }),
       });
       if (!res.ok) {
         let errText = "";
@@ -91,6 +95,7 @@ export default function EditMemoryDialog({
         date: updatedMem?.date ?? dateVal.cleaned,
         note: updatedMem?.note ?? noteVal.cleaned,
         dateLabel: updatedMem?.dateLabel,
+        useInGames: updatedMem?.useInGames ?? editUseInGames,
       });
       onClose();
     } catch {
@@ -147,6 +152,11 @@ export default function EditMemoryDialog({
               className="min-h-12 w-full rounded-xl border-2 border-border bg-background px-3 text-base outline-none focus:border-primary"
               required
             />
+          </div>
+
+          <div className="flex min-h-16 items-center justify-between gap-4 rounded-xl border-2 border-border p-4">
+            <div><p className="text-lg font-semibold">{t("Use in games")}</p><p className="text-base text-muted-foreground">{t("Turn off to keep this memory out of games.")}</p></div>
+            <button type="button" role="switch" aria-label={t("Use in games")} aria-checked={editUseInGames} disabled={editLoading} onClick={() => setEditUseInGames(value => !value)} className={`min-h-14 min-w-28 rounded-xl border-2 px-4 text-lg font-semibold ${editUseInGames ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background"}`}>{t(editUseInGames ? "On" : "Off")}</button>
           </div>
 
           <div>

@@ -1,7 +1,8 @@
 export type Story = {
   title: string;
   sentences: [string, string, string, string];
-  blanks: { sentence: number; answer: string; options: [string, string, string] }[];
+  blanks: { sentence: number; answer: string; options: string[]; kind?: "person" | "place" | "weekday" }[];
+  personal?: { weekday: string; place: string; person: string; activity: string };
 };
 
 export const stories: Story[] = [

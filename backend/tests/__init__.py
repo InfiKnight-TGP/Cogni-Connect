@@ -3,8 +3,19 @@ Ensures tests never call OpenAI or load the real API key.
 """
 import os
 import sys
+import socket
 import dotenv
 import openai
+
+
+def _blocked_network(*args, **kwargs):
+    raise AssertionError("tests must not call the network")
+
+
+socket.create_connection = _blocked_network
+socket.socket.connect = _blocked_network
+socket.socket.connect_ex = _blocked_network
+socket.socket.sendto = _blocked_network
 
 # 1. Blank OPENAI_API_KEY in os.environ for the test process before app or dotenv loads.
 os.environ['OPENAI_API_KEY'] = ''

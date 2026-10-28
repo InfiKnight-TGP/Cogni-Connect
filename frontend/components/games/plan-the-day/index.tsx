@@ -8,6 +8,8 @@ import { ERRAND_SETS, Task, TASKS } from "./data";
 import { ErrandSet } from "./rules";
 import StepRound, { StepCard } from "./StepRound";
 import ErrandRound from "./ErrandRound";
+import RoutineQuestions from "./RoutineQuestions";
+import { buildRoutineQuestions, hasUsableRoutine, type RoutineQuestion } from "./routineLogic";
 import { shuffle } from "./useSlots";
 
 import { mediaUrl, apiFetch, API_URL as API } from "@/lib/api";
@@ -15,7 +17,8 @@ import { readSkill } from "@/lib/interaction/events";
 import { useAnswerLog } from "@/lib/interaction/useAnswerLog";
 
 type Round =
-  | { kind: "steps"; title: string; prompt: string; cards: StepCard[] }
+  | { kind: "steps"; title: string; prompt: string; cards: StepCard[]; preplacedCount?: number }
+  | { kind: "routineQuestions"; questions: RoutineQuestion[] }
   | { kind: "errands"; set: ErrandSet };
 
 async function fetchJson<T>(path: string): Promise<T | null> {
@@ -36,10 +39,7 @@ const taskRound = (task: Task): Round => ({
 
 /** Round 5: the user's own photos, else the caregiver's routine, else one more errand round. */
 async function personalRound(date: string, spareErrands: ErrandSet): Promise<Round> {
-  const [day, routine] = await Promise.all([
-    fetchJson<{ frames?: { url: string; timestamp: number }[] }>(`/day-frames?date=${date}`),
-    fetchJson<{ steps?: string[] }>("/routine"),
-  ]);
+  const day = await fetchJson<{ frames?: { url: string; timestamp: number }[] }>(`/day-frames?date=${date}`);
   const frames = day?.frames ?? [];
   if (frames.length >= 3) {
     return {
@@ -49,28 +49,33 @@ async function personalRound(date: string, spareErrands: ErrandSet): Promise<Rou
       cards: frames.map((f) => ({ kind: "photo", url: mediaUrl(encodeURI(f.url)), timestamp: f.timestamp })),
     };
   }
-  const steps = routine?.steps ?? [];
-  if (steps.length >= 3) {
-    return {
-      kind: "steps",
-      title: "Your daily routine",
-      prompt: "Tap the steps in the order you do them.",
-      cards: steps.slice(0, 5).map((label) => ({ kind: "step", emoji: "📝", label })),
-    };
-  }
   return { kind: "errands", set: spareErrands };
 }
 
 async function buildSession(date: string, knob: number): Promise<Round[]> {
-  const tasks = shuffle(TASKS);
+  const [tasks, routine] = await Promise.all([
+    Promise.resolve(shuffle(TASKS)),
+    fetchJson<{ steps?: string[] }>("/routine"),
+  ]);
   const sets = shuffle(ERRAND_SETS);
-  const rounds: Round[] = [
-    taskRound(tasks[0]),
-    taskRound(tasks[1]),
-    { kind: "errands", set: sets[0] },
-    { kind: "errands", set: sets[1] },
-    await personalRound(date, sets[2]),
-  ];
+  const steps = routine?.steps ?? [];
+  const rounds: Round[] = hasUsableRoutine(steps)
+    ? [
+        { kind: "steps", title: "Your daily routine", prompt: "Tap the steps in the order you do them.",
+          cards: (knob === 4 ? steps.slice(0, 5) : steps.slice(0, 4)).map(label => ({ kind: "step" as const, emoji: "📝", label })),
+          preplacedCount: knob === 1 ? 1 : 0 },
+        { kind: "routineQuestions", questions: buildRoutineQuestions(steps.slice(0, 5), knob) },
+        { kind: "errands", set: sets[0] },
+        { kind: "errands", set: sets[1] },
+        await personalRound(date, sets[2]),
+      ]
+    : [
+        taskRound(tasks[0]),
+        taskRound(tasks[1]),
+        { kind: "errands", set: sets[0] },
+        { kind: "errands", set: sets[1] },
+        await personalRound(date, sets[2]),
+      ];
   return knob === 1 ? rounds.slice(0, 4) : rounds;
 }
 
@@ -112,7 +117,9 @@ function Session({ date, onDone }: { date: string; onDone: (score: number) => vo
         Round {index + 1} of {rounds.length}
       </p>
       {round.kind === "steps" ? (
-        <StepRound key={index} title={round.title} prompt={round.prompt} cards={round.cards} onDone={finishRound} />
+        <StepRound key={index} title={round.title} prompt={round.prompt} cards={round.cards} preplacedCount={round.preplacedCount} onDone={finishRound} />
+      ) : round.kind === "routineQuestions" ? (
+        <RoutineQuestions key={index} questions={round.questions} onDone={finishRound} />
       ) : (
         <ErrandRound key={index} set={round.set} onDone={finishRound} />
       )}

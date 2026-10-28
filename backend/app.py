@@ -18,7 +18,7 @@ import sys
 import uuid
 from io import BytesIO
 from urllib.parse import unquote
-from datetime import datetime
+from datetime import datetime, timezone
 
 # process_video prints "✓"; under `npm run dev` stdout is a pipe, which Windows encodes as cp1252
 sys.stdout.reconfigure(encoding="utf-8")
@@ -542,6 +542,10 @@ def _memory_data():
             data.pop(memory_id, None); changed = True
         elif filename:
             seen_filenames.add(filename)
+    for row in data.values():
+        if isinstance(row, dict) and not isinstance(row.get('useInGames'), bool):
+            row['useInGames'] = True
+            changed = True
     if changed or not os.path.exists(MEMORIES_PATH):
         with open(MEMORIES_PATH, 'w', encoding='utf-8') as stream:
             json.dump(data, stream, ensure_ascii=False, indent=2)
@@ -1170,6 +1174,7 @@ def list_memories():
             'note': journal.get('entry') or row.get('note', ''),
             'durationSeconds': row.get('durationSeconds'), 'thumbnailUrl': f'/memories/{memory_id}/thumbnail',
             'people': p_names, 'transcript': tr, 'status': status,
+            'useInGames': row.get('useInGames', True),
             'progress': status_info.get('progress', 0) if status == 'processing' else (100 if status == 'ready' else (row.get('progress') or 0)),
             'message': status_info.get('message') or row.get('message', ''),
             'error': status_info.get('error') or row.get('error'),
@@ -1461,7 +1466,8 @@ def get_memory(memory_id):
         'dateLabel': d_info.get('dateLabel', ''),
         'note': row.get('note', ''),
         'durationSeconds': row.get('durationSeconds'),
-        'thumbnailUrl': f"/memories/{memory_id}/thumbnail"
+        'thumbnailUrl': f"/memories/{memory_id}/thumbnail",
+        'useInGames': row.get('useInGames', True)
     }), 200
 
 
@@ -1473,8 +1479,10 @@ def update_memory(memory_id):
     if not row:
         return jsonify(error='Memory not found'), 404
     payload = request.get_json(silent=True) or {}
-    if set(payload) - {'title', 'note', 'date'}:
-        return jsonify(error='Only title, note, and date can be changed.'), 400
+    if set(payload) - {'title', 'note', 'date', 'useInGames'}:
+        return jsonify(error='Only title, note, date, and game use can be changed.'), 400
+    if 'useInGames' in payload and not isinstance(payload['useInGames'], bool):
+        return jsonify(error='Use in games must be true or false.'), 400
     if 'title' in payload and (not isinstance(payload['title'], str) or len(payload['title'].strip()) > 120):
         return jsonify(error='Title is invalid.'), 400
 
@@ -1518,6 +1526,8 @@ def update_memory(memory_id):
         if cleaned_date is not None:
             journal['date'] = cleaned_date
             memory_id_row['date'] = cleaned_date
+        if 'useInGames' in payload:
+            memory_id_row['useInGames'] = payload['useInGames']
 
         journals[old_filename] = journal
         with open(JOURNALS_PATH, 'w', encoding='utf-8') as stream:
@@ -1537,7 +1547,8 @@ def update_memory(memory_id):
         id=memory_id,
         title=memory_id_row.get('title') or old_filename.rsplit('.', 1)[0],
         note=memory_id_row.get('note', ''),
-        date=memory_id_row.get('date')
+        date=memory_id_row.get('date'),
+        useInGames=memory_id_row.get('useInGames', True)
     )
 
 
@@ -1685,6 +1696,11 @@ def get_journals():
 
 
 PEOPLE_FILE = scoped('people.json')
+PLACES_FILE = scoped('places.json')
+PLACE_PHOTOS_FOLDER = scoped('place_photos')
+PLACE_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+PLACE_ID_PATTERN = re.compile(r'^[0-9a-f]{32}$')
+PLACE_PHOTO_PATTERN = re.compile(r'^[0-9a-f]{32}\.(?:jpg|png|webp)$')
 
 
 def _load_people():
@@ -1973,6 +1989,229 @@ def serve_face_image(filename):
         return send_from_directory(folder, filename)
     except Exception:
         return jsonify(error="Photo not found"), 404
+
+
+def _load_places():
+    if not os.path.exists(PLACES_FILE):
+        return []
+    with open(PLACES_FILE, 'r', encoding='utf-8') as file:
+        places = json.load(file)
+    if not isinstance(places, list):
+        raise ValueError('Patient places data must be a list.')
+    return places
+
+
+def _save_places(places):
+    path = os.fspath(PLACES_FILE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temporary = f'{path}.{uuid.uuid4().hex}.tmp'
+    try:
+        with open(temporary, 'x', encoding='utf-8') as file:
+            json.dump(places, file, ensure_ascii=False, indent=2)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+
+
+def _places_access(write=False):
+    import auth
+
+    session = g.get('auth_session')
+    patient = g.get('active_patient')
+    if not session or not patient:
+        return None, (jsonify(error='No active patient.'), 403)
+    patient_id = patient['id']
+    if session.get('kind') == 'patient_device':
+        authorized = session.get('patient_id') == patient_id
+    else:
+        authorized = auth.authorized_patient(patient_id)
+    if not authorized:
+        return None, (jsonify(error='Patient not found.'), 404)
+    if write:
+        if session.get('kind') == 'patient_device':
+            return None, (jsonify(error='Only the patient or a caregiver can edit places.'), 403)
+        if auth.self_account():
+            user = auth.session_user()
+            if not user or user['patient_id'] != patient_id:
+                return None, (jsonify(error='You can only edit your own places.'), 403)
+        elif session.get('kind') != 'caregiver' or not auth.is_caregiver():
+            return None, (jsonify(error='Only the patient or a caregiver can edit places.'), 403)
+    return patient_id, None
+
+
+def _demo_places(patient_id):
+    import auth
+
+    patient = auth.db().execute('SELECT is_demo FROM patients WHERE id=?', (patient_id,)).fetchone()
+    return bool(patient and patient['is_demo'])
+
+
+def _limit_demo_places(patient_id):
+    import auth
+
+    session = g.auth_session
+    if not (_demo_places(patient_id) or auth.is_demo_session(session)):
+        return False
+    return not auth.limits().hit(('demo-places', session['id']), 60, 3600)
+
+
+@api.route('/places', methods=['GET'])
+def list_places():
+    _, denied = _places_access()
+    if denied:
+        return denied
+    return jsonify(_load_places())
+
+
+@api.route('/places', methods=['POST'])
+def add_place():
+    import auth
+    from places import validate_place_fields
+
+    patient_id, denied = _places_access(write=True)
+    if denied:
+        return denied
+    if _limit_demo_places(patient_id):
+        return jsonify(error='Demo place changes are limited to 60 per hour.'), 429
+    places = _load_places()
+    is_demo = _demo_places(patient_id) or auth.is_demo_session(g.auth_session)
+    maximum = 6 if is_demo else 12
+    if len(places) >= maximum:
+        return jsonify(error=f'You can save at most {maximum} places.'), 400
+    try:
+        place = validate_place_fields(request.get_json(silent=True))
+    except ValueError as error:
+        return jsonify(error=str(error)), 400
+    place.update(id=uuid.uuid4().hex,
+                 createdAt=datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z'),
+                 photo=None)
+    places.append(place)
+    _save_places(places)
+    return jsonify(place), 201
+
+
+@api.route('/places/<place_id>', methods=['PUT'])
+def update_place(place_id):
+    from places import validate_place_fields
+
+    patient_id, denied = _places_access(write=True)
+    if denied:
+        return denied
+    if _limit_demo_places(patient_id):
+        return jsonify(error='Demo place changes are limited to 60 per hour.'), 429
+    if not PLACE_ID_PATTERN.fullmatch(place_id):
+        return jsonify(error='Place not found.'), 404
+    places = _load_places()
+    place = next((item for item in places if item.get('id') == place_id), None)
+    if not place:
+        return jsonify(error='Place not found.'), 404
+    try:
+        updated = validate_place_fields(request.get_json(silent=True), existing=place)
+    except ValueError as error:
+        return jsonify(error=str(error)), 400
+    place.update(updated)
+    _save_places(places)
+    return jsonify(place)
+
+
+@api.route('/places/<place_id>', methods=['DELETE'])
+def delete_place(place_id):
+    patient_id, denied = _places_access(write=True)
+    if denied:
+        return denied
+    if _limit_demo_places(patient_id):
+        return jsonify(error='Demo place changes are limited to 60 per hour.'), 429
+    if not PLACE_ID_PATTERN.fullmatch(place_id):
+        return jsonify(error='Place not found.'), 404
+    places = _load_places()
+    place = next((item for item in places if item.get('id') == place_id), None)
+    if not place:
+        return jsonify(error='Place not found.'), 404
+    photo = place.get('photo')
+    places.remove(place)
+    _save_places(places)
+    if photo and PLACE_PHOTO_PATTERN.fullmatch(photo):
+        photo_path = os.path.join(os.fspath(PLACE_PHOTOS_FOLDER), photo)
+        if os.path.isfile(photo_path):
+            os.remove(photo_path)
+    return jsonify(success=True)
+
+
+@api.route('/places/<place_id>/photo', methods=['POST'])
+def upload_place_photo(place_id):
+    from PIL import Image, UnidentifiedImageError
+
+    patient_id, denied = _places_access(write=True)
+    if denied:
+        return denied
+    if _limit_demo_places(patient_id):
+        return jsonify(error='Demo place changes are limited to 60 per hour.'), 429
+    if request.content_length and request.content_length > PLACE_PHOTO_MAX_BYTES + 64 * 1024:
+        return jsonify(error='Photo must be at most 5 MB.'), 413
+    if not PLACE_ID_PATTERN.fullmatch(place_id):
+        return jsonify(error='Place not found.'), 404
+    places = _load_places()
+    place = next((item for item in places if item.get('id') == place_id), None)
+    if not place:
+        return jsonify(error='Place not found.'), 404
+    photo_file = request.files.get('photo')
+    if not photo_file or not photo_file.filename:
+        return jsonify(error='Please choose a photo.'), 400
+    content = photo_file.stream.read(PLACE_PHOTO_MAX_BYTES + 1)
+    if len(content) > PLACE_PHOTO_MAX_BYTES:
+        return jsonify(error='Photo must be at most 5 MB.'), 413
+    try:
+        with Image.open(BytesIO(content)) as image:
+            image_format = image.format
+            width, height = image.size
+            if width > 8000 or height > 8000 or width * height > 25_000_000:
+                return jsonify(error='Photo resolution is too large (maximum 8000x8000 and 25 megapixels).'), 400
+            image.load()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+        return jsonify(error='File is not a valid image.'), 400
+    extensions = {'JPEG': 'jpg', 'PNG': 'png', 'WEBP': 'webp'}
+    extension = extensions.get(image_format)
+    if not extension:
+        return jsonify(error='Photo must be JPEG, PNG, or WebP.'), 400
+    os.makedirs(PLACE_PHOTOS_FOLDER, exist_ok=True)
+    filename = f'{uuid.uuid4().hex}.{extension}'
+    photo_path = os.path.join(os.fspath(PLACE_PHOTOS_FOLDER), filename)
+    temporary = f'{photo_path}.tmp'
+    try:
+        with open(temporary, 'xb') as file:
+            file.write(content)
+        os.replace(temporary, photo_path)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+    old_photo = place.get('photo')
+    place['photo'] = filename
+    try:
+        _save_places(places)
+    except OSError:
+        os.remove(photo_path)
+        raise
+    if old_photo and PLACE_PHOTO_PATTERN.fullmatch(old_photo):
+        old_path = os.path.join(os.fspath(PLACE_PHOTOS_FOLDER), old_photo)
+        if os.path.isfile(old_path):
+            os.remove(old_path)
+    return jsonify(place)
+
+
+@api.route('/place-photos/<filename>', methods=['GET'])
+def serve_place_photo(filename):
+    _, denied = _places_access()
+    if denied:
+        return denied
+    if not PLACE_PHOTO_PATTERN.fullmatch(filename):
+        return jsonify(error='Photo not found.'), 404
+    if not any(place.get('photo') == filename for place in _load_places()):
+        return jsonify(error='Photo not found.'), 404
+    folder = os.fspath(PLACE_PHOTOS_FOLDER)
+    if not os.path.isfile(os.path.join(folder, filename)):
+        return jsonify(error='Photo not found.'), 404
+    return send_from_directory(folder, filename)
 
 
 def _run_rescan_worker(patient_id, base_dir, chunk_folders):
@@ -3202,6 +3441,80 @@ def _build_place_sentence(c):
         return act[0].upper() + act[1:] + '.'
     return None
 
+
+def _memory_fact_place(context, sentence):
+    source = (context.get('note') or context.get('title') or '').strip().rstrip('.!?')
+    patterns = (
+        r'^(?:a day at|day at|a visit to|visit to|a trip to|trip to|at|in|visiting)\s+(.+)$',
+        r'^(.+?)\s+(?:visit|trip)(?:\s|$)',
+    )
+    for pattern in patterns:
+        match = re.search(pattern, source, re.IGNORECASE)
+        if match:
+            place = re.split(r'\s+(?:with|on|during|for)\b', match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
+            return place.strip(' .,!?:;') or None
+    if sentence:
+        match = re.search(r'\b(?:at|visiting|in)\s+(.+?)[.!?]?$', sentence, re.IGNORECASE)
+        if match:
+            return match.group(1).strip(' .,!?:;') or None
+    return None
+
+
+def memory_facts(patient):
+    """Build deterministic, patient-scoped, game-eligible facts from ready uploads."""
+    active = g.get('active_patient')
+    if not patient or not active or patient.get('id') != active.get('id'):
+        return []
+    data = _memory_data()
+    contexts = _ask_context()
+    by_id = {item['id']: item for item in contexts or []}
+    facts = []
+    for memory_id, row in data.items():
+        if not isinstance(row, dict) or row.get('useInGames', True) is not True:
+            continue
+        status_info = processing_status.get((patient_path(''), row.get('filename')), {})
+        status = status_info.get('status') or row.get('status', 'ready')
+        if status == 'completed':
+            status = 'ready'
+        if status != 'ready':
+            continue
+        context = by_id.get(memory_id, {})
+        note = context.get('note') or row.get('note') or ''
+        title = context.get('title') or row.get('title') or ''
+        date_value = context.get('date') or row.get('date')
+        date_obj = None
+        try:
+            date_obj = datetime.fromisoformat(str(date_value)[:10]).date()
+        except (TypeError, ValueError):
+            created_at = row.get('createdAt')
+            if isinstance(created_at, (int, float)):
+                try:
+                    date_obj = datetime.fromtimestamp(created_at).date()
+                    date_value = date_obj.isoformat()
+                except (OverflowError, OSError, ValueError):
+                    pass
+        date_info = _friendly_memory_date(date_value)
+        activity = _build_place_sentence({'note': note, 'title': title}) or ''
+        facts.append({
+            'id': memory_id,
+            'friendlyDate': date_info.get('dateLabel', ''),
+            'weekday': date_obj.strftime('%A') if date_obj else '',
+            'title': title,
+            'people': list(dict.fromkeys(context.get('people') or [])),
+            'place': _memory_fact_place({'note': note, 'title': title}, activity) or '',
+            'activity': activity,
+            'note': note,
+        })
+    return facts
+
+
+@api.route('/memories/facts', methods=['GET'])
+def get_memory_facts():
+    patient = g.get('active_patient')
+    if not patient:
+        return jsonify(error='No active patient.'), 403
+    return jsonify(facts=memory_facts(patient))
+
 def _unanswered_response(scope, c, lang, is_picture=False):
     if is_picture and not AI_AVAILABLE:
         ans_text = "I can't look at the pictures right now."
@@ -3408,6 +3721,8 @@ from auth import init_auth
 
 configure(api)
 init_auth(api, lambda: _load_settings())
+from alerts import bp as alerts_bp
+api.register_blueprint(alerts_bp)
 _cleanup_stale_processing_jobs()
 CORS(api, origins=api.config['AUTH_ORIGINS'], supports_credentials=True)
 
